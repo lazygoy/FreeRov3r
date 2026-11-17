@@ -1,0 +1,13 @@
+from abc import ABC, abstractmethod
+from ..models import CanFrame
+
+class CanAdapter(ABC):
+    @abstractmethod
+    def open(self) -> None: ...
+    @abstractmethod
+    def close(self) -> None: ...
+    @abstractmethod
+    def receive(self, timeout: float = 0.2) -> CanFrame | None: ...
+    @property
+    @abstractmethod
+    def description(self) -> str: ...
