@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QGroupBox,
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
-    QTreeWidget, QTreeWidgetItem,
+    QTreeWidget, QTreeWidgetItem, QGridLayout,
 )
 
 try:
@@ -958,7 +958,7 @@ class MainWindow(QMainWindow):
         self.last_rate_count = 0
 
         self.setWindowTitle("FreeRov3r")
-        self.resize(1100, 750)
+        self.resize(1320, 860)
 
         self._build_ui()
         self._apply_settings()
@@ -974,24 +974,27 @@ class MainWindow(QMainWindow):
 
         self.mode_label = QLabel()
         self.mode_label.setWordWrap(True)
-        self.mode_label.setStyleSheet("background: #2a2a2a; padding: 10px; border-radius: 6px;")
+        self.mode_label.setObjectName("modeBanner")
 
         # Welcome
         welcome = QWidget()
         wlayout = QVBoxLayout(welcome)
         wlayout.setAlignment(Qt.AlignCenter)
-        wlayout.setSpacing(16)
+        wlayout.setSpacing(18)
+        wlayout.setContentsMargins(48, 40, 48, 40)
 
         title = QLabel("What would you like to do?")
-        title.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        title.setFont(QFont("Segoe UI", 23, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         wlayout.addWidget(title)
 
         subtitle = QLabel("Choose a task to get started. You can switch later.")
         subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setObjectName("welcomeSubtitle")
         wlayout.addWidget(subtitle)
 
-        btn_style = "QPushButton { font-size: 14px; padding: 12px; min-width: 280px; }"
+        task_grid = QGridLayout()
+        task_grid.setSpacing(12)
         tasks = [
             ("Pull diagnostic codes (DTCs)", self.show_dtc_mode),
             ("Read OBD-II data", self.show_obd_mode),
@@ -1000,16 +1003,21 @@ class MainWindow(QMainWindow):
             ("Read vehicle information", self.show_vehicle_info_mode),
             ("Vehicle modules (CAN)", self.show_modules_mode),
         ]
-        for text, slot in tasks:
+        for index, (text, slot) in enumerate(tasks):
             btn = QPushButton(text)
-            btn.setStyleSheet(btn_style)
+            btn.setMinimumHeight(66)
+            btn.setObjectName("taskButton")
             btn.clicked.connect(slot)
-            wlayout.addWidget(btn, alignment=Qt.AlignCenter)
+            task_grid.addWidget(btn, index // 2, index % 2)
+        wlayout.addLayout(task_grid)
 
         self.stack.addWidget(welcome)
 
         # Tabs
         self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.West)
+        self.tabs.setDocumentMode(True)
+        self.tabs.setMovable(False)
         self.stack.addWidget(self.tabs)
 
         self._build_capture_tab()
@@ -1600,27 +1608,51 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if enabled:
             palette = QPalette()
-            palette.setColor(QPalette.Window, QColor(32, 32, 32))
-            palette.setColor(QPalette.WindowText, QColor(220, 220, 220))
-            palette.setColor(QPalette.Base, QColor(25, 25, 25))
-            palette.setColor(QPalette.AlternateBase, QColor(45, 45, 45))
-            palette.setColor(QPalette.Text, QColor(220, 220, 220))
-            palette.setColor(QPalette.Button, QColor(50, 50, 50))
-            palette.setColor(QPalette.ButtonText, QColor(220, 220, 220))
-            palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
-            palette.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
+            palette.setColor(QPalette.Window, QColor("#171b22"))
+            palette.setColor(QPalette.WindowText, QColor("#e7ebf0"))
+            palette.setColor(QPalette.Base, QColor("#10141a"))
+            palette.setColor(QPalette.AlternateBase, QColor("#202630"))
+            palette.setColor(QPalette.Text, QColor("#e7ebf0"))
+            palette.setColor(QPalette.Button, QColor("#252d38"))
+            palette.setColor(QPalette.ButtonText, QColor("#e7ebf0"))
+            palette.setColor(QPalette.Highlight, QColor("#2675c9"))
+            palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
             app.setPalette(palette)
             self.setStyleSheet("""
-                QPlainTextEdit, QLineEdit, QComboBox, QListWidget, QSpinBox, QTableWidget {
-                    background-color: #1e1e1e; color: #dcdcdc; border: 1px solid #555;
-                }
-                QGroupBox { color: #dcdcdc; font-weight: bold; }
-                QPushButton { padding: 6px 12px; }
-                QHeaderView::section { background-color: #333; color: #dcdcdc; }
+                QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
+                QGroupBox { border: 1px solid #303a47; border-radius: 8px; margin-top: 12px; padding: 12px; font-weight: 600; }
+                QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+                QLabel#modeBanner { background: #202a36; border: 1px solid #34475b; border-radius: 8px; padding: 12px; color: #dce9f7; }
+                QLabel#welcomeSubtitle { color: #9eabb9; font-size: 11pt; }
+                QPushButton { background: #283443; color: #eaf1f8; border: 1px solid #3a4b5e; border-radius: 7px; padding: 8px 14px; min-height: 24px; }
+                QPushButton:hover { background: #34485e; border-color: #5486b8; }
+                QPushButton:pressed { background: #1d5d9c; }
+                QPushButton#taskButton { text-align: left; font-size: 11pt; font-weight: 600; padding: 16px 18px; background: #202a36; }
+                QPushButton#taskButton:hover { background: #293b4e; }
+                QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QListWidget, QTreeWidget, QTableWidget, QSpinBox { background: #10141a; color: #e7ebf0; border: 1px solid #35404d; border-radius: 5px; padding: 5px; selection-background-color: #2675c9; }
+                QComboBox QAbstractItemView { background: #202630; color: #e7ebf0; selection-background-color: #2675c9; }
+                QTabWidget::pane { border: 1px solid #303a47; border-radius: 8px; background: #171b22; top: 0; }
+                QTabBar::tab { background: #202630; color: #aeb9c6; border: 0; border-bottom: 1px solid #303a47; padding: 14px 12px; min-width: 118px; text-align: left; }
+                QTabBar::tab:selected { background: #293b4e; color: #ffffff; border-left: 3px solid #3989d8; font-weight: 600; }
+                QHeaderView::section { background: #252e39; color: #dce4ed; border: 0; border-bottom: 1px solid #3a4654; padding: 7px; }
+                QCheckBox { spacing: 8px; }
+                QToolTip { background: #202630; color: #ffffff; border: 1px solid #526174; }
             """)
         else:
             app.setPalette(app.style().standardPalette())
-            self.setStyleSheet("")
+            self.setStyleSheet("""
+                QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QLabel#modeBanner { background: #edf3f8; border: 1px solid #cbd7e2; border-radius: 8px; padding: 12px; color: #26394b; }
+                QLabel#welcomeSubtitle { color: #647386; font-size: 11pt; }
+                QPushButton { border: 1px solid #c5ced8; border-radius: 7px; padding: 8px 14px; min-height: 24px; }
+                QPushButton#taskButton { text-align: left; font-size: 11pt; font-weight: 600; padding: 16px 18px; }
+                QTabWidget::pane { border: 1px solid #cbd3dc; border-radius: 8px; }
+                QTabBar::tab { padding: 14px 12px; min-width: 118px; text-align: left; }
+                QTabBar::tab:selected { font-weight: 600; border-left: 3px solid #2675c9; }
+                QGroupBox { border: 1px solid #cbd3dc; border-radius: 8px; margin-top: 12px; padding: 12px; }
+                QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+            """)
 
     def save_current_settings(self):
         backend_data = self.settings_backend.currentData()
