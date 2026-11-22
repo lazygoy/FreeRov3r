@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
-from PySide6.QtGui import QPalette, QColor, QFont, QFontDatabase, QPainter, QBrush
+from PySide6.QtGui import QPalette, QColor, QFont, QFontDatabase, QPainter, QBrush, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QLabel, QMainWindow,
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
@@ -40,6 +40,7 @@ from .ui_feedback import QuickDrawer, ToastManager
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
+ASSET_DIR = Path(__file__).resolve().parent / "assets"
 
 DEFAULT_SETTINGS = {
     "interface": "virtual",
@@ -971,7 +972,8 @@ class MainWindow(QMainWindow):
         self.last_rate_time = time.monotonic()
         self.last_rate_count = 0
 
-        self.setWindowTitle("FreeRov3r")
+        self.setWindowTitle("FreeRov3r | Vehicle Diagnostics")
+        self.setWindowIcon(QIcon(str(ASSET_DIR / "brand_badge.svg")))
         self.resize(1320, 860)
 
         self._build_ui()
@@ -997,6 +999,14 @@ class MainWindow(QMainWindow):
         wlayout.setAlignment(Qt.AlignCenter)
         wlayout.setSpacing(18)
         wlayout.setContentsMargins(48, 40, 48, 40)
+
+        welcome_brand = QLabel()
+        welcome_brand.setObjectName("welcomeBrand")
+        brand_pixmap = QPixmap(str(ASSET_DIR / "brand_splash.svg"))
+        if not brand_pixmap.isNull():
+            welcome_brand.setPixmap(brand_pixmap.scaled(760, 350, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            welcome_brand.setAlignment(Qt.AlignCenter)
+            wlayout.addWidget(welcome_brand)
 
         title = QLabel("What would you like to do?")
         title.setFont(QFont(self.heading_font_family, 25, QFont.ExtraBold))
@@ -1082,6 +1092,17 @@ class MainWindow(QMainWindow):
         outer_layout = QVBoxLayout(workspace)
         outer_layout.setContentsMargins(12, 10, 12, 12)
         outer_layout.setSpacing(10)
+
+        # Brand artwork anchors the workspace without hiding live vehicle context.
+        self.brand_banner = QLabel()
+        self.brand_banner.setObjectName("brandBanner")
+        banner_pixmap = QPixmap(str(ASSET_DIR / "brand_banner.svg"))
+        if not banner_pixmap.isNull():
+            self.brand_banner.setPixmap(banner_pixmap.scaled(980, 132, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.brand_banner.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.brand_banner.setMinimumHeight(110)
+            self.brand_banner.setMaximumHeight(132)
+            outer_layout.addWidget(self.brand_banner)
 
         # Persistent instrument header: the key context stays visible on every page.
         header = QWidget()
@@ -1224,13 +1245,23 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(30, 26, 30, 24)
         layout.setSpacing(14)
+        splash_brand_row = QHBoxLayout()
+        splash_logo = QLabel()
+        splash_logo.setObjectName("splashLogo")
+        splash_pixmap = QPixmap(str(ASSET_DIR / "brand_badge.svg"))
+        if not splash_pixmap.isNull():
+            splash_logo.setPixmap(splash_pixmap.scaled(68, 68, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        splash_brand_row.addWidget(splash_logo)
+        splash_brand_text = QVBoxLayout()
         eyebrow = QLabel("FREEROV3R  /  VEHICLE DIAGNOSTICS")
         eyebrow.setObjectName("splashEyebrow")
-        layout.addWidget(eyebrow)
+        splash_brand_text.addWidget(eyebrow)
         title = QLabel("What would you like to do?")
         title.setObjectName("splashTitle")
         title.setFont(QFont(self.heading_font_family, 25, QFont.ExtraBold))
-        layout.addWidget(title)
+        splash_brand_text.addWidget(title)
+        splash_brand_row.addLayout(splash_brand_text, 1)
+        layout.addLayout(splash_brand_row)
         subtitle = QLabel(
             "Start with a simple task. You can switch workspaces at any time "
             "using Quick Nav on the right."
@@ -1861,16 +1892,20 @@ class MainWindow(QMainWindow):
             palette.setColor(QPalette.Text, QColor("#e7ebf0"))
             palette.setColor(QPalette.Button, QColor("#252d38"))
             palette.setColor(QPalette.ButtonText, QColor("#e7ebf0"))
-            palette.setColor(QPalette.Highlight, QColor("#2675c9"))
+            palette.setColor(QPalette.Highlight, QColor("#2c8054"))
             palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
             app.setPalette(palette)
             self.setStyleSheet("""
                 QWidget { font-family: "{BODY_FONT}"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
-                QWidget#workspaceHeader { background: #222833; border: 1px solid #343e4c; border-radius: 12px; }
+                QWidget#workspaceHeader { background: #1b2a22; border: 1px solid #42684f; border-radius: 12px; }
+                QLabel#brandBanner { background: #08140f; border: 1px solid #42684f; border-radius: 10px; padding: 2px; }
                 QDockWidget#quickDrawer { background: #20242c; color: #e7ebf0; border-left: 1px solid #3a4655; }
                 QDockWidget#quickDrawer::title { background: #20242c; padding: 10px 14px; font-weight: 700; }
-                QWidget#drawerBody { background: #1c222b; }
+                QWidget#drawerBody { background: #111d17; }
+                QLabel#drawerBrandName { color: #f2f7f3; font-size: 16pt; font-weight: 850; letter-spacing: 0.5px; }
+                QLabel#drawerBrandTagline { color: #8fb39a; font-size: 7.5pt; font-weight: 700; letter-spacing: 1px; }
+                QLabel#drawerBrandLogo { background: transparent; }
                 QLabel#drawerTitle, QLabel#drawerSubtitle, QLabel#drawerCaption, QLabel#drawerValue, QLabel#drawerStatus, QLabel#drawerSection, QLabel#drawerNote, QLabel#toastMarker, QLabel#toastText { background: transparent; }
                 QFrame#drawerCard { background: #252e39; border: 1px solid #3a4655; border-radius: 12px; }
                 QLabel#drawerTitle { color: #f4f7fb; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
@@ -1879,10 +1914,11 @@ class MainWindow(QMainWindow):
                 QLabel#drawerStatus { color: #82c5ff; font-weight: 700; }
                 QLabel#drawerSection { color: #91a5bb; font-size: 9pt; font-weight: 800; letter-spacing: 1px; padding-top: 8px; }
                 QLabel#drawerNote { color: #9caaba; background: #202a36; border: 1px solid #34475b; border-radius: 9px; padding: 10px; font-size: 9pt; }
-                QPushButton#drawerNavButton { text-align: left; background: #252e39; border: 1px solid #354253; border-radius: 8px; padding: 9px 12px; min-height: 22px; }
-                QPushButton#drawerNavButton:hover { background: #2c4055; border-color: #5486b8; }
-                QToolButton#drawerToggle { background: #263c55; color: #eaf3fc; border: 1px solid #42678e; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
-                QToolButton#drawerToggle:hover { background: #315579; }
+                QPushButton#drawerNavButton { text-align: left; background: #1b2c22; border: 1px solid #344e3b; border-radius: 8px; padding: 9px 12px; min-height: 22px; }
+                QPushButton#drawerNavButton:hover { background: #294b35; border-color: #6da17a; }
+                QPushButton#drawerNavButton:checked { background: #245a39; border: 1px solid #72b486; color: #ffffff; font-weight: 800; }
+                QToolButton#drawerToggle { background: #214b32; color: #eef8f0; border: 1px solid #4c8c60; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
+                QToolButton#drawerToggle:hover { background: #2d6843; }
                 QFrame#toastNotification { background: #252e39; border: 1px solid #48617b; border-radius: 12px; }
                 QFrame#toastNotification[kind="success"] { border-left: 4px solid #35b779; }
                 QFrame#toastNotification[kind="warning"] { border-left: 4px solid #e5a93d; }
@@ -1910,7 +1946,7 @@ class MainWindow(QMainWindow):
                 QPushButton:pressed { background: #1d5d9c; }
                 QPushButton#taskButton { text-align: left; font-size: 11pt; font-weight: 600; padding: 16px 18px; background: #202a36; }
                 QPushButton#taskButton:hover { background: #293b4e; }
-                QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QListWidget, QTreeWidget, QTableWidget, QSpinBox { background: #10141a; color: #e7ebf0; border: 1px solid #35404d; border-radius: 5px; padding: 5px; selection-background-color: #2675c9; }
+                QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QListWidget, QTreeWidget, QTableWidget, QSpinBox { background: #10141a; color: #e7ebf0; border: 1px solid #35404d; border-radius: 5px; padding: 5px; selection-background-color: #2c8054; }
                 QComboBox QAbstractItemView { background: #202630; color: #e7ebf0; selection-background-color: #2675c9; }
                 QTabWidget::pane { border: 1px solid #303a47; border-radius: 8px; background: #171b22; top: 0; }
                 QTabBar::tab { background: #202630; color: #aeb9c6; border: 0; border-bottom: 1px solid #303a47; padding: 14px 12px; min-width: 118px; text-align: left; }
@@ -1924,18 +1960,23 @@ class MainWindow(QMainWindow):
                 QFrame#splashCard { background: #202a36; border: 1px solid #34475b; border-radius: 12px; }
                 QLabel#splashCardTitle { color: #f4f7fb; font-size: 12pt; font-weight: 700; }
                 QLabel#splashCardText { color: #aebdcb; font-size: 9pt; }
-                QPushButton#splashAction, QPushButton#splashContinue { background: #24496b; border: 1px solid #3989d8; font-weight: 700; }
-                QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #315579; }
+                QPushButton#splashAction, QPushButton#splashContinue { background: #245a39; border: 1px solid #72b486; font-weight: 700; }
+                QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #2d7048; }
+                QLabel#splashLogo { background: transparent; }
                 QToolTip { background: #202630; color: #ffffff; border: 1px solid #526174; }
             """.replace("{BODY_FONT}", self.body_font_family).replace("{HEADING_FONT}", self.heading_font_family))
         else:
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
                 QWidget { font-family: "{BODY_FONT}"; font-size: 10pt; }
-                QWidget#workspaceHeader { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
+                QWidget#workspaceHeader { background: #edf5ef; border: 1px solid #b9d2c0; border-radius: 12px; }
+                QLabel#brandBanner { background: #0a1710; border: 1px solid #8da996; border-radius: 10px; padding: 2px; }
                 QDockWidget#quickDrawer { background: #f8fafc; color: #1e293b; border-left: 1px solid #d9e0e8; }
                 QDockWidget#quickDrawer::title { background: #f1f5f9; padding: 10px 14px; font-weight: 700; }
-                QWidget#drawerBody { background: #f8fafc; }
+                QWidget#drawerBody { background: #f0f6f1; }
+                QLabel#drawerBrandName { color: #173323; font-size: 16pt; font-weight: 850; letter-spacing: 0.5px; }
+                QLabel#drawerBrandTagline { color: #52745d; font-size: 7.5pt; font-weight: 700; letter-spacing: 1px; }
+                QLabel#drawerBrandLogo { background: transparent; }
                 QLabel#drawerTitle, QLabel#drawerSubtitle, QLabel#drawerCaption, QLabel#drawerValue, QLabel#drawerStatus, QLabel#drawerSection, QLabel#drawerNote, QLabel#toastMarker, QLabel#toastText { background: transparent; }
                 QFrame#drawerCard { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
                 QLabel#drawerTitle { color: #172033; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
