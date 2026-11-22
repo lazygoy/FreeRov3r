@@ -1,12 +1,12 @@
 """Native Qt drawer and toast primitives for the FreeRov3r workspace."""
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
 class QuickDrawer(QDockWidget):
     """Non-modal right-side panel for vehicle context and workspace navigation."""
     def __init__(self, parent, navigate):
-        super().__init__("Quick panel", parent)
+        super().__init__("Quick Nav", parent)
         self.setObjectName("quickDrawer")
         self.setAllowedAreas(Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
@@ -17,10 +17,10 @@ class QuickDrawer(QDockWidget):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
-        title = QLabel("QUICK PANEL")
+        title = QLabel("QUICK NAV")
         title.setObjectName("drawerTitle")
         layout.addWidget(title)
-        subtitle = QLabel("Vehicle context and common workspaces")
+        subtitle = QLabel("Vehicle context and workspace shortcuts")
         subtitle.setObjectName("drawerSubtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
@@ -46,8 +46,11 @@ class QuickDrawer(QDockWidget):
         section = QLabel("WORKSPACES")
         section.setObjectName("drawerSection")
         layout.addWidget(section)
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.setExclusive(True)
+        self.nav_buttons = {}
         entries = [
-            ("⌁   CAN Capture", "Capture"), ("◉   Sensor Monitor", "Sensors"),
+            ("⌂   Home", "Home"), ("⌁   CAN Capture", "Capture"), ("◉   Sensor Monitor", "Sensors"),
             ("▥   Sensor Graph", "Graph"), ("◫   OBD-II", "OBD-II"),
             ("▦   Module Diagnostics", "Modules"), ("⌘   Network Overview", "Network"),
             ("✦   Diagnostic Solutions", "Solutions"), ("◷   Vehicle History", "Vehicle History"),
@@ -57,7 +60,10 @@ class QuickDrawer(QDockWidget):
             button = QPushButton(label)
             button.setObjectName("drawerNavButton")
             button.setCursor(Qt.PointingHandCursor)
-            button.clicked.connect(lambda checked=False, name=target: (navigate(name), self.hide()))
+            button.setCheckable(True)
+            button.clicked.connect(lambda checked=False, name=target: navigate(name))
+            self.nav_group.addButton(button)
+            self.nav_buttons[target] = button
             layout.addWidget(button)
         note = QLabel(
             "Passive monitoring only. ECU transmission, coding and programming remain "
@@ -68,6 +74,11 @@ class QuickDrawer(QDockWidget):
         layout.addStretch(1)
         layout.addWidget(note)
         self.setWidget(body)
+
+    def set_current_workspace(self, name):
+        button = self.nav_buttons.get(name)
+        if button is not None:
+            button.setChecked(True)
 
     def update_context(self, vehicle, connection, traffic):
         self.vehicle_value.setText(vehicle or "NO VEHICLE SELECTED")
