@@ -28,6 +28,7 @@ from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
 from .session import CaptureSession
+from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .sensors.scaling import normalize_values
@@ -941,6 +942,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = load_settings()
         self.session = CaptureSession()
+        self.can_monitor = CanMonitor(capacity=20000)
         self.sensor_capture = SensorCapture()
         self.history_store = VehicleHistoryStore(SETTINGS_DIR / "vehicle_history.json")
         self.receiver = None
@@ -1102,6 +1104,22 @@ class MainWindow(QMainWindow):
         stats.addStretch()
         layout.addLayout(stats)
 
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("CAN ID filter (hex / range):"))
+        self.can_id_filter = QLineEdit()
+        self.can_id_filter.setPlaceholderText("e.g. 7E8 or 700-7FF; blank = all")
+        self.can_id_filter.setToolTip("Hexadecimal arbitration ID or inclusive range. Filtering affects display only, not capture/export.")
+        self.can_id_filter.textChanged.connect(self.refresh_can_display)
+        filter_row.addWidget(self.can_id_filter)
+        self.can_format_filter = QComboBox()
+        self.can_format_filter.addItems(["All", "Standard", "Extended"])
+        self.can_format_filter.currentTextChanged.connect(self.refresh_can_display)
+        filter_row.addWidget(self.can_format_filter)
+        layout.addLayout(filter_row)
+
+        self.monitor_summary = QLabel("Recent traffic: no frames")
+        layout.addWidget(self.monitor_summary)
+
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(self.settings.get("max_log_lines", 5000))
@@ -1111,7 +1129,7 @@ class MainWindow(QMainWindow):
         export_btn = QPushButton("Export capture")
         export_btn.clicked.connect(self.export_capture)
         clear_btn = QPushButton("Clear")
-        clear_btn.clicked.connect(self.log.clear)
+        clear_btn.clicked.connect(self.clear_capture_display)
         back_btn = QPushButton("← Back to tasks")
         back_btn.clicked.connect(lambda: self.stack.setCurrentIndex(0))
         export_row.addWidget(export_btn)
@@ -1448,6 +1466,9 @@ class MainWindow(QMainWindow):
             vin=self.capture_vin or "UNASSIGNED",
         )
         self.vin_decoder.reset()
+        self.can_monitor.reset()
+        self.log.clear()
+        self.refresh_can_display()
         self.modules_tab.set_simulation_enabled(interface == "simulator")
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
@@ -1470,10 +1491,16 @@ class MainWindow(QMainWindow):
         if detected_vin:
             self._apply_detected_vin(detected_vin)
         self.session.add(frame)
+        self.can_monitor.add(frame)
         self.frame_counter += 1
         self.frame_count_label.setText(f"Frames: {self.frame_counter}")
         ts = frame.timestamp or 0
-        self.log.appendPlainText(f"{ts:.6f}  {frame.arbitration_id:08X}  {frame.data.hex(' ').upper()}")
+        if self.can_monitor.matches(frame, self.can_id_filter.text(), self.can_format_filter.currentText()):
+            frame_type = "EXT" if frame.is_extended_id else "STD"
+            self.log.appendPlainText(
+                f"{ts:.6f}  {frame.arbitration_id:08X}  {frame_type}  "
+                f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
+            )
         decoded = decode_mode01(frame)
         if decoded is not None:
             pid, name, value, unit = decoded
@@ -1501,13 +1528,49 @@ class MainWindow(QMainWindow):
         elapsed = now - self.last_rate_time
         if elapsed >= 0.5:
             rate = (self.frame_counter - self.last_rate_count) / elapsed
-            self.rate_label.setText(f"Rate: {rate:.1f} fps")
+            rolling_rate = self.can_monitor.rate()
+            self.rate_label.setText(f"Rate: {rate:.1f} fps | Rolling: {rolling_rate:.1f} fps")
+            top_ids = self.can_monitor.id_stats()[:5]
+            summary = " | ".join(
+                f"{item.arbitration_id:08X}{'X' if item.extended else 'S'}: {item.frames_per_second:.1f}/s"
+                for item in top_ids
+            ) or "no recent traffic"
+            self.monitor_summary.setText(
+                f"Buffered: {len(self.can_monitor.frames):,}/{self.can_monitor.capacity:,} "
+                f"| Dropped from rolling buffer: {self.can_monitor.dropped_from_buffer:,} "
+                f"| Top IDs: {summary}"
+            )
             self.last_rate_count = self.frame_counter
             self.last_rate_time = now
             if (self.settings.get("auto_refresh_graph", True)
                     and self.tabs.currentWidget() is self.graph_tab
                     and self.sensor_capture.samples):
                 self.graph_tab.update_chart()
+
+    def refresh_can_display(self):
+        """Rebuild the visible log using the current display-only filters."""
+        if not hasattr(self, "log"):
+            return
+        rows = []
+        for frame in self.can_monitor.frames:
+            if not self.can_monitor.matches(
+                frame, self.can_id_filter.text(), self.can_format_filter.currentText()
+            ):
+                continue
+            ts = frame.timestamp or 0
+            frame_type = "EXT" if frame.is_extended_id else "STD"
+            rows.append(
+                f"{ts:.6f}  {frame.arbitration_id:08X}  {frame_type}  "
+                f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
+            )
+        self.log.setPlainText("\n".join(rows[-self.settings.get("max_log_lines", 5000):]))
+
+    def clear_capture_display(self):
+        """Clear the recent monitor window and visible log; exported session remains intact."""
+        self.can_monitor.reset()
+        self.log.clear()
+        self.monitor_summary.setText("Recent traffic: no frames")
+        self.rate_label.setText("Rate: 0 fps")
 
     def export_capture(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export", "capture.csv", "CSV (*.csv);;candump (*.log)")
