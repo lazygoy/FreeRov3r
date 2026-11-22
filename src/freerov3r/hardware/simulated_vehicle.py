@@ -92,7 +92,7 @@ class SimulatedVehicleAdapter(CanAdapter):
             0x04: round(34 + 12 * wave),
             0x05: round(88 + 3 * math.sin(elapsed * 0.08) + 40),
             0x0B: round(42 + 8 * wave),
-            0x0C: round(850 + 350 * abs(fast)),
+            0x0C: round((850 + 350 * abs(fast)) * 4),
             0x0D: round(32 + 18 * math.sin(elapsed * 0.22)),
             0x0F: round(24 + 2 * math.sin(elapsed * 0.1) + 40),
             0x10: round((8 + 5 * abs(fast)) * 100),
