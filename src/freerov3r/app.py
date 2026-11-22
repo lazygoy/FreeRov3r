@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
     QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
-    QDialog, QFrame, QScrollArea,
+    QDialog, QFrame, QScrollArea, QSizePolicy,
 )
 
 try:
@@ -99,6 +99,37 @@ def load_settings() -> dict:
 def save_settings(settings: dict) -> None:
     SETTINGS_DIR.mkdir(exist_ok=True)
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+
+class ResponsiveBanner(QLabel):
+    """Wide photographic banner that crops cleanly as the workspace resizes."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._source_pixmap = QPixmap()
+        self.setObjectName("brandBanner")
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumHeight(112)
+        self.setMaximumHeight(150)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def set_source_pixmap(self, pixmap):
+        self._source_pixmap = pixmap
+        self._refresh_banner()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_banner()
+
+    def _refresh_banner(self):
+        if self._source_pixmap.isNull() or self.width() < 2 or self.height() < 2:
+            return
+        scaled = self._source_pixmap.scaled(
+            self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+        )
+        x = max(0, (scaled.width() - self.width()) // 2)
+        y = max(0, (scaled.height() - self.height()) // 2)
+        self.setPixmap(scaled.copy(x, y, self.width(), self.height()))
 
 
 class Receiver(QThread):
@@ -1099,14 +1130,10 @@ class MainWindow(QMainWindow):
         outer_layout.setSpacing(10)
 
         # Brand artwork anchors the workspace without hiding live vehicle context.
-        self.brand_banner = QLabel()
-        self.brand_banner.setObjectName("brandBanner")
-        banner_pixmap = QPixmap(str(ASSET_DIR / "brand_banner.svg"))
+        self.brand_banner = ResponsiveBanner()
+        banner_pixmap = QPixmap(str(ASSET_DIR / "brand_banner.jpg"))
         if not banner_pixmap.isNull():
-            self.brand_banner.setPixmap(banner_pixmap.scaled(640, 88, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            self.brand_banner.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self.brand_banner.setMinimumHeight(72)
-            self.brand_banner.setMaximumHeight(92)
+            self.brand_banner.set_source_pixmap(banner_pixmap)
             outer_layout.addWidget(self.brand_banner)
 
         # Persistent instrument header: the key context stays visible on every page.
