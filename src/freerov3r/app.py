@@ -1056,10 +1056,11 @@ class MainWindow(QMainWindow):
         self.quick_drawer.setMinimumWidth(260)
         self.quick_drawer.setMaximumWidth(340)
         self.quick_drawer.show()
+        self.quick_drawer.set_current_workspace(self.tabs.tabText(self.tabs.currentIndex()))
         self.toast_manager = ToastManager(self)
 
     def _build_navigation_workspace(self):
-        """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
+        """Build the workspace header and content area beside the right-side Quick Nav."""
         self.tabs.tabBar().hide()
         workspace = QWidget()
         outer_layout = QVBoxLayout(workspace)
@@ -1098,7 +1099,7 @@ class MainWindow(QMainWindow):
 
         self.drawer_button = QToolButton()
         self.drawer_button.setObjectName("drawerToggle")
-        self.drawer_button.setText("☷  Quick panel")
+        self.drawer_button.setText("☷  Quick Nav")
         self.drawer_button.setToolTip("Open vehicle context and workspace shortcuts")
         self.drawer_button.clicked.connect(self.toggle_quick_drawer)
         header_layout.addWidget(self.drawer_button)
