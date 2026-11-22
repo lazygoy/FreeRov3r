@@ -262,7 +262,7 @@ class SensorGraphTab(QWidget):
             self.record_btn.setStyleSheet("")
             path, _ = QFileDialog.getSaveFileName(self, "Save sensor recording", "sensor_recording.csv", "CSV (*.csv)")
             if path:
-                self.sensor_capture.export_csv(path)
+                self.sensor_capture.export_csv(path, vin=self.settings.get("current_vin"))
 
     def set_color(self):
         if not HAS_CHARTS:
@@ -340,6 +340,7 @@ class SensorGraphTab(QWidget):
                         value=float(row["value"]),
                         unit=row.get("unit", ""),
                         source=row.get("source", "imported"),
+                        metadata={"vin": self.vehicle_vin or "UNASSIGNED"},
                     )
                     self.sensor_capture.add(sample)
                     count += 1
@@ -1141,7 +1142,7 @@ class MainWindow(QMainWindow):
     def export_llm_report(self):
         path, _ = QFileDialog.getSaveFileName(self, "LLM report", "analysis.md", "Markdown (*.md)")
         if path:
-            self.sensor_capture.export_llm_report(path)
+            self.sensor_capture.export_llm_report(path, vin=self.settings.get("current_vin"))
             self.status.setText("LLM report saved")
 
     def export_sensor_csv(self):
