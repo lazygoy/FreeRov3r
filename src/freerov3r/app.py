@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
-from PySide6.QtGui import QPalette, QColor, QFont, QPainter, QBrush
+from PySide6.QtGui import QPalette, QColor, QFont, QFontDatabase, QPainter, QBrush
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QLabel, QMainWindow,
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
@@ -944,6 +944,17 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = load_settings()
+        installed_fonts = {family.casefold(): family for family in QFontDatabase.families()}
+        self.body_font_family = next(
+            (installed_fonts[name.casefold()] for name in ("Inter", "Segoe UI Variable", "Segoe UI")
+             if name.casefold() in installed_fonts),
+            "Segoe UI",
+        )
+        self.heading_font_family = next(
+            (installed_fonts[name.casefold()] for name in ("Inter Tight", "Inter", "Segoe UI Variable", "Segoe UI")
+             if name.casefold() in installed_fonts),
+            self.body_font_family,
+        )
         self.session = CaptureSession()
         self.can_monitor = CanMonitor(capacity=20000)
         self.sensor_capture = SensorCapture()
@@ -978,6 +989,7 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel()
         self.mode_label.setWordWrap(True)
         self.mode_label.setObjectName("modeBanner")
+        self.mode_label.setFont(QFont(self.body_font_family, 11, QFont.DemiBold))
 
         # Welcome
         welcome = QWidget()
@@ -987,7 +999,7 @@ class MainWindow(QMainWindow):
         wlayout.setContentsMargins(48, 40, 48, 40)
 
         title = QLabel("What would you like to do?")
-        title.setFont(QFont("Segoe UI", 23, QFont.Bold))
+        title.setFont(QFont(self.heading_font_family, 25, QFont.ExtraBold))
         title.setAlignment(Qt.AlignCenter)
         wlayout.addWidget(title)
 
@@ -1082,23 +1094,28 @@ class MainWindow(QMainWindow):
         title_column.setSpacing(2)
         self.workspace_title = QLabel("Capture")
         self.workspace_title.setObjectName("workspaceTitle")
+        self.workspace_title.setFont(QFont(self.heading_font_family, 20, QFont.ExtraBold))
         self.workspace_subtitle = QLabel("Passive vehicle diagnostics and CAN monitoring")
         self.workspace_subtitle.setObjectName("workspaceSubtitle")
+        self.workspace_subtitle.setFont(QFont(self.body_font_family, 9, QFont.Medium))
         title_column.addWidget(self.workspace_title)
         title_column.addWidget(self.workspace_subtitle)
         header_layout.addLayout(title_column, 1)
 
         self.header_vehicle = QLabel("NO VEHICLE SELECTED")
         self.header_vehicle.setObjectName("headerVehicle")
+        self.header_vehicle.setFont(QFont(self.body_font_family, 9, QFont.DemiBold))
         self.header_vehicle.setToolTip("Select or identify a vehicle in the Sensors workspace.")
         header_layout.addWidget(self.header_vehicle)
 
         self.header_connection = QLabel("● OFFLINE")
         self.header_connection.setObjectName("headerOffline")
+        self.header_connection.setFont(QFont(self.body_font_family, 9, QFont.Bold))
         header_layout.addWidget(self.header_connection)
 
         self.header_traffic = QLabel("0 frames  |  0.0 fps")
         self.header_traffic.setObjectName("headerTraffic")
+        self.header_traffic.setFont(QFont(self.body_font_family, 10, QFont.DemiBold))
         header_layout.addWidget(self.header_traffic)
 
         self.drawer_button = QToolButton()
@@ -1212,6 +1229,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(eyebrow)
         title = QLabel("What would you like to do?")
         title.setObjectName("splashTitle")
+        title.setFont(QFont(self.heading_font_family, 25, QFont.ExtraBold))
         layout.addWidget(title)
         subtitle = QLabel(
             "Start with a simple task. You can switch workspaces at any time "
@@ -1847,7 +1865,7 @@ class MainWindow(QMainWindow):
             palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
             app.setPalette(palette)
             self.setStyleSheet("""
-                QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QWidget { font-family: "{BODY_FONT}"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
                 QWidget#workspaceHeader { background: #222833; border: 1px solid #343e4c; border-radius: 12px; }
                 QDockWidget#quickDrawer { background: #20242c; color: #e7ebf0; border-left: 1px solid #3a4655; }
@@ -1871,13 +1889,13 @@ class MainWindow(QMainWindow):
                 QFrame#toastNotification[kind="error"] { border-left: 4px solid #e05d67; }
                 QLabel#toastMarker { color: #8cc8ff; font-size: 15pt; font-weight: 800; }
                 QLabel#toastText { color: #f2f6fa; font-size: 9pt; font-weight: 600; }
-                QLabel#workspaceTitle { color: #ffffff; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
-                QLabel#workspaceSubtitle { color: #aebdcb; font-size: 9pt; }
-                QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
-                QLabel#headerOffline { background: #343b45; color: #c4ccd5; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
-                QLabel#headerOnline { background: #173e30; color: #83e0b2; border: 1px solid #286849; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
-                QLabel#headerSimulation { background: #4a391b; color: #ffd27c; border: 1px solid #80602b; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
-                QLabel#headerTraffic { color: #dce9f7; font-size: 10pt; font-weight: 700; padding: 4px 6px; }
+                QLabel#workspaceTitle { color: #ffffff; font-family: "{HEADING_FONT}"; font-size: 20pt; font-weight: 850; letter-spacing: 1.2px; }
+                QLabel#workspaceSubtitle { color: #aebdcb; font-family: "{BODY_FONT}"; font-size: 9.5pt; font-weight: 500; }
+                QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 700; }
+                QLabel#headerOffline { background: #343b45; color: #c4ccd5; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
+                QLabel#headerOnline { background: #173e30; color: #83e0b2; border: 1px solid #286849; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
+                QLabel#headerSimulation { background: #4a391b; color: #ffd27c; border: 1px solid #80602b; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
+                QLabel#headerTraffic { color: #dce9f7; font-family: "Inter"; font-size: 10.5pt; font-weight: 700; padding: 4px 6px; }
                 QWidget#navigationRail { background: #111720; border: 1px solid #2c3744; border-radius: 10px; }
                 QWidget#navigationSeparator { background: #344252; max-height: 1px; }
                 QToolButton { background: transparent; color: #aebdcb; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
@@ -1885,7 +1903,7 @@ class MainWindow(QMainWindow):
                 QToolButton:checked { background: #24496b; color: #ffffff; border: 1px solid #3989d8; }
                 QGroupBox { border: 1px solid #303a47; border-radius: 8px; margin-top: 12px; padding: 12px; font-weight: 600; }
                 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
-                QLabel#modeBanner { background: #202a36; border: 1px solid #34475b; border-radius: 8px; padding: 12px; color: #dce9f7; }
+                QLabel#modeBanner { background: #202a36; border: 1px solid #34475b; border-radius: 8px; padding: 14px 16px; color: #dce9f7; font-family: "Inter"; font-size: 11pt; font-weight: 600; }
                 QLabel#welcomeSubtitle { color: #9eabb9; font-size: 11pt; }
                 QPushButton { background: #283443; color: #eaf1f8; border: 1px solid #3a4b5e; border-radius: 7px; padding: 8px 14px; min-height: 24px; }
                 QPushButton:hover { background: #34485e; border-color: #5486b8; }
@@ -1901,7 +1919,7 @@ class MainWindow(QMainWindow):
                 QCheckBox { spacing: 8px; }
                 QDialog#startupSplash { background: #171b22; }
                 QLabel#splashEyebrow { color: #78b9f2; font-size: 9pt; font-weight: 800; letter-spacing: 1px; }
-                QLabel#splashTitle { color: #f4f7fb; font-size: 23pt; font-weight: 800; }
+                QLabel#splashTitle { color: #f4f7fb; font-family: "Inter Tight"; font-size: 25pt; font-weight: 850; letter-spacing: -0.4px; }
                 QLabel#splashSubtitle { color: #aebdcb; font-size: 10pt; }
                 QFrame#splashCard { background: #202a36; border: 1px solid #34475b; border-radius: 12px; }
                 QLabel#splashCardTitle { color: #f4f7fb; font-size: 12pt; font-weight: 700; }
@@ -1909,7 +1927,7 @@ class MainWindow(QMainWindow):
                 QPushButton#splashAction, QPushButton#splashContinue { background: #24496b; border: 1px solid #3989d8; font-weight: 700; }
                 QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #315579; }
                 QToolTip { background: #202630; color: #ffffff; border: 1px solid #526174; }
-            """)
+            """.replace("{BODY_FONT}", self.body_font_family).replace("{HEADING_FONT}", self.heading_font_family))
         else:
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
@@ -1936,19 +1954,19 @@ class MainWindow(QMainWindow):
                 QFrame#toastNotification[kind="error"] { border-left: 4px solid #d94853; }
                 QLabel#toastMarker { color: #2675c9; font-size: 15pt; font-weight: 800; }
                 QLabel#toastText { color: #243449; font-size: 9pt; font-weight: 600; }
-                QLabel#workspaceTitle { color: #1d2b3a; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
-                QLabel#workspaceSubtitle { color: #596b7d; font-size: 9pt; }
-                QLabel#headerVehicle { background: #edf2f7; color: #24384c; border: 1px solid #cbd6e0; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
-                QLabel#headerOffline { background: #eef0f2; color: #596675; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
-                QLabel#headerOnline { background: #e1f4e9; color: #17633b; border: 1px solid #a6d7b8; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
-                QLabel#headerSimulation { background: #fff1d6; color: #80520b; border: 1px solid #e6c98d; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
-                QLabel#headerTraffic { color: #26394b; font-size: 10pt; font-weight: 700; padding: 4px 6px; }
+                QLabel#workspaceTitle { color: #172033; font-family: "Inter Tight"; font-size: 20pt; font-weight: 850; letter-spacing: 1.2px; }
+                QLabel#workspaceSubtitle { color: #596b7d; font-family: "Inter"; font-size: 9.5pt; font-weight: 500; }
+                QLabel#headerVehicle { background: #edf2f7; color: #24384c; border: 1px solid #cbd6e0; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 700; }
+                QLabel#headerOffline { background: #eef0f2; color: #596675; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
+                QLabel#headerOnline { background: #e1f4e9; color: #17633b; border: 1px solid #a6d7b8; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
+                QLabel#headerSimulation { background: #fff1d6; color: #80520b; border: 1px solid #e6c98d; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
+                QLabel#headerTraffic { color: #26394b; font-family: "Inter"; font-size: 10.5pt; font-weight: 700; padding: 4px 6px; }
                 QWidget#navigationRail { background: #f1f4f7; border: 1px solid #d5dde5; border-radius: 10px; }
                 QWidget#navigationSeparator { background: #d5dde5; max-height: 1px; }
                 QToolButton { background: transparent; color: #526273; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
                 QToolButton:hover { background: #e2eaf2; color: #1f3448; border-color: #c4d1de; }
                 QToolButton:checked { background: #dceaf7; color: #174b78; border: 1px solid #6a9dcc; }
-                QLabel#modeBanner { background: #edf3f8; border: 1px solid #cbd7e2; border-radius: 8px; padding: 12px; color: #26394b; }
+                QLabel#modeBanner { background: #edf3f8; border: 1px solid #cbd7e2; border-radius: 8px; padding: 14px 16px; color: #26394b; font-family: "Inter"; font-size: 11pt; font-weight: 600; }
                 QLabel#welcomeSubtitle { color: #647386; font-size: 11pt; }
                 QPushButton { border: 1px solid #c5ced8; border-radius: 7px; padding: 8px 14px; min-height: 24px; }
                 QPushButton#taskButton { text-align: left; font-size: 11pt; font-weight: 600; padding: 16px 18px; }
@@ -1959,7 +1977,7 @@ class MainWindow(QMainWindow):
                 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
                 QDialog#startupSplash { background: #f8fafc; }
                 QLabel#splashEyebrow { color: #2675c9; font-size: 9pt; font-weight: 800; letter-spacing: 1px; }
-                QLabel#splashTitle { color: #172033; font-size: 23pt; font-weight: 800; }
+                QLabel#splashTitle { color: #172033; font-family: "Inter Tight"; font-size: 25pt; font-weight: 850; letter-spacing: -0.4px; }
                 QLabel#splashSubtitle { color: #596b7d; font-size: 10pt; }
                 QFrame#splashCard { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
                 QLabel#splashCardTitle { color: #172033; font-size: 12pt; font-weight: 700; }
