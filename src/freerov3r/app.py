@@ -482,13 +482,19 @@ class ModulesTab(QWidget):
             for col, value in enumerate((dtc.code, dtc.description, dtc.status, dtc.severity)):
                 self.dtc_table.setItem(row, col, QTableWidgetItem(value))
 
+    def _require_vehicle(self):
+        vin = self.vin_provider()
+        if not vin:
+            QMessageBox.warning(self, "Vehicle not selected", "Add and select a vehicle by VIN in the Sensors tab before running or clearing diagnostics.")
+            return None
+        return vin
+
     def scan_selected(self):
         code = self._selected_code()
         if not self.simulation_enabled or not code:
             return
-        vin = self.vin_provider()
+        vin = self._require_vehicle()
         if not vin:
-            QMessageBox.warning(self, "Vehicle not selected", "Add and select a vehicle by VIN in the Sensors tab before recording diagnostic history.")
             return
         module = self.network.scan_module(code)
         self.result_log.appendPlainText(f"SCAN {code}: response received, {len(module.dtcs)} DTC(s).")
@@ -522,10 +528,13 @@ class ModulesTab(QWidget):
         row = self.dtc_table.currentRow()
         if not self.simulation_enabled or not code or row < 0 or not self.dtc_table.item(row, 0):
             return
+        vin = self._require_vehicle()
+        if not vin:
+            return
         dtc = self.dtc_table.item(row, 0).text()
         if self.network.clear_code(code, dtc):
             self.result_log.appendPlainText(f"CLEAR {code} {dtc}: removed from simulated module memory.")
-            self.history_callback("dtc_cleared", f"Cleared {dtc} from {code}", {"module": code, "dtc": dtc}, vin=self.vin_provider())
+            self.history_callback("dtc_cleared", f"Cleared {dtc} from {code}", {"module": code, "dtc": dtc}, vin=vin)
         self.refresh_tree()
         self.show_selected_module()
 
@@ -533,15 +542,21 @@ class ModulesTab(QWidget):
         code = self._selected_code()
         if not self.simulation_enabled or not code:
             return
+        vin = self._require_vehicle()
+        if not vin:
+            return
         before = [d.code for d in self.network.get_module(code).dtcs]
         count = self.network.clear_module(code)
         self.result_log.appendPlainText(f"CLEAR MODULE {code}: {count} simulated DTC(s) cleared.")
-        self.history_callback("module_dtcs_cleared", f"Cleared all DTCs from {code}", {"module": code, "dtcs_cleared": before}, vin=self.vin_provider())
+        self.history_callback("module_dtcs_cleared", f"Cleared all DTCs from {code}", {"module": code, "dtcs_cleared": before}, vin=vin)
         self.refresh_tree()
         self.show_selected_module()
 
     def clear_all(self):
         if not self.simulation_enabled:
+            return
+        vin = self._require_vehicle()
+        if not vin:
             return
         answer = QMessageBox.question(self, "Clear all simulated DTCs", "Remove every DTC from every simulated module?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
@@ -1165,7 +1180,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.receiver and self.receiver.isRunning():
-            self.receiver.stop()
+            self.toggle_capture()
         self.save_current_settings()
         event.accept()
 
