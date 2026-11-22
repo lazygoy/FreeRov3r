@@ -16,11 +16,12 @@ class CanIdStats:
 class CanMonitor:
     """Keep a bounded recent-frame window and lightweight traffic statistics."""
 
-    def __init__(self, capacity=20000, rate_window=2.0):
+    def __init__(self, capacity=20000, rate_window=2.0, max_ids=4096):
         if capacity < 1:
             raise ValueError("capacity must be at least 1")
         self.capacity = int(capacity)
         self.rate_window = float(rate_window)
+        self.max_ids = max(1, int(max_ids))
         self.frames = deque(maxlen=self.capacity)
         self.counts = Counter()
         self.last_seen = {}
@@ -44,6 +45,11 @@ class CanMonitor:
         self.frames.append(frame)
         self.total_received += 1
         key = (frame.arbitration_id, bool(frame.is_extended_id))
+        if key not in self.recent and len(self.recent) >= self.max_ids:
+            oldest = min(self.last_seen, key=self.last_seen.get)
+            self.recent.pop(oldest, None)
+            self.counts.pop(oldest, None)
+            self.last_seen.pop(oldest, None)
         self.counts[key] += 1
         self.last_seen[key] = now
         samples = self.recent.setdefault(key, deque())
