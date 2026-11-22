@@ -1761,6 +1761,14 @@ class MainWindow(QMainWindow):
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
+                QWidget#workspaceHeader { background: #202a36; border: 1px solid #354557; border-radius: 10px; }
+                QLabel#workspaceTitle { color: #ffffff; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
+                QLabel#workspaceSubtitle { color: #aebdcb; font-size: 9pt; }
+                QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
+                QLabel#headerOffline { background: #343b45; color: #c4ccd5; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerOnline { background: #173e30; color: #83e0b2; border: 1px solid #286849; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerSimulation { background: #4a391b; color: #ffd27c; border: 1px solid #80602b; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerTraffic { color: #dce9f7; font-size: 10pt; font-weight: 700; padding: 4px 6px; }
                 QWidget#navigationRail { background: #111720; border: 1px solid #2c3744; border-radius: 10px; }
                 QWidget#navigationSeparator { background: #344252; max-height: 1px; }
                 QToolButton { background: transparent; color: #aebdcb; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
@@ -1788,6 +1796,14 @@ class MainWindow(QMainWindow):
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QWidget#workspaceHeader { background: #ffffff; border: 1px solid #cbd6e0; border-radius: 10px; }
+                QLabel#workspaceTitle { color: #1d2b3a; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
+                QLabel#workspaceSubtitle { color: #596b7d; font-size: 9pt; }
+                QLabel#headerVehicle { background: #edf2f7; color: #24384c; border: 1px solid #cbd6e0; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
+                QLabel#headerOffline { background: #eef0f2; color: #596675; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerOnline { background: #e1f4e9; color: #17633b; border: 1px solid #a6d7b8; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerSimulation { background: #fff1d6; color: #80520b; border: 1px solid #e6c98d; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerTraffic { color: #26394b; font-size: 10pt; font-weight: 700; padding: 4px 6px; }
                 QWidget#navigationRail { background: #f1f4f7; border: 1px solid #d5dde5; border-radius: 10px; }
                 QWidget#navigationSeparator { background: #d5dde5; max-height: 1px; }
                 QToolButton { background: transparent; color: #526273; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
