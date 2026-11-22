@@ -45,16 +45,16 @@ class VinFrameDecoder:
             return _vin_from_payload(data[1:1 + length])
         if pci_type == 1 and len(data) >= 2:
             total = ((data[0] & 0x0F) << 8) | data[1]
-            self._pending[arbitration_id] = bytearray(data[2:])
-            self._pending[arbitration_id + 0x100000000] = total
+            self._pending[arbitration_id] = {
+                "total": total,
+                "buffer": bytearray(data[2:]),
+            }
             return None
         if pci_type == 2 and arbitration_id in self._pending:
-            buffer = self._pending[arbitration_id]
-            buffer.extend(data[1:])
-            total = self._pending.get(arbitration_id + 0x100000000, 0)
-            if len(buffer) >= total:
-                payload = bytes(buffer[:total])
+            pending = self._pending[arbitration_id]
+            pending["buffer"].extend(data[1:])
+            if len(pending["buffer"]) >= pending["total"]:
+                payload = bytes(pending["buffer"][:pending["total"]])
                 self._pending.pop(arbitration_id, None)
-                self._pending.pop(arbitration_id + 0x100000000, None)
                 return _vin_from_payload(payload)
         return None
