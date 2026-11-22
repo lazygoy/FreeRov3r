@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QL
 class QuickDrawer(QDockWidget):
     """Non-modal right-side panel for vehicle context and workspace navigation."""
     def __init__(self, parent, navigate):
-        super().__init__("Quick Nav", parent)
+        super().__init__("QUICK NAV", parent)
         self.setObjectName("quickDrawer")
         self.setAllowedAreas(Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
