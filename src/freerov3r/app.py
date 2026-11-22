@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
     QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
-    QDialog, QFrame,
+    QDialog, QFrame, QScrollArea,
 )
 
 try:
@@ -472,7 +472,7 @@ class ModulesTab(QWidget):
         split = QHBoxLayout()
         self.module_tree = QTreeWidget()
         self.module_tree.setHeaderLabels(["Category / module", "DTCs", "Last scan"])
-        self.module_tree.setMinimumWidth(390)
+        self.module_tree.setMinimumWidth(230)
         self.module_tree.itemSelectionChanged.connect(self.show_selected_module)
         split.addWidget(self.module_tree, 1)
 
@@ -976,7 +976,8 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("FreeRov3r | Vehicle Diagnostics")
         self.setWindowIcon(QIcon(str(ASSET_DIR / "brand_badge.svg")))
-        self.resize(1320, 860)
+        self.setMinimumSize(800, 600)
+        self.resize(1180, 760)
 
         self._build_ui()
         self._apply_settings()
@@ -1006,7 +1007,7 @@ class MainWindow(QMainWindow):
         welcome_brand.setObjectName("welcomeBrand")
         brand_pixmap = QPixmap(str(ASSET_DIR / "brand_splash.svg"))
         if not brand_pixmap.isNull():
-            welcome_brand.setPixmap(brand_pixmap.scaled(760, 350, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            welcome_brand.setPixmap(brand_pixmap.scaled(600, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             welcome_brand.setAlignment(Qt.AlignCenter)
             wlayout.addWidget(welcome_brand)
 
@@ -1083,8 +1084,8 @@ class MainWindow(QMainWindow):
         self._build_navigation_workspace()
         self.quick_drawer = QuickDrawer(self, self._navigate_to_tab)
         self.addDockWidget(Qt.RightDockWidgetArea, self.quick_drawer)
-        self.quick_drawer.setMinimumWidth(250)
-        self.quick_drawer.setMaximumWidth(310)
+        self.quick_drawer.setMinimumWidth(180)
+        self.quick_drawer.setMaximumWidth(260)
         self.quick_drawer.show()
         self.quick_drawer.set_current_workspace(self.tabs.tabText(self.tabs.currentIndex()))
         self.toast_manager = ToastManager(self)
@@ -1158,7 +1159,15 @@ class MainWindow(QMainWindow):
         content_row.setSpacing(10)
         content_row.addWidget(self.tabs, 1)
         outer_layout.addLayout(content_row, 1)
-        self.stack.addWidget(workspace)
+        # Keep all workspace controls reachable on short or narrow displays.
+        workspace.setMinimumSize(0, 0)
+        self.workspace_scroll = QScrollArea()
+        self.workspace_scroll.setWidgetResizable(True)
+        self.workspace_scroll.setFrameShape(QFrame.NoFrame)
+        self.workspace_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.workspace_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.workspace_scroll.setWidget(workspace)
+        self.stack.addWidget(self.workspace_scroll)
         self.stack.setCurrentIndex(1)
         self.tabs.currentChanged.connect(self._sync_navigation_selection)
         self._sync_navigation_selection(self.tabs.currentIndex())
@@ -1247,7 +1256,7 @@ class MainWindow(QMainWindow):
         dialog.setObjectName("startupSplash")
         dialog.setWindowTitle("Welcome to FreeRov3r")
         dialog.setWindowModality(Qt.ApplicationModal)
-        dialog.setMinimumSize(760, 520)
+        dialog.setMinimumSize(600, 420)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(30, 26, 30, 24)
         layout.setSpacing(14)
