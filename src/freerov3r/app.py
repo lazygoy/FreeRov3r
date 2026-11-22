@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QGroupBox,
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
-    QTreeWidget, QTreeWidgetItem, QGridLayout,
+    QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
 )
 
 try:
@@ -1015,10 +1015,8 @@ class MainWindow(QMainWindow):
 
         # Tabs
         self.tabs = QTabWidget()
-        self.tabs.setTabPosition(QTabWidget.West)
         self.tabs.setDocumentMode(True)
         self.tabs.setMovable(False)
-        self.stack.addWidget(self.tabs)
 
         self._build_capture_tab()
         self._build_sensors_tab()
@@ -1053,6 +1051,69 @@ class MainWindow(QMainWindow):
         self.history_tab = VehicleHistoryTab(self.history_store)
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
+        self._build_navigation_workspace()
+
+    def _build_navigation_workspace(self):
+        """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
+        self.tabs.tabBar().hide()
+        workspace = QWidget()
+        layout = QHBoxLayout(workspace)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        rail = QWidget()
+        rail.setObjectName("navigationRail")
+        rail.setFixedWidth(112)
+        rail_layout = QVBoxLayout(rail)
+        rail_layout.setContentsMargins(4, 8, 4, 8)
+        rail_layout.setSpacing(6)
+
+        home = QToolButton()
+        home.setText("⌂\nHome")
+        home.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        home.setCheckable(False)
+        home.setMinimumHeight(66)
+        home.setToolTip("Return to the task launcher")
+        home.clicked.connect(lambda: self.stack.setCurrentIndex(0))
+        rail_layout.addWidget(home)
+
+        separator = QWidget()
+        separator.setFixedHeight(1)
+        separator.setObjectName("navigationSeparator")
+        rail_layout.addWidget(separator)
+
+        self.navigation_group = QButtonGroup(self)
+        self.navigation_group.setExclusive(True)
+        self.navigation_buttons = []
+        glyphs = {
+            "Capture": "⌁", "Sensors": "◉", "Graph": "▥", "OBD-II": "◫",
+            "Modules": "▦", "Network": "⌘", "Solutions": "✦",
+            "Vehicle History": "◷", "Settings": "⚙",
+        }
+        display_labels = {"Vehicle History": "History"}
+        for index in range(self.tabs.count()):
+            label = self.tabs.tabText(index)
+            button = QToolButton()
+            button.setText(f"{glyphs.get(label, '◇')}\n{display_labels.get(label, label)}")
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            button.setCheckable(True)
+            button.setMinimumHeight(68)
+            button.setToolTip(f"Open {label}")
+            button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
+            self.navigation_group.addButton(button, index)
+            self.navigation_buttons.append(button)
+            rail_layout.addWidget(button)
+
+        rail_layout.addStretch(1)
+        layout.addWidget(rail)
+        layout.addWidget(self.tabs, 1)
+        self.stack.addWidget(workspace)
+        self.tabs.currentChanged.connect(self._sync_navigation_selection)
+        self._sync_navigation_selection(self.tabs.currentIndex())
+
+    def _sync_navigation_selection(self, index):
+        if 0 <= index < len(getattr(self, "navigation_buttons", [])):
+            self.navigation_buttons[index].setChecked(True)
 
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
         vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
@@ -1621,6 +1682,11 @@ class MainWindow(QMainWindow):
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
+                QWidget#navigationRail { background: #111720; border: 1px solid #2c3744; border-radius: 10px; }
+                QWidget#navigationSeparator { background: #344252; max-height: 1px; }
+                QToolButton { background: transparent; color: #aebdcb; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
+                QToolButton:hover { background: #263342; color: #ffffff; border-color: #3b5269; }
+                QToolButton:checked { background: #24496b; color: #ffffff; border: 1px solid #3989d8; }
                 QGroupBox { border: 1px solid #303a47; border-radius: 8px; margin-top: 12px; padding: 12px; font-weight: 600; }
                 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
                 QLabel#modeBanner { background: #202a36; border: 1px solid #34475b; border-radius: 8px; padding: 12px; color: #dce9f7; }
@@ -1643,6 +1709,11 @@ class MainWindow(QMainWindow):
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QWidget#navigationRail { background: #f1f4f7; border: 1px solid #d5dde5; border-radius: 10px; }
+                QWidget#navigationSeparator { background: #d5dde5; max-height: 1px; }
+                QToolButton { background: transparent; color: #526273; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
+                QToolButton:hover { background: #e2eaf2; color: #1f3448; border-color: #c4d1de; }
+                QToolButton:checked { background: #dceaf7; color: #174b78; border: 1px solid #6a9dcc; }
                 QLabel#modeBanner { background: #edf3f8; border: 1px solid #cbd7e2; border-radius: 8px; padding: 12px; color: #26394b; }
                 QLabel#welcomeSubtitle { color: #647386; font-size: 11pt; }
                 QPushButton { border: 1px solid #c5ced8; border-radius: 7px; padding: 8px 14px; min-height: 24px; }
