@@ -36,3 +36,14 @@ def test_filter_supports_exact_id_ranges_and_frame_format():
     assert not CanMonitor.matches(standard, "700-7FF", "Extended")
     assert CanMonitor.matches(extended, "18DAF000-18DAFFFF", "Extended")
     assert not CanMonitor.matches(extended, "not-an-id")
+
+
+def test_same_numeric_id_is_tracked_separately_by_frame_format():
+    monitor = CanMonitor(rate_window=2)
+    monitor.add(frame(0x123, extended=False), now=4.0)
+    monitor.add(frame(0x123, extended=True), now=4.5)
+    stats = monitor.id_stats(now=4.5)
+    assert len(stats) == 2
+    assert {(item.arbitration_id, item.extended) for item in stats} == {
+        (0x123, False), (0x123, True)
+    }
