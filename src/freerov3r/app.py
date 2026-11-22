@@ -762,6 +762,8 @@ class MainWindow(QMainWindow):
             self.rate_label.setText(f"Rate: {rate:.1f} fps")
             self.last_rate_count = self.frame_counter
             self.last_rate_time = now
+            if self.tabs.currentWidget() is self.graph_tab and self.sensor_capture.samples:
+                self.graph_tab.update_chart()
 
     def export_capture(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export", "capture.csv", "CSV (*.csv);;candump (*.log)")
