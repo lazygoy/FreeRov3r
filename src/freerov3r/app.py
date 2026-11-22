@@ -1057,10 +1057,44 @@ class MainWindow(QMainWindow):
         """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
         self.tabs.tabBar().hide()
         workspace = QWidget()
-        layout = QHBoxLayout(workspace)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        outer_layout = QVBoxLayout(workspace)
+        outer_layout.setContentsMargins(12, 10, 12, 12)
+        outer_layout.setSpacing(10)
 
+        # Persistent instrument header: the key context stays visible on every page.
+        header = QWidget()
+        header.setObjectName("workspaceHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 10, 16, 10)
+        header_layout.setSpacing(18)
+
+        title_column = QVBoxLayout()
+        title_column.setSpacing(2)
+        self.workspace_title = QLabel("Capture")
+        self.workspace_title.setObjectName("workspaceTitle")
+        self.workspace_subtitle = QLabel("Passive vehicle diagnostics and CAN monitoring")
+        self.workspace_subtitle.setObjectName("workspaceSubtitle")
+        title_column.addWidget(self.workspace_title)
+        title_column.addWidget(self.workspace_subtitle)
+        header_layout.addLayout(title_column, 1)
+
+        self.header_vehicle = QLabel("NO VEHICLE SELECTED")
+        self.header_vehicle.setObjectName("headerVehicle")
+        self.header_vehicle.setToolTip("Select or identify a vehicle in the Sensors workspace.")
+        header_layout.addWidget(self.header_vehicle)
+
+        self.header_connection = QLabel("● OFFLINE")
+        self.header_connection.setObjectName("headerOffline")
+        header_layout.addWidget(self.header_connection)
+
+        self.header_traffic = QLabel("0 frames  |  0.0 fps")
+        self.header_traffic.setObjectName("headerTraffic")
+        header_layout.addWidget(self.header_traffic)
+
+        outer_layout.addWidget(header)
+
+        content_row = QHBoxLayout()
+        content_row.setSpacing(10)
         rail = QWidget()
         rail.setObjectName("navigationRail")
         rail.setFixedWidth(112)
@@ -1105,8 +1139,9 @@ class MainWindow(QMainWindow):
             rail_layout.addWidget(button)
 
         rail_layout.addStretch(1)
-        layout.addWidget(rail)
-        layout.addWidget(self.tabs, 1)
+        content_row.addWidget(rail)
+        content_row.addWidget(self.tabs, 1)
+        outer_layout.addLayout(content_row, 1)
         self.stack.addWidget(workspace)
         self.tabs.currentChanged.connect(self._sync_navigation_selection)
         self._sync_navigation_selection(self.tabs.currentIndex())
@@ -1114,6 +1149,46 @@ class MainWindow(QMainWindow):
     def _sync_navigation_selection(self, index):
         if 0 <= index < len(getattr(self, "navigation_buttons", [])):
             self.navigation_buttons[index].setChecked(True)
+        if hasattr(self, "workspace_title") and 0 <= index < self.tabs.count():
+            title = self.tabs.tabText(index)
+            self.workspace_title.setText(title.upper())
+            descriptions = {
+                "Capture": "Live CAN traffic, interface status and recording controls",
+                "Sensors": "Vehicle identity and recorded sensor measurements",
+                "Graph": "Compare sensor trends and operating ranges",
+                "OBD-II": "Standard diagnostic parameters and trouble codes",
+                "Modules": "Module-level diagnostic workspace",
+                "Network": "Vehicle network overview and module status",
+                "Solutions": "Review diagnostic evidence and analysis notes",
+                "Vehicle History": "Previous captures and vehicle-specific events",
+                "Settings": "Connection, display and logging configuration",
+            }
+            self.workspace_subtitle.setText(descriptions.get(title, "Vehicle diagnostics workspace"))
+        self._refresh_workspace_header()
+
+    def _refresh_workspace_header(self):
+        if not hasattr(self, "header_vehicle"):
+            return
+        vin = self.settings.get("current_vin")
+        vehicles = self.settings.get("vehicles", {})
+        nickname = vehicles.get(vin, {}).get("nickname", "") if vin else ""
+        vehicle_text = f"{nickname}  |  {vin}" if nickname and vin else (vin or "NO VEHICLE SELECTED")
+        self.header_vehicle.setText(vehicle_text)
+        running = bool(self.receiver and self.receiver.isRunning())
+        if running:
+            if self.active_interface == "simulator":
+                self.header_connection.setText("● SIMULATION")
+                self.header_connection.setObjectName("headerSimulation")
+            else:
+                self.header_connection.setText("● LISTENING")
+                self.header_connection.setObjectName("headerOnline")
+        else:
+            self.header_connection.setText("● OFFLINE")
+            self.header_connection.setObjectName("headerOffline")
+        self.header_connection.style().unpolish(self.header_connection)
+        self.header_connection.style().polish(self.header_connection)
+        rate = self.can_monitor.rate()
+        self.header_traffic.setText(f"{self.frame_counter:,} frames  |  {rate:.1f} fps")
 
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
         vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
@@ -1446,6 +1521,7 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "graph_tab"):
             self.graph_tab.set_vehicle_vin(vin)
+        self._refresh_workspace_header()
 
 
     def _apply_detected_vin(self, vin):
@@ -1509,6 +1585,7 @@ class MainWindow(QMainWindow):
             self.receiver = None
             self.connect_btn.setText("Start listening")
             self.status.setText("Disconnected")
+            self._refresh_workspace_header()
             return
 
         data = self.backend.currentData()
@@ -1554,6 +1631,7 @@ class MainWindow(QMainWindow):
                 break
         self.settings_channel.setText(channel)
         self.settings_bitrate.setCurrentText(str(bitrate))
+        self._refresh_workspace_header()
 
     def on_frame(self, frame):
         detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
@@ -1599,6 +1677,7 @@ class MainWindow(QMainWindow):
             rate = (self.frame_counter - self.last_rate_count) / elapsed
             rolling_rate = self.can_monitor.rate()
             self.rate_label.setText(f"Rate: {rate:.1f} fps | Rolling: {rolling_rate:.1f} fps")
+            self._refresh_workspace_header()
             top_ids = self.can_monitor.id_stats()[:5]
             summary = " | ".join(
                 f"{item.arbitration_id:08X}{'X' if item.extended else 'S'}: {item.frames_per_second:.1f}/s"
@@ -1682,6 +1761,14 @@ class MainWindow(QMainWindow):
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
+                QWidget#workspaceHeader { background: #202a36; border: 1px solid #354557; border-radius: 10px; }
+                QLabel#workspaceTitle { color: #ffffff; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
+                QLabel#workspaceSubtitle { color: #aebdcb; font-size: 9pt; }
+                QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
+                QLabel#headerOffline { background: #343b45; color: #c4ccd5; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerOnline { background: #173e30; color: #83e0b2; border: 1px solid #286849; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerSimulation { background: #4a391b; color: #ffd27c; border: 1px solid #80602b; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerTraffic { color: #dce9f7; font-size: 10pt; font-weight: 700; padding: 4px 6px; }
                 QWidget#navigationRail { background: #111720; border: 1px solid #2c3744; border-radius: 10px; }
                 QWidget#navigationSeparator { background: #344252; max-height: 1px; }
                 QToolButton { background: transparent; color: #aebdcb; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
@@ -1709,6 +1796,14 @@ class MainWindow(QMainWindow):
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QWidget#workspaceHeader { background: #ffffff; border: 1px solid #cbd6e0; border-radius: 10px; }
+                QLabel#workspaceTitle { color: #1d2b3a; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
+                QLabel#workspaceSubtitle { color: #596b7d; font-size: 9pt; }
+                QLabel#headerVehicle { background: #edf2f7; color: #24384c; border: 1px solid #cbd6e0; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
+                QLabel#headerOffline { background: #eef0f2; color: #596675; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerOnline { background: #e1f4e9; color: #17633b; border: 1px solid #a6d7b8; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerSimulation { background: #fff1d6; color: #80520b; border: 1px solid #e6c98d; border-radius: 6px; padding: 8px 10px; font-weight: 700; }
+                QLabel#headerTraffic { color: #26394b; font-size: 10pt; font-weight: 700; padding: 4px 6px; }
                 QWidget#navigationRail { background: #f1f4f7; border: 1px solid #d5dde5; border-radius: 10px; }
                 QWidget#navigationSeparator { background: #d5dde5; max-height: 1px; }
                 QToolButton { background: transparent; color: #526273; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
