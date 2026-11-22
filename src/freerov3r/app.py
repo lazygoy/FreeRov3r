@@ -564,7 +564,7 @@ class ModulesTab(QWidget):
         before = {m.code: [d.code for d in m.dtcs] for m in self.network.modules if m.dtcs}
         count = self.network.clear_all()
         self.result_log.appendPlainText(f"CLEAR ALL: {count} simulated DTC(s) removed.")
-        self.history_callback("all_dtcs_cleared", "Cleared all simulated DTCs", {"dtcs_by_module": before, "total_cleared": count}, vin=self.vin_provider())
+        self.history_callback("all_dtcs_cleared", "Cleared all simulated DTCs", {"dtcs_by_module": before, "total_cleared": count}, vin=vin)
         self.refresh_tree()
         self.show_selected_module()
 
