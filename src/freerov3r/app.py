@@ -1532,7 +1532,7 @@ class MainWindow(QMainWindow):
             self.rate_label.setText(f"Rate: {rate:.1f} fps | Rolling: {rolling_rate:.1f} fps")
             top_ids = self.can_monitor.id_stats()[:5]
             summary = " | ".join(
-                f"{item.arbitration_id:08X}: {item.frames_per_second:.1f}/s"
+                f"{item.arbitration_id:08X}{'X' if item.extended else 'S'}: {item.frames_per_second:.1f}/s"
                 for item in top_ids
             ) or "no recent traffic"
             self.monitor_summary.setText(
