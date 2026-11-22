@@ -7,7 +7,8 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
-from PySide6.QtGui import QPalette, QColor, QFont, QFontDatabase, QPainter, QBrush, QIcon, QPixmap
+from PySide6.QtGui import QPalette, QColor, QFont, QFontDatabase, QPainter, QBrush, QIcon, QPixmap, QDesktopServices
+from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QLabel, QMainWindow,
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
@@ -1587,6 +1588,14 @@ class MainWindow(QMainWindow):
         credit.setTextFormat(Qt.RichText)
         credit.setTextInteractionFlags(Qt.TextBrowserInteraction)
         layout.addWidget(credit)
+
+        support_btn = QPushButton("☕  Buy Me a Coffee")
+        support_btn.setObjectName("supportButton")
+        support_btn.setToolTip("Support FreeRov3r development")
+        support_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://www.buymeacoffee.com/lazygoy"))
+        )
+        layout.addWidget(support_btn)
 
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.accept)
