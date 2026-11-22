@@ -27,7 +27,6 @@ class CanMonitor:
         self.recent = {}
         self.total_received = 0
         self.dropped_from_buffer = 0
-        self._last_format = {}
 
     def reset(self):
         self.frames.clear()
@@ -36,7 +35,6 @@ class CanMonitor:
         self.recent.clear()
         self.total_received = 0
         self.dropped_from_buffer = 0
-        self._last_format.clear()
 
     def add(self, frame: CanFrame, now=None):
         import time
@@ -45,10 +43,9 @@ class CanMonitor:
             self.dropped_from_buffer += 1
         self.frames.append(frame)
         self.total_received += 1
-        key = frame.arbitration_id
+        key = (frame.arbitration_id, bool(frame.is_extended_id))
         self.counts[key] += 1
         self.last_seen[key] = now
-        self._last_format[key] = bool(frame.is_extended_id)
         samples = self.recent.setdefault(key, deque())
         samples.append(now)
         cutoff = now - self.rate_window
@@ -71,16 +68,16 @@ class CanMonitor:
         now = time.monotonic() if now is None else float(now)
         cutoff = now - self.rate_window
         result = []
-        for arbitration_id, samples in self.recent.items():
+        for (arbitration_id, extended), samples in self.recent.items():
             while samples and samples[0] < cutoff:
                 samples.popleft()
             if samples:
                 result.append(CanIdStats(
                     arbitration_id=arbitration_id,
-                    extended=self._last_format.get(arbitration_id, False),
-                    count=self.counts[arbitration_id],
+                    extended=extended,
+                    count=self.counts[(arbitration_id, extended)],
                     frames_per_second=len(samples) / self.rate_window,
-                    last_seen=self.last_seen[arbitration_id],
+                    last_seen=self.last_seen[(arbitration_id, extended)],
                 ))
         return sorted(result, key=lambda item: (-item.frames_per_second, item.arbitration_id))
 
