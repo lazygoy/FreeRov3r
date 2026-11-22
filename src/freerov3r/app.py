@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
     QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
+    QDialog, QFrame,
 )
 
 try:
@@ -50,6 +51,7 @@ DEFAULT_SETTINGS = {
     "current_vin": None,
     "auto_refresh_graph": True,
     "graph_refresh_ms": 1000,
+    "show_startup_splash": True,
 }
 
 # Common OBD-II PIDs (Mode 01)
@@ -247,8 +249,7 @@ class SensorGraphTab(QWidget):
         self.sensor_list.blockSignals(False)
         if HAS_CHARTS:
             self.update_chart()
-        elif hasattr(self, "placeholder"):
-            self.placeholder.setPlainText(
+        elif hasattr(self, "placeholder"):            self.placeholder.setPlainText(
                 f"{len(self.sensor_capture.samples)} samples loaded.\n{len(seen)} unique sensors."
             )
 
@@ -498,7 +499,6 @@ class ModulesTab(QWidget):
         self.current_module_code = None
         self.refresh_tree()
         self.dtc_table.setRowCount(0)
-
     def set_simulation_enabled(self, enabled: bool):
         self.simulation_enabled = bool(enabled)
         for control in (self.scan_one_btn, self.scan_all_btn, self.clear_module_btn, self.clear_all_btn, self.clear_code_btn):
@@ -747,8 +747,7 @@ class VehicleHistoryTab(QWidget):
     def refresh_events(self):
         self.events_tree.clear()
         selected_vin = self.vin_filter.currentData()
-        events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
-        for event in reversed(events):
+        events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)        for event in reversed(events):
             timestamp = event.get("timestamp", "")
             item = QTreeWidgetItem([
                 timestamp.replace("T", " "),
@@ -997,8 +996,7 @@ class MainWindow(QMainWindow):
         task_grid = QGridLayout()
         task_grid.setSpacing(12)
         tasks = [
-            ("Pull diagnostic codes (DTCs)", self.show_dtc_mode),
-            ("Read OBD-II data", self.show_obd_mode),
+            ("Pull diagnostic codes (DTCs)", self.show_dtc_mode),            ("Read OBD-II data", self.show_obd_mode),
             ("Collect sensor data", self.show_sensor_mode),
             ("Graph sensor data", self.show_graph_mode),
             ("Read vehicle information", self.show_vehicle_info_mode),
@@ -1055,7 +1053,9 @@ class MainWindow(QMainWindow):
         self._build_navigation_workspace()
         self.quick_drawer = QuickDrawer(self, self._navigate_to_tab)
         self.addDockWidget(Qt.RightDockWidgetArea, self.quick_drawer)
-        self.quick_drawer.hide()
+        self.quick_drawer.setMinimumWidth(260)
+        self.quick_drawer.setMaximumWidth(340)
+        self.quick_drawer.show()
         self.toast_manager = ToastManager(self)
 
     def _build_navigation_workspace(self):
@@ -1107,60 +1107,14 @@ class MainWindow(QMainWindow):
 
         content_row = QHBoxLayout()
         content_row.setSpacing(10)
-        rail = QWidget()
-        rail.setObjectName("navigationRail")
-        rail.setFixedWidth(112)
-        rail_layout = QVBoxLayout(rail)
-        rail_layout.setContentsMargins(4, 8, 4, 8)
-        rail_layout.setSpacing(6)
-
-        home = QToolButton()
-        home.setText("⌂\nHome")
-        home.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        home.setCheckable(False)
-        home.setMinimumHeight(66)
-        home.setToolTip("Return to the task launcher")
-        home.clicked.connect(lambda: self.stack.setCurrentIndex(0))
-        rail_layout.addWidget(home)
-
-        separator = QWidget()
-        separator.setFixedHeight(1)
-        separator.setObjectName("navigationSeparator")
-        rail_layout.addWidget(separator)
-
-        self.navigation_group = QButtonGroup(self)
-        self.navigation_group.setExclusive(True)
-        self.navigation_buttons = []
-        glyphs = {
-            "Capture": "⌁", "Sensors": "◉", "Graph": "▥", "OBD-II": "◫",
-            "Modules": "▦", "Network": "⌘", "Solutions": "✦",
-            "Vehicle History": "◷", "Settings": "⚙",
-        }
-        display_labels = {"Vehicle History": "History"}
-        for index in range(self.tabs.count()):
-            label = self.tabs.tabText(index)
-            button = QToolButton()
-            button.setText(f"{glyphs.get(label, '◇')}\n{display_labels.get(label, label)}")
-            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-            button.setCheckable(True)
-            button.setMinimumHeight(68)
-            button.setToolTip(f"Open {label}")
-            button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
-            self.navigation_group.addButton(button, index)
-            self.navigation_buttons.append(button)
-            rail_layout.addWidget(button)
-
-        rail_layout.addStretch(1)
-        content_row.addWidget(rail)
         content_row.addWidget(self.tabs, 1)
         outer_layout.addLayout(content_row, 1)
         self.stack.addWidget(workspace)
+        self.stack.setCurrentIndex(1)
         self.tabs.currentChanged.connect(self._sync_navigation_selection)
         self._sync_navigation_selection(self.tabs.currentIndex())
 
     def _sync_navigation_selection(self, index):
-        if 0 <= index < len(getattr(self, "navigation_buttons", [])):
-            self.navigation_buttons[index].setChecked(True)
         if hasattr(self, "workspace_title") and 0 <= index < self.tabs.count():
             title = self.tabs.tabText(index)
             self.workspace_title.setText(title.upper())
@@ -1176,6 +1130,8 @@ class MainWindow(QMainWindow):
                 "Settings": "Connection, display and logging configuration",
             }
             self.workspace_subtitle.setText(descriptions.get(title, "Vehicle diagnostics workspace"))
+            if hasattr(self, "quick_drawer"):
+                self.quick_drawer.set_current_workspace(title)
         self._refresh_workspace_header()
 
     def toggle_quick_drawer(self):
@@ -1183,6 +1139,11 @@ class MainWindow(QMainWindow):
             self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
 
     def _navigate_to_tab(self, name):
+        if name == "Home":
+            self.stack.setCurrentIndex(0)
+            if hasattr(self, "quick_drawer"):
+                self.quick_drawer.set_current_workspace("Home")
+            return
         for index in range(self.tabs.count()):
             if self.tabs.tabText(index) == name:
                 self.tabs.setCurrentIndex(index)
@@ -1230,6 +1191,90 @@ class MainWindow(QMainWindow):
         if hasattr(self, "solutions_tab"):
             self.solutions_tab.refresh()
 
+    def show_startup_splash_if_enabled(self):
+        if not self.settings.get("show_startup_splash", True):
+            return
+        dialog = QDialog(self)
+        dialog.setObjectName("startupSplash")
+        dialog.setWindowTitle("Welcome to FreeRov3r")
+        dialog.setWindowModality(Qt.ApplicationModal)
+        dialog.setMinimumSize(760, 520)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 26, 30, 24)
+        layout.setSpacing(14)
+        eyebrow = QLabel("FREEROV3R  /  VEHICLE DIAGNOSTICS")
+        eyebrow.setObjectName("splashEyebrow")
+        layout.addWidget(eyebrow)
+        title = QLabel("What would you like to do?")
+        title.setObjectName("splashTitle")
+        layout.addWidget(title)
+        subtitle = QLabel(
+            "Start with a simple task. You can switch workspaces at any time "
+            "using Quick Nav on the right."
+        )
+        subtitle.setObjectName("splashSubtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+        grid = QGridLayout()
+        grid.setSpacing(12)
+        choices = [
+            ("Connect to a vehicle", "Choose your adapter and passively monitor vehicle traffic.",
+             "Open capture", lambda: self._navigate_to_tab("Capture")),
+            ("Try the simulator", "Start a clearly labeled demo using synthetic vehicle data. No hardware required.",
+             "Start demo", self._start_simulator_demo),
+            ("Explore sample modules", "Browse example module categories and sample faults. These are test fixtures, not a real scan.",
+             "View sample modules", lambda: self._navigate_to_tab("Modules")),
+            ("Open the full workspace", "Go straight to the complete set of diagnostic, graphing and history tools.",
+             "Open workspace", lambda: self._navigate_to_tab("Capture")),
+        ]
+        for index, (heading, description, action_text, action) in enumerate(choices):
+            card = QFrame()
+            card.setObjectName("splashCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(16, 14, 16, 14)
+            card_layout.setSpacing(8)
+            heading_label = QLabel(heading)
+            heading_label.setObjectName("splashCardTitle")
+            card_layout.addWidget(heading_label)
+            detail = QLabel(description)
+            detail.setObjectName("splashCardText")
+            detail.setWordWrap(True)
+            card_layout.addWidget(detail, 1)
+            action_button = QPushButton(action_text)
+            action_button.setObjectName("splashAction")
+            action_button.setMinimumHeight(38)
+            action_button.clicked.connect(
+                lambda checked=False, callback=action: (dialog.accept(), callback())
+            )
+            card_layout.addWidget(action_button)
+            grid.addWidget(card, index // 2, index % 2)
+        layout.addLayout(grid, 1)
+        footer = QHBoxLayout()
+        self.splash_skip_checkbox = QCheckBox("Don't show this welcome screen at startup")
+        self.splash_skip_checkbox.toggled.connect(self._set_startup_splash_preference)
+        footer.addWidget(self.splash_skip_checkbox)
+        footer.addStretch(1)
+        close_button = QPushButton("Continue to workspace")
+        close_button.setObjectName("splashContinue")
+        close_button.clicked.connect(dialog.accept)
+        footer.addWidget(close_button)
+        layout.addLayout(footer)
+        dialog.exec()
+
+    def _set_startup_splash_preference(self, skip_splash):
+        self.settings["show_startup_splash"] = not skip_splash
+        save_settings(self.settings)
+
+    def _start_simulator_demo(self):
+        for index in range(self.backend.count()):
+            data = self.backend.itemData(index)
+            if data and data[0] == "simulator":
+                self.backend.setCurrentIndex(index)
+                self.channel_edit.setCurrentText(data[1])
+                self._navigate_to_tab("Capture")
+                self.toggle_capture()
+                return
+
     def _build_capture_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -1247,7 +1292,6 @@ class MainWindow(QMainWindow):
         self.backend.addItem("SLCAN", ("slcan", "COM3"))
         controls.addWidget(QLabel("Connection:"))
         controls.addWidget(self.backend)
-
         self.channel_edit = QComboBox()
         self.channel_edit.setEditable(True)
         self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
@@ -1497,8 +1541,7 @@ class MainWindow(QMainWindow):
         vehicles = self.settings.get("vehicles", {})
         for vin, info in sorted(vehicles.items()):
             nick = info.get("nickname", "")
-            self.vehicle_list.addItem(f"{vin}  —  {nick}" if nick else vin)
-        current = self.settings.get("current_vin")
+            self.vehicle_list.addItem(f"{vin}  —  {nick}" if nick else vin)        current = self.settings.get("current_vin")
         if current and current in vehicles:
             nick = vehicles[current].get("nickname", "")
             self.current_vehicle_label.setText(f"Current: {current} ({nick})" if nick else f"Current: {current}")
@@ -1747,7 +1790,6 @@ class MainWindow(QMainWindow):
                 f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
             )
         self.log.setPlainText("\n".join(rows[-self.settings.get("max_log_lines", 5000):]))
-
     def clear_capture_display(self):
         """Clear the recent monitor window and visible log; exported session remains intact."""
         self.can_monitor.reset()
@@ -1849,6 +1891,15 @@ class MainWindow(QMainWindow):
                 QTabBar::tab:selected { background: #293b4e; color: #ffffff; border-left: 3px solid #3989d8; font-weight: 600; }
                 QHeaderView::section { background: #252e39; color: #dce4ed; border: 0; border-bottom: 1px solid #3a4654; padding: 7px; }
                 QCheckBox { spacing: 8px; }
+                QDialog#startupSplash { background: #171b22; }
+                QLabel#splashEyebrow { color: #78b9f2; font-size: 9pt; font-weight: 800; letter-spacing: 1px; }
+                QLabel#splashTitle { color: #f4f7fb; font-size: 23pt; font-weight: 800; }
+                QLabel#splashSubtitle { color: #aebdcb; font-size: 10pt; }
+                QFrame#splashCard { background: #202a36; border: 1px solid #34475b; border-radius: 12px; }
+                QLabel#splashCardTitle { color: #f4f7fb; font-size: 12pt; font-weight: 700; }
+                QLabel#splashCardText { color: #aebdcb; font-size: 9pt; }
+                QPushButton#splashAction, QPushButton#splashContinue { background: #24496b; border: 1px solid #3989d8; font-weight: 700; }
+                QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #315579; }
                 QToolTip { background: #202630; color: #ffffff; border: 1px solid #526174; }
             """)
         else:
@@ -1898,6 +1949,15 @@ class MainWindow(QMainWindow):
                 QTabBar::tab:selected { font-weight: 600; border-left: 3px solid #2675c9; }
                 QGroupBox { border: 1px solid #cbd3dc; border-radius: 8px; margin-top: 12px; padding: 12px; }
                 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+                QDialog#startupSplash { background: #f8fafc; }
+                QLabel#splashEyebrow { color: #2675c9; font-size: 9pt; font-weight: 800; letter-spacing: 1px; }
+                QLabel#splashTitle { color: #172033; font-size: 23pt; font-weight: 800; }
+                QLabel#splashSubtitle { color: #596b7d; font-size: 10pt; }
+                QFrame#splashCard { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
+                QLabel#splashCardTitle { color: #172033; font-size: 12pt; font-weight: 700; }
+                QLabel#splashCardText { color: #596b7d; font-size: 9pt; }
+                QPushButton#splashAction, QPushButton#splashContinue { background: #e8f2fc; color: #174b78; border: 1px solid #9bbfe2; font-weight: 700; }
+                QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #d9eafa; }
             """)
 
     def save_current_settings(self):
@@ -1935,6 +1995,7 @@ def main():
     app.setStyle("Fusion")
     window = MainWindow()
     window.show()
+    QTimer.singleShot(0, window.show_startup_splash_if_enabled)
     sys.exit(app.exec())
 
 
