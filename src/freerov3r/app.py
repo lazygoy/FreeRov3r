@@ -1269,15 +1269,15 @@ class MainWindow(QMainWindow):
         if vin and vin in vehicles:
             ctx = {"vin": vin, "nickname": vehicles[vin].get("nickname", "")}
         self.sensor_capture.vehicle_context = ctx
+
         if vin and hasattr(self, "modules_tab"):
             network = self.module_networks.setdefault(vin, SimulatedModuleNetwork())
             self.modules_tab.set_network(network)
-        if hasattr(self, "graph_tab"):
-            self.graph_tab.set_vehicle_vin(vin)
             if hasattr(self, "network_tab"):
                 self.network_tab.set_network(network)
             if hasattr(self, "solutions_tab"):
                 self.solutions_tab.set_network(network)
+
         if hasattr(self, "graph_tab"):
             self.graph_tab.set_vehicle_vin(vin)
 
