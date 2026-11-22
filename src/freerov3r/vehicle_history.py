@@ -39,6 +39,16 @@ class VehicleHistoryStore:
         temporary.write_text(json.dumps(self.events, indent=2, ensure_ascii=False), encoding="utf-8")
         temporary.replace(self.path)
 
+    def archive_capture(self, vin, capture):
+        vehicle_key = vin or "UNASSIGNED"
+        safe_key = "".join(ch for ch in vehicle_key if ch.isalnum() or ch in "-_")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        folder = self.path.parent / "vehicles" / safe_key / "captures"
+        folder.mkdir(parents=True, exist_ok=True)
+        archive = folder / f"capture_{stamp}.json"
+        archive.write_text(json.dumps(capture, indent=2, ensure_ascii=False), encoding="utf-8")
+        return archive
+
     def for_vin(self, vin):
         return [event for event in self.events if event.get("vin") == (vin or "UNASSIGNED")]
 
