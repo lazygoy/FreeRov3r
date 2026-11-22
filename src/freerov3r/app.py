@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
-from PySide6.QtGui import QPalette, QColor, QFont, QPainter
+from PySide6.QtGui import QPalette, QColor, QFont, QPainter, QBrush
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QLabel, QMainWindow,
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
@@ -30,6 +30,7 @@ from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .vehicle_history import VehicleHistoryStore
+from .diagnostics.vin_decoder import VinFrameDecoder
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -483,6 +484,9 @@ class ModulesTab(QWidget):
             if module.code == selected:
                 self.module_tree.setCurrentItem(item)
         self.module_tree.expandAll()
+        refresh_overview = getattr(self, "network_overview_refresh", None)
+        if refresh_overview:
+            refresh_overview()
 
     def _selected_code(self):
         item = self.module_tree.currentItem()
@@ -587,6 +591,79 @@ class ModulesTab(QWidget):
         self.show_selected_module()
 
 
+
+class NetworkOverviewTab(QWidget):
+    """Thinkcar-style module status overview; colors reflect scan evidence only."""
+    def __init__(self, network, vin_provider=None, parent=None):
+        super().__init__(parent)
+        self.network = network
+        self.vin_provider = vin_provider or (lambda: None)
+        layout = QVBoxLayout(self)
+        self.heading = QLabel()
+        self.heading.setWordWrap(True)
+        layout.addWidget(self.heading)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["System / module", "Health", "DTCs", "Last scan"])
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        layout.addWidget(self.tree)
+        row = QHBoxLayout()
+        refresh = QPushButton("Refresh module status")
+        refresh.clicked.connect(self.refresh)
+        row.addWidget(refresh)
+        row.addStretch()
+        layout.addLayout(row)
+        self.refresh()
+
+    def set_network(self, network):
+        self.network = network
+        self.refresh()
+
+    def refresh(self):
+        vin = self.vin_provider() or "No VIN detected"
+        self.heading.setText(
+            f"<b>Vehicle network overview</b><br>VIN: {vin}<br>"
+            "Green = scanned, no DTCs. Red = one or more DTCs. Gray = not scanned or no response. "
+            "Current module inventory is simulated until live L319 addressing is verified."
+        )
+        self.tree.clear()
+        groups = {}
+        for module in self.network.modules:
+            group = groups.get(module.category)
+            if group is None:
+                group = QTreeWidgetItem([module.category, "", "", ""])
+                self.tree.addTopLevelItem(group)
+                groups[module.category] = group
+            if not module.available:
+                status, color = "No response", QColor("#888888")
+            elif module.last_scan is None:
+                status, color = "Not scanned", QColor("#888888")
+            elif module.dtcs:
+                status, color = "Attention", QColor("#ef5350")
+            else:
+                status, color = "No faults", QColor("#43a047")
+            item = QTreeWidgetItem([
+                f"{module.code} — {module.name}", status,
+                str(len(module.dtcs)), module.last_scan or "—"
+            ])
+            item.setData(0, Qt.UserRole, module.code)
+            for col in (0, 1):
+                item.setForeground(col, QBrush(color))
+            group.addChild(item)
+        for group in groups.values():
+            children = [self.network.get_module(group.child(i).data(0, Qt.UserRole))
+                        for i in range(group.childCount())]
+            if any(m.available and m.last_scan is not None and m.dtcs for m in children):
+                group.setForeground(0, QBrush(QColor("#ef5350")))
+            elif children and all(m.available and m.last_scan is not None and not m.dtcs for m in children):
+                group.setForeground(0, QBrush(QColor("#43a047")))
+            else:
+                group.setForeground(0, QBrush(QColor("#888888")))
+        self.tree.expandAll()
+        self.tree.resizeColumnToContents(1)
+        self.tree.resizeColumnToContents(2)
+        self.tree.resizeColumnToContents(3)
+
+
 class VehicleHistoryTab(QWidget):
     def __init__(self, store: VehicleHistoryStore, parent=None):
         super().__init__(parent)
@@ -650,6 +727,177 @@ class VehicleHistoryTab(QWidget):
         self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False) if event else "")
 
 
+
+class SolutionsTab(QWidget):
+    """VIN- and module-scoped ChatGPT prompt and saved-response workspace."""
+    def __init__(self, network, vin_provider, history_provider, sensor_provider, storage_path, parent=None):
+        super().__init__(parent)
+        self.network, self.vin_provider = network, vin_provider
+        self.history_provider, self.sensor_provider = history_provider, sensor_provider
+        self.storage_path = Path(storage_path)
+        self.solutions = self._load()
+        self.current_module_code = None
+        layout = QVBoxLayout(self)
+        self.heading = QLabel()
+        self.heading.setWordWrap(True)
+        layout.addWidget(self.heading)
+        split = QHBoxLayout()
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Problem module", "DTCs"])
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.itemSelectionChanged.connect(self.select_module)
+        split.addWidget(self.tree, 1)
+        right = QVBoxLayout()
+        right.addWidget(QLabel("Scan evidence"))
+        self.evidence = QPlainTextEdit()
+        self.evidence.setReadOnly(True)
+        right.addWidget(self.evidence, 2)
+        row = QHBoxLayout()
+        copy = QPushButton("Copy ChatGPT prompt")
+        copy.clicked.connect(self.copy_prompt)
+        row.addWidget(copy)
+        export = QPushButton("Export prompt")
+        export.clicked.connect(self.export_prompt)
+        row.addWidget(export)
+        right.addLayout(row)
+        right.addWidget(QLabel("ChatGPT suggested troubleshooting / solution"))
+        self.response = QPlainTextEdit()
+        self.response.setPlaceholderText("Paste ChatGPT's response here.")
+        right.addWidget(self.response, 3)
+        row2 = QHBoxLayout()
+        paste = QPushButton("Paste from clipboard")
+        paste.clicked.connect(lambda: self.response.setPlainText(QApplication.clipboard().text()))
+        row2.addWidget(paste)
+        save = QPushButton("Save solution for this VIN / module")
+        save.clicked.connect(self.save_solution)
+        row2.addWidget(save)
+        right.addLayout(row2)
+        split.addLayout(right, 3)
+        layout.addLayout(split)
+        self.refresh()
+
+    def _load(self):
+        try:
+            value = json.loads(self.storage_path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _save(self):
+        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = self.storage_path.with_suffix(self.storage_path.suffix + ".tmp")
+        temp.write_text(json.dumps(self.solutions, indent=2, ensure_ascii=False), encoding="utf-8")
+        temp.replace(self.storage_path)
+
+    def set_network(self, network):
+        self.network = network
+        self.refresh()
+
+    def refresh(self):
+        vin = self.vin_provider() or "No VIN selected"
+        self.heading.setText(
+            f"<b>ChatGPT troubleshooting workspace</b><br>Vehicle: {vin}<br>"
+            "Select a module to build a focused prompt from DTCs, vehicle history and recent sensor data. "
+            "Prompts and saved replies stay local. No API call is made."
+        )
+        previous = self.current_module_code
+        self.tree.clear()
+        groups = {}
+        for module in self.network.modules:
+            group = groups.get(module.category)
+            if group is None:
+                group = QTreeWidgetItem([module.category, ""])
+                self.tree.addTopLevelItem(group)
+                groups[module.category] = group
+            item = QTreeWidgetItem([f"{module.code} — {module.name}", str(len(module.dtcs))])
+            item.setData(0, Qt.UserRole, module.code)
+            group.addChild(item)
+            if module.code == previous:
+                self.tree.setCurrentItem(item)
+        self.tree.expandAll()
+        if self.tree.currentItem() is None and self.tree.topLevelItemCount():
+            group = self.tree.topLevelItem(0)
+            if group.childCount():
+                self.tree.setCurrentItem(group.child(0))
+        self.select_module()
+
+    def select_module(self):
+        item = self.tree.currentItem()
+        code = item.data(0, Qt.UserRole) if item else None
+        if not code:
+            self.current_module_code = None
+            self.evidence.clear()
+            self.response.clear()
+            return
+        self.current_module_code = code
+        module = self.network.get_module(code)
+        vin = self.vin_provider() or "UNASSIGNED"
+        dtcs = [{"code": d.code, "description": d.description, "status": d.status, "severity": d.severity} for d in module.dtcs]
+        evidence = {
+            "vin": vin,
+            "module": {"code": code, "name": module.name, "category": module.category},
+            "scan_state": "not_scanned" if module.last_scan is None else "scanned",
+            "last_scan": module.last_scan, "available": module.available, "dtcs": dtcs,
+            "data_quality": "Synthetic simulator fixture, not verified live L319 scan data."
+        }
+        self.evidence.setPlainText(json.dumps(evidence, indent=2, ensure_ascii=False))
+        self.response.setPlainText(self.solutions.get(vin, {}).get(code, {}).get("response", ""))
+
+    def build_prompt(self):
+        code = self.current_module_code
+        if not code:
+            return ""
+        module = self.network.get_module(code)
+        vin = self.vin_provider() or "UNASSIGNED"
+        events = self.history_provider(vin)[-30:]
+        samples = self.sensor_provider(vin)[-50:]
+        data = {
+            "vin": vin, "vehicle": "2010-2016 Land Rover Discovery 4 / LR4 (L319)",
+            "module": {"code": code, "name": module.name, "category": module.category},
+            "scan_state": "not_scanned" if module.last_scan is None else "scanned",
+            "last_scan": module.last_scan,
+            "dtcs": [{"code": d.code, "description": d.description, "status": d.status, "severity": d.severity} for d in module.dtcs],
+            "recent_history": [{"timestamp": e.get("timestamp"), "type": e.get("type"), "summary": e.get("summary"), "details": e.get("details", {})} for e in events],
+            "sensor_samples": [{"timestamp": x.timestamp, "name": x.name, "value": x.value, "unit": x.unit, "source": x.source} for x in samples],
+            "data_quality": "Module inventory and DTCs are synthetic fixtures, not actual verified L319 faults or definitions."
+        }
+        instructions = (
+            "Troubleshoot this Land Rover Discovery 4 / LR4. Analyze only the evidence. "
+            "Separate facts, hypotheses and tests. Do not assume generic DTC descriptions are verified. "
+            "For each likely cause explain why it fits, provide safe checks and expected results, required tools, "
+            "and what would rule it out. Prioritize non-invasive checks. Do not recommend parts replacement "
+            "without confirming tests. Flag safety-critical systems. State clearly if evidence is synthetic or insufficient."
+        )
+        return instructions + "\n\nEVIDENCE JSON:\n" + json.dumps(data, indent=2, ensure_ascii=False)
+
+    def copy_prompt(self):
+        prompt = self.build_prompt()
+        if prompt:
+            QApplication.clipboard().setText(prompt)
+            QMessageBox.information(self, "Copied", "Module-specific ChatGPT prompt copied to clipboard.")
+
+    def export_prompt(self):
+        prompt = self.build_prompt()
+        if not prompt:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export troubleshooting prompt", "freerov3r_prompt.txt", "Text (*.txt)")
+        if path:
+            Path(path).write_text(prompt, encoding="utf-8")
+
+    def save_solution(self):
+        code = self.current_module_code
+        if not code:
+            return
+        vin = self.vin_provider() or "UNASSIGNED"
+        self.solutions.setdefault(vin, {})[code] = {
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "response": self.response.toPlainText(),
+            "dtcs_at_save": [d.code for d in self.network.get_module(code).dtcs]
+        }
+        self._save()
+        QMessageBox.information(self, "Saved", f"Solution saved locally for {vin} / {code}.")
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -663,6 +911,7 @@ class MainWindow(QMainWindow):
         self.capture_start_sample_index = 0
         self.capture_start_frame_index = 0
         self.capture_vin = None
+        self.vin_decoder = VinFrameDecoder()
         self.active_interface = None
         self.frame_counter = 0
         self.last_rate_time = time.monotonic()
@@ -737,6 +986,22 @@ class MainWindow(QMainWindow):
             history_callback=self.record_vehicle_event,
         )
         self.tabs.addTab(self.modules_tab, "Modules")
+        self.network_tab = NetworkOverviewTab(
+            self.module_network, vin_provider=lambda: self.settings.get("current_vin")
+        )
+        self.tabs.addTab(self.network_tab, "Network")
+        self.modules_tab.network_overview_refresh = self.network_tab.refresh
+        self.solutions_tab = SolutionsTab(
+            self.module_network,
+            vin_provider=lambda: self.settings.get("current_vin"),
+            history_provider=lambda vin: self.history_store.for_vin(vin),
+            sensor_provider=lambda vin: [
+                sample for sample in self.sensor_capture.samples
+                if (sample.metadata or {}).get("vin", "UNASSIGNED") == vin
+            ],
+            storage_path=SETTINGS_DIR / "solutions.json",
+        )
+        self.tabs.addTab(self.solutions_tab, "Solutions")
         self.history_tab = VehicleHistoryTab(self.history_store)
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
@@ -746,6 +1011,8 @@ class MainWindow(QMainWindow):
         self.history_store.record(vehicle_vin, event_type, summary, details)
         if hasattr(self, "history_tab"):
             self.history_tab.refresh()
+        if hasattr(self, "solutions_tab"):
+            self.solutions_tab.refresh()
 
     def _build_capture_tab(self):
         tab = QWidget()
@@ -1007,6 +1274,35 @@ class MainWindow(QMainWindow):
             self.modules_tab.set_network(network)
         if hasattr(self, "graph_tab"):
             self.graph_tab.set_vehicle_vin(vin)
+            if hasattr(self, "network_tab"):
+                self.network_tab.set_network(network)
+            if hasattr(self, "solutions_tab"):
+                self.solutions_tab.set_network(network)
+        if hasattr(self, "graph_tab"):
+            self.graph_tab.set_vehicle_vin(vin)
+
+
+    def _apply_detected_vin(self, vin):
+        """Use a validated VIN decoded from observed diagnostic response traffic."""
+        previous = self.settings.get("current_vin")
+        if previous == vin:
+            return
+        if previous and previous != vin:
+            self.log.appendPlainText(
+                f"VIN mismatch: selected {previous}, scan data reports {vin}. Using scan-reported VIN."
+            )
+        self.settings.setdefault("vehicles", {}).setdefault(vin, {"nickname": ""})
+        self.settings["current_vin"] = vin
+        if self.receiver and self.receiver.isRunning():
+            self.capture_vin = vin
+        self._refresh_vehicle_list()
+        self._update_vehicle_context()
+        self.save_current_settings()
+        self.record_vehicle_event(
+            "vin_detected", "VIN decoded from diagnostic traffic",
+            {"vin": vin, "source": "OBD Mode 09 PID 02 or UDS DID F190"}, vin=vin
+        )
+        self.log.appendPlainText(f"VIN detected from scan data: {vin}")
 
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
@@ -1072,6 +1368,7 @@ class MainWindow(QMainWindow):
             {"interface": interface, "channel": channel, "bitrate": bitrate},
             vin=self.capture_vin or "UNASSIGNED",
         )
+        self.vin_decoder.reset()
         self.modules_tab.set_simulation_enabled(interface == "simulator")
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
@@ -1090,6 +1387,9 @@ class MainWindow(QMainWindow):
         self.settings_bitrate.setCurrentText(str(bitrate))
 
     def on_frame(self, frame):
+        detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
+        if detected_vin:
+            self._apply_detected_vin(detected_vin)
         self.session.add(frame)
         self.frame_counter += 1
         self.frame_count_label.setText(f"Frames: {self.frame_counter}")
