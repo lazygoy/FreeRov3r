@@ -249,7 +249,8 @@ class SensorGraphTab(QWidget):
         self.sensor_list.blockSignals(False)
         if HAS_CHARTS:
             self.update_chart()
-        elif hasattr(self, "placeholder"):            self.placeholder.setPlainText(
+        elif hasattr(self, "placeholder"):
+            self.placeholder.setPlainText(
                 f"{len(self.sensor_capture.samples)} samples loaded.\n{len(seen)} unique sensors."
             )
 
@@ -499,6 +500,7 @@ class ModulesTab(QWidget):
         self.current_module_code = None
         self.refresh_tree()
         self.dtc_table.setRowCount(0)
+
     def set_simulation_enabled(self, enabled: bool):
         self.simulation_enabled = bool(enabled)
         for control in (self.scan_one_btn, self.scan_all_btn, self.clear_module_btn, self.clear_all_btn, self.clear_code_btn):
@@ -747,7 +749,8 @@ class VehicleHistoryTab(QWidget):
     def refresh_events(self):
         self.events_tree.clear()
         selected_vin = self.vin_filter.currentData()
-        events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)        for event in reversed(events):
+        events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
+        for event in reversed(events):
             timestamp = event.get("timestamp", "")
             item = QTreeWidgetItem([
                 timestamp.replace("T", " "),
@@ -996,7 +999,8 @@ class MainWindow(QMainWindow):
         task_grid = QGridLayout()
         task_grid.setSpacing(12)
         tasks = [
-            ("Pull diagnostic codes (DTCs)", self.show_dtc_mode),            ("Read OBD-II data", self.show_obd_mode),
+            ("Pull diagnostic codes (DTCs)", self.show_dtc_mode),
+            ("Read OBD-II data", self.show_obd_mode),
             ("Collect sensor data", self.show_sensor_mode),
             ("Graph sensor data", self.show_graph_mode),
             ("Read vehicle information", self.show_vehicle_info_mode),
@@ -1060,7 +1064,7 @@ class MainWindow(QMainWindow):
         self.toast_manager = ToastManager(self)
 
     def _build_navigation_workspace(self):
-        """Build the workspace header and content area beside the right-side Quick Nav."""
+        """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
         self.tabs.tabBar().hide()
         workspace = QWidget()
         outer_layout = QVBoxLayout(workspace)
@@ -1099,7 +1103,7 @@ class MainWindow(QMainWindow):
 
         self.drawer_button = QToolButton()
         self.drawer_button.setObjectName("drawerToggle")
-        self.drawer_button.setText("☷  Quick Nav")
+        self.drawer_button.setText("☷  Quick panel")
         self.drawer_button.setToolTip("Open vehicle context and workspace shortcuts")
         self.drawer_button.clicked.connect(self.toggle_quick_drawer)
         header_layout.addWidget(self.drawer_button)
@@ -1293,6 +1297,7 @@ class MainWindow(QMainWindow):
         self.backend.addItem("SLCAN", ("slcan", "COM3"))
         controls.addWidget(QLabel("Connection:"))
         controls.addWidget(self.backend)
+
         self.channel_edit = QComboBox()
         self.channel_edit.setEditable(True)
         self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
@@ -1542,7 +1547,8 @@ class MainWindow(QMainWindow):
         vehicles = self.settings.get("vehicles", {})
         for vin, info in sorted(vehicles.items()):
             nick = info.get("nickname", "")
-            self.vehicle_list.addItem(f"{vin}  —  {nick}" if nick else vin)        current = self.settings.get("current_vin")
+            self.vehicle_list.addItem(f"{vin}  —  {nick}" if nick else vin)
+        current = self.settings.get("current_vin")
         if current and current in vehicles:
             nick = vehicles[current].get("nickname", "")
             self.current_vehicle_label.setText(f"Current: {current} ({nick})" if nick else f"Current: {current}")
@@ -1791,6 +1797,7 @@ class MainWindow(QMainWindow):
                 f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
             )
         self.log.setPlainText("\n".join(rows[-self.settings.get("max_log_lines", 5000):]))
+
     def clear_capture_display(self):
         """Clear the recent monitor window and visible log; exported session remains intact."""
         self.can_monitor.reset()
