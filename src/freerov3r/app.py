@@ -129,7 +129,25 @@ class ResponsiveBanner(QLabel):
         )
         x = max(0, (scaled.width() - self.width()) // 2)
         y = max(0, (scaled.height() - self.height()) // 2)
-        self.setPixmap(scaled.copy(x, y, self.width(), self.height()))
+        rendered = scaled.copy(x, y, self.width(), self.height())
+        painter = QPainter(rendered)
+        painter.setRenderHint(QPainter.Antialiasing)
+        title_font = QFont("Gill Sans MT", max(20, int(self.height() * 0.34)))
+        title_font.setBold(True)
+        title_font.setItalic(True)
+        painter.setFont(title_font)
+        painter.setPen(QColor("#f4f7f3"))
+        painter.drawText(34, int(self.height() * 0.55), "FreeRov3r")
+        tagline_font = QFont("Gill Sans MT", max(8, int(self.height() * 0.095)))
+        tagline_font.setBold(True)
+        painter.setFont(tagline_font)
+        painter.setPen(QColor("#d5e2d8"))
+        painter.drawText(
+            38, int(self.height() * 0.76),
+            "DIAGNOSTICS  •  MONITORING  •  SOLUTIONS"
+        )
+        painter.end()
+        self.setPixmap(rendered)
 
 
 class Receiver(QThread):
