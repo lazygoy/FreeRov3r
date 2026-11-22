@@ -451,6 +451,12 @@ class ModulesTab(QWidget):
         self.set_simulation_enabled(False)
         self.refresh_tree()
 
+    def set_network(self, network: SimulatedModuleNetwork):
+        self.network = network
+        self.current_module_code = None
+        self.refresh_tree()
+        self.dtc_table.setRowCount(0)
+
     def set_simulation_enabled(self, enabled: bool):
         self.simulation_enabled = bool(enabled)
         for control in (self.scan_one_btn, self.scan_all_btn, self.clear_module_btn, self.clear_all_btn, self.clear_code_btn):
@@ -722,6 +728,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.graph_tab, "Graph")
         self.obd_tab = OBDTab()
         self.tabs.addTab(self.obd_tab, "OBD-II")
+        self.module_networks = {}
         self.module_network = SimulatedModuleNetwork()
         self.modules_tab = ModulesTab(
             self.module_network,
@@ -994,6 +1001,9 @@ class MainWindow(QMainWindow):
         if vin and vin in vehicles:
             ctx = {"vin": vin, "nickname": vehicles[vin].get("nickname", "")}
         self.sensor_capture.vehicle_context = ctx
+        if vin and hasattr(self, "modules_tab"):
+            network = self.module_networks.setdefault(vin, SimulatedModuleNetwork())
+            self.modules_tab.set_network(network)
         if hasattr(self, "graph_tab"):
             self.graph_tab.set_vehicle_vin(vin)
 
