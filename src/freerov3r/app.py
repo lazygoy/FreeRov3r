@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QGroupBox,
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
-    QTreeWidget, QTreeWidgetItem, QGridLayout,
+    QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
 )
 
 try:
@@ -1015,10 +1015,8 @@ class MainWindow(QMainWindow):
 
         # Tabs
         self.tabs = QTabWidget()
-        self.tabs.setTabPosition(QTabWidget.West)
         self.tabs.setDocumentMode(True)
         self.tabs.setMovable(False)
-        self.stack.addWidget(self.tabs)
 
         self._build_capture_tab()
         self._build_sensors_tab()
@@ -1053,6 +1051,69 @@ class MainWindow(QMainWindow):
         self.history_tab = VehicleHistoryTab(self.history_store)
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
+        self._build_navigation_workspace()
+
+    def _build_navigation_workspace(self):
+        """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
+        self.tabs.tabBar().hide()
+        workspace = QWidget()
+        layout = QHBoxLayout(workspace)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        rail = QWidget()
+        rail.setObjectName("navigationRail")
+        rail.setFixedWidth(112)
+        rail_layout = QVBoxLayout(rail)
+        rail_layout.setContentsMargins(4, 8, 4, 8)
+        rail_layout.setSpacing(6)
+
+        home = QToolButton()
+        home.setText("⌂\\nHome")
+        home.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        home.setCheckable(False)
+        home.setMinimumHeight(66)
+        home.setToolTip("Return to the task launcher")
+        home.clicked.connect(lambda: self.stack.setCurrentIndex(0))
+        rail_layout.addWidget(home)
+
+        separator = QWidget()
+        separator.setFixedHeight(1)
+        separator.setObjectName("navigationSeparator")
+        rail_layout.addWidget(separator)
+
+        self.navigation_group = QButtonGroup(self)
+        self.navigation_group.setExclusive(True)
+        self.navigation_buttons = []
+        glyphs = {
+            "Capture": "⌁", "Sensors": "◉", "Graph": "▥", "OBD-II": "◫",
+            "Modules": "▦", "Network": "⌘", "Solutions": "✦",
+            "Vehicle History": "◷", "Settings": "⚙",
+        }
+        for index in range(self.tabs.count()):
+            label = self.tabs.tabText(index)
+            button = QToolButton()
+            button.setText(f"{glyphs.get(label, '◇')}\\n{label}")
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            button.setCheckable(True)
+            button.setMinimumHeight(68)
+            button.setSizePolicy(button.sizePolicy().horizontalPolicy(), button.sizePolicy().verticalPolicy())
+            button.setToolTip(f"Open {label}")
+            button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
+            self.navigation_group.addButton(button, index)
+            self.navigation_buttons.append(button)
+            rail_layout.addWidget(button)
+
+        rail_layout.addStretch(1)
+        layout.addWidget(rail)
+        layout.addWidget(self.tabs, 1)
+        self.stack.addWidget(workspace)
+        self.tabs.currentChanged.connect(self._sync_navigation_selection)
+        self._sync_navigation_selection(self.tabs.currentIndex())
+
+    def _sync_navigation_selection(self, index):
+        if 0 <= index < len(getattr(self, "navigation_buttons", [])):
+            self.navigation_buttons[index].setChecked(True)
 
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
         vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
