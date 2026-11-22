@@ -24,17 +24,29 @@
 <text x="312" y="111" fill="url(#silver)" font-family="Arial,sans-serif" font-size="82" font-style="italic" font-weight="800" letter-spacing="-4">FreeRov3r</text>
 <text x="320" y="151" fill="#d6e0db" font-family="Arial,sans-serif" font-size="20" font-weight="700" letter-spacing="5">DIAGNOSTICS  •  MONITORING  •  SOLUTIONS</text>
 <path d="M315 177H1080" stroke="#3e9863" stroke-width="3"/>
-<g transform="translate(1130 28)">
- <path d="M0 143L24 122L62 121L90 87L118 83L150 98L189 101L221 127L236 143Z" fill="#090e0c" stroke="#9aa9a2" stroke-width="2"/>
- <path d="M75 91L93 55L154 51L181 93" fill="#17221d" stroke="#b4c0ba" stroke-width="2"/>
- <path d="M97 56L111 30L157 30L176 57" fill="#1a2a22" stroke="#c4d0ca" stroke-width="2"/>
- <path d="M105 61H169" stroke="#81978a" stroke-width="2"/>
- <rect x="12" y="105" width="26" height="13" rx="3" fill="#dce6df"/>
- <rect x="199" y="105" width="26" height="13" rx="3" fill="#dce6df"/>
- <circle cx="54" cy="143" r="22" fill="#050807" stroke="#87958d" stroke-width="5"/>
- <circle cx="185" cy="143" r="22" fill="#050807" stroke="#87958d" stroke-width="5"/>
- <circle cx="54" cy="143" r="8" fill="#9aa79f"/><circle cx="185" cy="143" r="8" fill="#9aa79f"/>
- <path d="M8 161H236" stroke="#5d7667" stroke-width="4"/>
+<!-- Original vector side profile of a Discovery 4 (L319): stepped roof, upright rear, tall cabin and split side glass. -->
+<g transform="translate(1120 20)">
+ <ellipse cx="126" cy="151" rx="124" ry="8" fill="#020705" opacity=".55"/>
+ <path d="M8 118L8 82L20 72L48 69L62 37L78 31L163 31L181 45L199 68L222 75L242 91L246 118L232 129L18 129Z" fill="#111b16" stroke="#c4d0ca" stroke-width="2.5" stroke-linejoin="round"/>
+ <path d="M18 78L48 74L65 42L80 37L105 37L105 76Z" fill="#243b30" stroke="#a9bbb0" stroke-width="2"/>
+ <path d="M111 37L159 37L176 51L191 76L111 76Z" fill="#243b30" stroke="#a9bbb0" stroke-width="2"/>
+ <path d="M181 53L197 73L220 80L233 93L181 93Z" fill="#243b30" stroke="#a9bbb0" stroke-width="2"/>
+ <path d="M9 91L241 91" stroke="#71877a" stroke-width="2"/>
+ <path d="M107 37V126M178 49V126" stroke="#73877c" stroke-width="2"/>
+ <path d="M20 104H229" stroke="#687c70" stroke-width="2"/>
+ <path d="M28 83L53 81M198 83L221 87" stroke="#dce5df" stroke-width="3"/>
+ <path d="M233 95L246 98L246 111L234 111Z" fill="#dce6df"/>
+ <path d="M8 97L18 94V109H8Z" fill="#b7d5c2"/>
+ <rect x="65" y="111" width="20" height="3" rx="1.5" fill="#9aa99f"/>
+ <rect x="128" y="111" width="20" height="3" rx="1.5" fill="#9aa99f"/>
+ <path d="M15 127H240" stroke="#5d7667" stroke-width="3"/>
+ <circle cx="59" cy="124" r="25" fill="#050807" stroke="#87958d" stroke-width="5"/>
+ <circle cx="59" cy="124" r="12" fill="#68766f" stroke="#d0d8d3" stroke-width="2"/>
+ <circle cx="59" cy="124" r="4" fill="#18251e"/>
+ <circle cx="195" cy="124" r="25" fill="#050807" stroke="#87958d" stroke-width="5"/>
+ <circle cx="195" cy="124" r="12" fill="#68766f" stroke="#d0d8d3" stroke-width="2"/>
+ <circle cx="195" cy="124" r="4" fill="#18251e"/>
+ <path d="M8 146H246" stroke="#5d7667" stroke-width="3"/>
 </g>
 <path d="M0 225H1600" stroke="#3e9863" stroke-width="5"/>
 </svg>
