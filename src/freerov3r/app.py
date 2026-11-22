@@ -23,6 +23,7 @@ try:
 except ImportError:
     HAS_CHARTS = False
 
+from .hardware.serial_ports import list_serial_ports
 from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
@@ -1069,9 +1070,19 @@ class MainWindow(QMainWindow):
         controls.addWidget(QLabel("Connection:"))
         controls.addWidget(self.backend)
 
-        self.channel_edit = QLineEdit()
-        self.channel_edit.setPlaceholderText("COM port or channel")
+        self.channel_edit = QComboBox()
+        self.channel_edit.setEditable(True)
+        self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
+        self.channel_edit.setPlaceholderText("COM port or CAN channel")
+        self.channel_edit.setToolTip(
+            "Choose a detected serial port for ESP32/SLCAN, or type a CAN channel such as can0."
+        )
         controls.addWidget(self.channel_edit)
+
+        refresh_ports_btn = QPushButton("Refresh ports")
+        refresh_ports_btn.setToolTip("Detect serial devices currently connected to Windows.")
+        refresh_ports_btn.clicked.connect(self.refresh_serial_ports)
+        controls.addWidget(refresh_ports_btn)
 
         self.bitrate = QComboBox()
         self.bitrate.addItems(["125000", "250000", "500000", "1000000"])
@@ -1110,6 +1121,37 @@ class MainWindow(QMainWindow):
         layout.addLayout(export_row)
 
         self.tabs.addTab(tab, "Capture")
+        self.refresh_serial_ports()
+
+    def refresh_serial_ports(self):
+        """Refresh the editable channel selector with detected serial devices."""
+        current = self.channel_edit.currentText().strip()
+        ports = list_serial_ports()
+        self.channel_edit.blockSignals(True)
+        self.channel_edit.clear()
+        for port in ports:
+            self.channel_edit.addItem(port["device"], port["device"])
+            index = self.channel_edit.count() - 1
+            self.channel_edit.setItemData(
+                index,
+                f'{port["description"]} | VID:PID '
+                f'{port["vid"] or "----"}:{port["pid"] or "----"}',
+                Qt.ToolTipRole,
+            )
+        if current:
+            self.channel_edit.setCurrentText(current)
+        elif ports:
+            self.channel_edit.setCurrentIndex(0)
+        else:
+            self.channel_edit.setEditText("")
+            self.channel_edit.setPlaceholderText("No serial ports found; enter channel manually")
+        self.channel_edit.blockSignals(False)
+        if ports:
+            self.status.setText(
+                "Detected serial ports: " + ", ".join(port["device"] for port in ports)
+            )
+        else:
+            self.status.setText("No serial ports detected. Manual CAN channel entry remains available.")
 
     def _build_sensors_tab(self):
         tab = QWidget()
@@ -1241,7 +1283,7 @@ class MainWindow(QMainWindow):
             if self.backend.itemData(i)[0] == iface:
                 self.backend.setCurrentIndex(i)
                 break
-        self.channel_edit.setText(self.settings.get("channel", "freerov3r"))
+        self.channel_edit.setCurrentText(self.settings.get("channel", "freerov3r"))
         self.bitrate.setCurrentText(str(self.settings.get("bitrate", 500000)))
         for i in range(self.settings_backend.count()):
             if self.settings_backend.itemData(i)[0] == iface:
@@ -1384,7 +1426,7 @@ class MainWindow(QMainWindow):
 
         data = self.backend.currentData()
         interface = data[0]
-        channel = self.channel_edit.text().strip() or data[1]
+        channel = self.channel_edit.currentText().strip() or data[1]
         bitrate = int(self.bitrate.currentText())
 
         if interface == "simulator":
@@ -1527,7 +1569,7 @@ class MainWindow(QMainWindow):
                 if self.backend.itemData(i)[0] == backend_data[0]:
                     self.backend.setCurrentIndex(i)
                     break
-            self.channel_edit.setText(self.settings["channel"])
+            self.channel_edit.setCurrentText(self.settings["channel"])
             self.bitrate.setCurrentText(str(self.settings["bitrate"]))
         self.settings["max_log_lines"] = self.max_log_spin.value()
         self.settings["dark_mode"] = self.dark_mode_cb.isChecked()
