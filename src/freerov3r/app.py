@@ -6,9 +6,8 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal, QTimer, Qt
+from PySide6.QtCore import QThread, Signal, QTimer, Qt, QUrl
 from PySide6.QtGui import QPalette, QColor, QFont, QFontDatabase, QPainter, QBrush, QIcon, QPixmap, QDesktopServices
-from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QLabel, QMainWindow,
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
@@ -16,7 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
     QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
-    QDialog, QFrame,
+    QDialog, QFrame, QScrollArea, QSizePolicy,
 )
 
 try:
@@ -100,6 +99,98 @@ def load_settings() -> dict:
 def save_settings(settings: dict) -> None:
     SETTINGS_DIR.mkdir(exist_ok=True)
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+
+class ResponsiveBanner(QLabel):
+    """Wide photographic banner with layout-safe custom painting."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._source_pixmap = QPixmap()
+        self._rendered_pixmap = QPixmap()
+        self._refreshing = False
+        self._last_render_size = None
+
+        self.setObjectName("brandBanner")
+        self.setAlignment(Qt.AlignCenter)
+        self.setFixedHeight(132)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def set_source_pixmap(self, pixmap):
+        self._source_pixmap = pixmap
+        self._last_render_size = None
+        self._refresh_banner()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_banner()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        if not self._rendered_pixmap.isNull():
+            painter.drawPixmap(0, 0, self._rendered_pixmap)
+        else:
+            painter.fillRect(self.rect(), self.palette().window())
+        painter.end()
+
+    def _refresh_banner(self):
+        if (
+            self._refreshing
+            or self._source_pixmap.isNull()
+            or self.width() < 2
+            or self.height() < 2
+        ):
+            return
+
+        target_size = self.size()
+        if target_size == self._last_render_size:
+            return
+
+        self._refreshing = True
+        try:
+            scaled = self._source_pixmap.scaled(
+                target_size,
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation
+            )
+
+            x = max(0, (scaled.width() - self.width()) // 2)
+            y = max(0, (scaled.height() - self.height()) // 2)
+            rendered = scaled.copy(x, y, self.width(), self.height())
+
+            painter = QPainter(rendered)
+            painter.setRenderHint(QPainter.Antialiasing)
+
+            title_font = QFont(
+                "Gill Sans MT", max(20, int(self.height() * 0.34))
+            )
+            title_font.setBold(True)
+            title_font.setItalic(True)
+            painter.setFont(title_font)
+            painter.setPen(QColor("#f4f7f3"))
+            painter.drawText(34, int(self.height() * 0.55), "FreeRov3r")
+
+            tagline_font = QFont(
+                "Gill Sans MT", max(8, int(self.height() * 0.095))
+            )
+            tagline_font.setBold(True)
+            painter.setFont(tagline_font)
+            painter.setPen(QColor("#d5e2d8"))
+            painter.drawText(
+                38,
+                int(self.height() * 0.76),
+                "DIAGNOSTICS  •  MONITORING  •  SOLUTIONS"
+            )
+
+            painter.end()
+
+            self._rendered_pixmap = rendered
+            self._last_render_size = target_size
+            self.update()
+
+        finally:
+            self._refreshing = False
+
 
 
 class Receiver(QThread):
@@ -473,7 +564,7 @@ class ModulesTab(QWidget):
         split = QHBoxLayout()
         self.module_tree = QTreeWidget()
         self.module_tree.setHeaderLabels(["Category / module", "DTCs", "Last scan"])
-        self.module_tree.setMinimumWidth(390)
+        self.module_tree.setMinimumWidth(230)
         self.module_tree.itemSelectionChanged.connect(self.show_selected_module)
         split.addWidget(self.module_tree, 1)
 
@@ -977,7 +1068,8 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("FreeRov3r | Vehicle Diagnostics")
         self.setWindowIcon(QIcon(str(ASSET_DIR / "brand_badge.svg")))
-        self.resize(1320, 860)
+        self.setMinimumSize(800, 600)
+        self.resize(1180, 760)
 
         self._build_ui()
         self._apply_settings()
@@ -1007,7 +1099,7 @@ class MainWindow(QMainWindow):
         welcome_brand.setObjectName("welcomeBrand")
         brand_pixmap = QPixmap(str(ASSET_DIR / "brand_splash.svg"))
         if not brand_pixmap.isNull():
-            welcome_brand.setPixmap(brand_pixmap.scaled(760, 350, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            welcome_brand.setPixmap(brand_pixmap.scaled(600, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             welcome_brand.setAlignment(Qt.AlignCenter)
             wlayout.addWidget(welcome_brand)
 
@@ -1082,10 +1174,13 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
         self._build_navigation_workspace()
+        for group_box in self.findChildren(QGroupBox):
+            group_box.setTitle(group_box.title().upper())
         self.quick_drawer = QuickDrawer(self, self._navigate_to_tab)
         self.addDockWidget(Qt.RightDockWidgetArea, self.quick_drawer)
-        self.quick_drawer.setMinimumWidth(250)
-        self.quick_drawer.setMaximumWidth(310)
+        self.resizeDocks([self.quick_drawer], [290], Qt.Horizontal)
+        self.quick_drawer.setMinimumWidth(240)
+        self.quick_drawer.setMaximumWidth(320)
         self.quick_drawer.show()
         self.quick_drawer.set_current_workspace(self.tabs.tabText(self.tabs.currentIndex()))
         self.toast_manager = ToastManager(self)
@@ -1097,17 +1192,6 @@ class MainWindow(QMainWindow):
         outer_layout = QVBoxLayout(workspace)
         outer_layout.setContentsMargins(12, 10, 12, 12)
         outer_layout.setSpacing(10)
-
-        # Brand artwork anchors the workspace without hiding live vehicle context.
-        self.brand_banner = QLabel()
-        self.brand_banner.setObjectName("brandBanner")
-        banner_pixmap = QPixmap(str(ASSET_DIR / "brand_banner.svg"))
-        if not banner_pixmap.isNull():
-            self.brand_banner.setPixmap(banner_pixmap.scaled(640, 88, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            self.brand_banner.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self.brand_banner.setMinimumHeight(72)
-            self.brand_banner.setMaximumHeight(92)
-            outer_layout.addWidget(self.brand_banner)
 
         # Persistent instrument header: the key context stays visible on every page.
         header = QWidget()
@@ -1148,7 +1232,7 @@ class MainWindow(QMainWindow):
 
         self.drawer_button = QToolButton()
         self.drawer_button.setObjectName("drawerToggle")
-        self.drawer_button.setText("☷  Quick panel")
+        self.drawer_button.setText("☷  QUICK PANEL")
         self.drawer_button.setToolTip("Open vehicle context and workspace shortcuts")
         self.drawer_button.clicked.connect(self.toggle_quick_drawer)
         header_layout.addWidget(self.drawer_button)
@@ -1159,7 +1243,15 @@ class MainWindow(QMainWindow):
         content_row.setSpacing(10)
         content_row.addWidget(self.tabs, 1)
         outer_layout.addLayout(content_row, 1)
-        self.stack.addWidget(workspace)
+        # Keep all workspace controls reachable on short or narrow displays.
+        workspace.setMinimumSize(0, 0)
+        self.workspace_scroll = QScrollArea()
+        self.workspace_scroll.setWidgetResizable(True)
+        self.workspace_scroll.setFrameShape(QFrame.NoFrame)
+        self.workspace_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.workspace_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.workspace_scroll.setWidget(workspace)
+        self.stack.addWidget(self.workspace_scroll)
         self.stack.setCurrentIndex(1)
         self.tabs.currentChanged.connect(self._sync_navigation_selection)
         self._sync_navigation_selection(self.tabs.currentIndex())
@@ -1248,29 +1340,38 @@ class MainWindow(QMainWindow):
         dialog.setObjectName("startupSplash")
         dialog.setWindowTitle("Welcome to FreeRov3r")
         dialog.setWindowModality(Qt.ApplicationModal)
-        dialog.setMinimumSize(760, 520)
+        dialog.setMinimumSize(1000, 560)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(30, 26, 30, 24)
         layout.setSpacing(14)
-        splash_brand_row = QHBoxLayout()
-        splash_logo = QLabel()
-        splash_logo.setObjectName("splashLogo")
-        splash_pixmap = QPixmap(str(ASSET_DIR / "brand_badge.svg"))
-        if not splash_pixmap.isNull():
-            splash_logo.setPixmap(splash_pixmap.scaled(68, 68, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        splash_brand_row.addWidget(splash_logo)
-        splash_brand_text = QVBoxLayout()
-        eyebrow = QLabel("FREEROV3R  /  VEHICLE DIAGNOSTICS")
-        eyebrow.setObjectName("splashEyebrow")
-        splash_brand_text.addWidget(eyebrow)
+        splash_banner = QLabel()
+        splash_banner.setAlignment(Qt.AlignCenter)
+        splash_banner.setFixedHeight(210)
+        splash_banner.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
+
+        splash_source = QPixmap(str(ASSET_DIR / "brand_banner.jpg"))
+        if not splash_source.isNull():
+            scaled_banner = splash_source.scaled(
+                940, 210,
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation
+            )
+            crop_x = max(0, (scaled_banner.width() - 940) // 2)
+            crop_y = max(0, (scaled_banner.height() - 210) // 2)
+            splash_banner.setPixmap(
+                scaled_banner.copy(crop_x, crop_y, 940, 210)
+            )
+
+        layout.addWidget(splash_banner)
+
         title = QLabel("What would you like to do?")
         title.setObjectName("splashTitle")
         splash_title_font = QFont(self.heading_font_family, 25, QFont.Bold)
         splash_title_font.setItalic(True)
         title.setFont(splash_title_font)
-        splash_brand_text.addWidget(title)
-        splash_brand_row.addLayout(splash_brand_text, 1)
-        layout.addLayout(splash_brand_row)
+        layout.addWidget(title)
         subtitle = QLabel(
             "Start with a simple task. You can switch workspaces at any time "
             "using Quick Nav on the right."

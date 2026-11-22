@@ -1,22 +1,28 @@
 """Native Qt drawer and toast primitives for the FreeRov3r workspace."""
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QPixmap, QDesktopServices
-from PySide6.QtCore import QUrl
-from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 
 class QuickDrawer(QDockWidget):
     """Non-modal right-side panel for vehicle context and workspace navigation."""
     def __init__(self, parent, navigate):
-        super().__init__("Quick Nav", parent)
+        super().__init__("QUICK NAV", parent)
         self.setObjectName("quickDrawer")
         self.setAllowedAreas(Qt.RightDockWidgetArea)
         self.setFeatures(QDockWidget.NoDockWidgetFeatures)
-        self.setMinimumWidth(300)
-        self.setMaximumWidth(380)
-        body = QWidget(self)
+        self.setMinimumWidth(210)
+        self.setMaximumWidth(340)
+        scroll = QScrollArea(self)
+        scroll.setObjectName("quickDrawerScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        body = QWidget()
+        body.setMinimumWidth(0)
         body.setObjectName("drawerBody")
         layout = QVBoxLayout(body)
         layout.setContentsMargins(18, 18, 18, 18)
@@ -95,7 +101,6 @@ class QuickDrawer(QDockWidget):
         note.setObjectName("drawerNote")
         note.setWordWrap(True)
         layout.addStretch(1)
-
         support_button = QPushButton("☕  Buy Me a Coffee")
         support_button.setObjectName("drawerSupportButton")
         support_button.setCursor(Qt.PointingHandCursor)
@@ -105,7 +110,8 @@ class QuickDrawer(QDockWidget):
         )
         layout.addWidget(support_button)
         layout.addWidget(note)
-        self.setWidget(body)
+        scroll.setWidget(body)
+        self.setWidget(scroll)
 
     def set_current_workspace(self, name):
         button = self.nav_buttons.get(name)
