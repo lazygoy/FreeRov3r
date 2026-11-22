@@ -1966,7 +1966,10 @@ class MainWindow(QMainWindow):
                 QToolTip { background: #202630; color: #ffffff; border: 1px solid #526174; }
             """.replace("{BODY_FONT}", self.body_font_family).replace("{HEADING_FONT}", self.heading_font_family))
         else:
-            app.setPalette(app.style().standardPalette())
+            palette = app.style().standardPalette()
+            palette.setColor(QPalette.Highlight, QColor("#2c8054"))
+            palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+            app.setPalette(palette)
             self.setStyleSheet("""
                 QWidget { font-family: "{BODY_FONT}"; font-size: 10pt; }
                 QWidget#workspaceHeader { background: #edf5ef; border: 1px solid #b9d2c0; border-radius: 12px; }
@@ -1985,10 +1988,11 @@ class MainWindow(QMainWindow):
                 QLabel#drawerStatus { color: #1769aa; font-weight: 700; }
                 QLabel#drawerSection { color: #64748b; font-size: 9pt; font-weight: 800; letter-spacing: 1px; padding-top: 8px; }
                 QLabel#drawerNote { color: #475569; background: #eff6ff; border: 1px solid #d5e5f6; border-radius: 9px; padding: 10px; font-size: 9pt; }
-                QPushButton#drawerNavButton { text-align: left; background: #ffffff; border: 1px solid #d9e0e8; border-radius: 8px; padding: 9px 12px; min-height: 22px; color: #243449; }
-                QPushButton#drawerNavButton:hover { background: #eff6ff; border-color: #9bbfe2; }
-                QToolButton#drawerToggle { background: #e8f2fc; color: #174b78; border: 1px solid #b9d2eb; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
-                QToolButton#drawerToggle:hover { background: #d9eafa; }
+                QPushButton#drawerNavButton { text-align: left; background: #ffffff; border: 1px solid #d0dfd3; border-radius: 8px; padding: 9px 12px; min-height: 22px; color: #243449; }
+                QPushButton#drawerNavButton:hover { background: #e7f3e9; border-color: #8bb797; }
+                QPushButton#drawerNavButton:checked { background: #245a39; border: 1px solid #72b486; color: #ffffff; font-weight: 800; }
+                QToolButton#drawerToggle { background: #e5f0e7; color: #1c5131; border: 1px solid #a7c9ae; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
+                QToolButton#drawerToggle:hover { background: #d5e8d9; }
                 QFrame#toastNotification { background: #ffffff; border: 1px solid #d3deea; border-radius: 12px; }
                 QFrame#toastNotification[kind="success"] { border-left: 4px solid #219b64; }
                 QFrame#toastNotification[kind="warning"] { border-left: 4px solid #d28a16; }
@@ -2023,8 +2027,9 @@ class MainWindow(QMainWindow):
                 QFrame#splashCard { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
                 QLabel#splashCardTitle { color: #172033; font-size: 12pt; font-weight: 700; }
                 QLabel#splashCardText { color: #596b7d; font-size: 9pt; }
-                QPushButton#splashAction, QPushButton#splashContinue { background: #e8f2fc; color: #174b78; border: 1px solid #9bbfe2; font-weight: 700; }
-                QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #d9eafa; }
+                QPushButton#splashAction, QPushButton#splashContinue { background: #245a39; color: #ffffff; border: 1px solid #72b486; font-weight: 700; }
+                QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #2d7048; }
+                QLabel#splashLogo { background: transparent; }
             """.replace("{BODY_FONT}", self.body_font_family).replace("{HEADING_FONT}", self.heading_font_family))
 
     def save_current_settings(self):
