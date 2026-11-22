@@ -12,6 +12,7 @@ Open-source, locally operated vehicle diagnostics and CAN research platform. Ini
 - Generic SAE Mode 01 response decoder feeding the OBD-II table and sensor capture
 - Virtual CAN mode for testing python-can transport without a physical CAN interface
 - Categorized synthetic module network (Powertrain, Chassis, Body, Safety, Climate, Driver Assistance, Network, Infotainment) with per-module scans, DTC display, per-code/per-module clearing, and clear-all simulation controls
+- Local VIN-keyed vehicle history with timestamped module scan snapshots, DTC clearing events, capture start/stop records, and per-VIN raw CAN/sensor capture archives
 - L319 vehicle profile placeholder with no guessed ECU addresses
 - ESP32-WROOM-32 TWAI listen-only firmware starter and matching USB-serial PC adapter
 
@@ -37,7 +38,7 @@ ESP32-WROOM-32 has a Classical CAN (TWAI) controller but requires an external CA
 - can-utils: https://github.com/linux-can/can-utils
 
 ## Safety
-Transmit, writes, adaptations, and programming are disabled by default. The module/DTC interface currently operates only on an in-memory synthetic module network; its module names, example DTCs, and scan responses are fixtures, not verified L319 coverage or live ECU results. Future write operations require explicit approval and operation-specific preconditions. ECU addresses, bitrates, gateway routing, and pinouts must come from verified L319 documentation and measured captures, not guesses.
+Transmit, writes, adaptations, and programming are disabled by default. Vehicle history and capture archives are stored locally under `~/.freerov3r/`; diagnostic scans require a selected VIN, and capture data is filed under the VIN active when capture began. No VIN or capture data is transmitted to a remote service. The module/DTC interface currently operates only on an in-memory synthetic module network; its module names, example DTCs, and scan responses are fixtures, not verified L319 coverage or live ECU results. Future write operations require explicit approval and operation-specific preconditions. ECU addresses, bitrates, gateway routing, and pinouts must come from verified L319 documentation and measured captures, not guesses.
 
 ## Sensor capture and LLM analysis
 
