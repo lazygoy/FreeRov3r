@@ -1803,6 +1803,7 @@ class MainWindow(QMainWindow):
                 QDockWidget#quickDrawer { background: #20242c; color: #e7ebf0; border-left: 1px solid #3a4655; }
                 QDockWidget#quickDrawer::title { background: #20242c; padding: 10px 14px; font-weight: 700; }
                 QWidget#drawerBody { background: #1c222b; }
+                QLabel#drawerTitle, QLabel#drawerSubtitle, QLabel#drawerCaption, QLabel#drawerValue, QLabel#drawerStatus, QLabel#drawerSection, QLabel#drawerNote, QLabel#toastMarker, QLabel#toastText { background: transparent; }
                 QFrame#drawerCard { background: #252e39; border: 1px solid #3a4655; border-radius: 12px; }
                 QLabel#drawerTitle { color: #f4f7fb; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
                 QLabel#drawerSubtitle, QLabel#drawerCaption { color: #aeb9c6; font-size: 9pt; }
@@ -1858,6 +1859,7 @@ class MainWindow(QMainWindow):
                 QDockWidget#quickDrawer { background: #f8fafc; color: #1e293b; border-left: 1px solid #d9e0e8; }
                 QDockWidget#quickDrawer::title { background: #f1f5f9; padding: 10px 14px; font-weight: 700; }
                 QWidget#drawerBody { background: #f8fafc; }
+                QLabel#drawerTitle, QLabel#drawerSubtitle, QLabel#drawerCaption, QLabel#drawerValue, QLabel#drawerStatus, QLabel#drawerSection, QLabel#drawerNote, QLabel#toastMarker, QLabel#toastText { background: transparent; }
                 QFrame#drawerCard { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
                 QLabel#drawerTitle { color: #172033; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
                 QLabel#drawerSubtitle, QLabel#drawerCaption { color: #64748b; font-size: 9pt; }
