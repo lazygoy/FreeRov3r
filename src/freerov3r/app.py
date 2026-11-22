@@ -1891,7 +1891,7 @@ class MainWindow(QMainWindow):
                 QLabel#toastText { color: #f2f6fa; font-size: 9pt; font-weight: 600; }
                 QLabel#workspaceTitle { color: #ffffff; font-family: "{HEADING_FONT}"; font-size: 20pt; font-weight: 850; letter-spacing: 1.2px; }
                 QLabel#workspaceSubtitle { color: #aebdcb; font-family: "{BODY_FONT}"; font-size: 9.5pt; font-weight: 500; }
-                QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 700; }
+                QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 7px; padding: 9px 12px; font-family: "{BODY_FONT}"; font-size: 9.5pt; font-weight: 700; }
                 QLabel#headerOffline { background: #343b45; color: #c4ccd5; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
                 QLabel#headerOnline { background: #173e30; color: #83e0b2; border: 1px solid #286849; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
                 QLabel#headerSimulation { background: #4a391b; color: #ffd27c; border: 1px solid #80602b; border-radius: 7px; padding: 9px 12px; font-family: "Inter"; font-size: 9.5pt; font-weight: 750; }
@@ -1931,7 +1931,7 @@ class MainWindow(QMainWindow):
         else:
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
-                QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QWidget { font-family: "{BODY_FONT}"; font-size: 10pt; }
                 QWidget#workspaceHeader { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
                 QDockWidget#quickDrawer { background: #f8fafc; color: #1e293b; border-left: 1px solid #d9e0e8; }
                 QDockWidget#quickDrawer::title { background: #f1f5f9; padding: 10px 14px; font-weight: 700; }
@@ -1984,7 +1984,7 @@ class MainWindow(QMainWindow):
                 QLabel#splashCardText { color: #596b7d; font-size: 9pt; }
                 QPushButton#splashAction, QPushButton#splashContinue { background: #e8f2fc; color: #174b78; border: 1px solid #9bbfe2; font-weight: 700; }
                 QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #d9eafa; }
-            """)
+            """.replace("{BODY_FONT}", self.body_font_family).replace("{HEADING_FONT}", self.heading_font_family))
 
     def save_current_settings(self):
         backend_data = self.settings_backend.currentData()
