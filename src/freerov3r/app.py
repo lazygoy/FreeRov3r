@@ -1,6 +1,7 @@
 """FreeRov3r – user-friendly diagnostic interface with graphing, OBD-II, and modules."""
 import csv
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -305,7 +306,7 @@ class SensorGraphTab(QWidget):
             sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
             if self.vehicle_vin and sample_vin != self.vehicle_vin:
                 continue
-            if sample.sensor_id not in selected_ids or sample.quality != "valid":
+            if sample.sensor_id not in selected_ids or sample.quality != "valid" or not math.isfinite(sample.value):
                 continue
             grouped.setdefault(sample.sensor_id, []).append(sample)
 
