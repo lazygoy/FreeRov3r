@@ -41,6 +41,10 @@ ESP32-WROOM-32 has a Classical CAN (TWAI) controller but requires an external CA
 - can-utils: https://github.com/linux-can/can-utils
 
 ## Safety
+Transmit, writes, adaptations, and programming are disabled by default. Vehicle history and capture archives are stored locally under `~/.freerov3r/`; diagnostic scans require a selected VIN, and capture data is filed under the VIN active when capture began. No VIN or capture data is transmitted to a remote service. The module/DTC interface currently operates only on an in-memory synthetic module network; its module names, example DTCs, and scan responses are fixtures, not verified L319 coverage or live ECU results. Future write operations require explicit approval and operation-specific preconditions. ECU addresses, bitrates, gateway routing, and pinouts must come from verified L319 documentation and measured captures, not guesses.
+
+## Sensor capture and LLM analysis
+
 Transmit, writes, adaptations, and programming are disabled by default. Vehicle history and capture archives are stored locally under `~/.freerov3r/`; diagnostic scans require a selected VIN, and capture data is filed under the VIN active when capture began. No VIN or capture data is transmitted to a remote service. The module/DTC interface currently operates only on an in-memory synthetic module network; its module names, example DTCs, and scan responses are fixtures, not verified L319 coverage or live ECU results. Automatic VIN identification passively recognizes valid VINs in observed OBD Mode 09 PID 02 or UDS DID F190 ISO-TP responses; it does not transmit a VIN request. The Network overview colors only modules that have been scanned: green means no DTCs in the current module data, red means DTCs are present, and gray means not scanned or no response. The current network tree is still backed by synthetic module fixtures, not a live L319 scan. Future write operations require explicit approval and operation-specific preconditions. ECU addresses, bitrates, gateway routing, and pinouts must come from verified L319 documentation and measured captures, not guesses.
 
 ## Sensor capture and LLM analysis
