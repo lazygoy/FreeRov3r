@@ -1121,6 +1121,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(export_row)
 
         self.tabs.addTab(tab, "Capture")
+        self.refresh_serial_ports()
 
     def refresh_serial_ports(self):
         """Refresh the editable channel selector with detected serial devices."""
