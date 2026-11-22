@@ -784,6 +784,12 @@ class MainWindow(QMainWindow):
         self.last_rate_count = 0
         self.last_rate_time = time.monotonic()
         self.settings.update({"interface": interface, "channel": channel, "bitrate": bitrate})
+        for i in range(self.settings_backend.count()):
+            if self.settings_backend.itemData(i)[0] == interface:
+                self.settings_backend.setCurrentIndex(i)
+                break
+        self.settings_channel.setText(channel)
+        self.settings_bitrate.setCurrentText(str(bitrate))
 
     def on_frame(self, frame):
         self.session.add(frame)
