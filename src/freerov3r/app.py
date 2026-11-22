@@ -1,6 +1,7 @@
 """FreeRov3r – user-friendly diagnostic interface with graphing, OBD-II, and modules."""
 import csv
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -28,6 +29,7 @@ from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
 from .session import CaptureSession
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
+from .sensors.scaling import normalize_values
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
@@ -135,25 +137,20 @@ class SensorGraphTab(QWidget):
         self.record_start = None
 
         layout = QVBoxLayout(self)
-
         if not HAS_CHARTS:
             msg = QLabel(
                 "<b>Graphing unavailable</b><br><br>"
                 "PySide6.QtCharts is not installed.<br>"
-                "Run: <code>pip install --upgrade PySide6</code> then restart.<br><br>"
+                "Run: <code>python -m pip install --upgrade PySide6</code> then restart.<br><br>"
                 "CSV load/export still works."
             )
             msg.setWordWrap(True)
             msg.setAlignment(Qt.AlignCenter)
             layout.addWidget(msg)
-        else:
-            info = QLabel("Select sensors, set colors/scale, zoom with mouse. Right-click chart to reset zoom.")
-            info.setWordWrap(True)
-            layout.addWidget(info)
 
         controls = QHBoxLayout()
         self.sensor_list = QListWidget()
-        self.sensor_list.setMaximumHeight(140)
+        self.sensor_list.setMaximumHeight(150)
         self.sensor_list.setToolTip("Check multiple sensors to plot them together. Uncheck a sensor to hide it.")
         self.sensor_list.itemChanged.connect(self._on_sensor_item_changed)
         controls.addWidget(self.sensor_list, 2)
@@ -168,7 +165,16 @@ class SensorGraphTab(QWidget):
             color_btn.clicked.connect(self.set_color)
             right.addWidget(color_btn)
 
-            self.auto_scale = QCheckBox("Auto Y-scale")
+            self.independent_scale = QCheckBox("Scale each sensor independently")
+            self.independent_scale.setChecked(True)
+            self.independent_scale.setToolTip(
+                "Maps each sensor's own min/max to 0–100% so signals with different units "
+                "and magnitudes remain visible together. The legend retains each raw range."
+            )
+            self.independent_scale.toggled.connect(self.update_chart)
+            right.addWidget(self.independent_scale)
+
+            self.auto_scale = QCheckBox("Auto shared Y-scale")
             self.auto_scale.setChecked(True)
             self.auto_scale.toggled.connect(self.update_chart)
             right.addWidget(self.auto_scale)
@@ -188,29 +194,30 @@ class SensorGraphTab(QWidget):
         load_btn = QPushButton("Load CSV")
         load_btn.clicked.connect(self.load_csv)
         right.addWidget(load_btn)
-
         refresh_btn = QPushButton("Refresh List")
         refresh_btn.clicked.connect(self.refresh_sensor_list)
         right.addWidget(refresh_btn)
-
         controls.addLayout(right, 1)
         layout.addLayout(controls)
 
         if HAS_CHARTS:
+            info = QLabel(
+                "Independent scaling is a trend-comparison view, not a shared physical scale. "
+                "Raw units and min/max remain visible in each legend entry."
+            )
+            info.setWordWrap(True)
+            layout.addWidget(info)
             self.chart = QChart()
-            self.chart.setTitle("Sensor / PID Graph")
+            self.chart.setTitle("Multi-sensor / PID Graph")
             self.chart.legend().setVisible(True)
-            self.chart.setAnimationOptions(QChart.SeriesAnimations)
-
+            self.chart.setAnimationOptions(QChart.NoAnimation)
             self.chart_view = QChartView(self.chart)
             self.chart_view.setRenderHint(QPainter.Antialiasing)
             self.chart_view.setRubberBand(QChartView.RectangleRubberBand)
             layout.addWidget(self.chart_view)
-
             self.axis_x = QValueAxis()
             self.axis_x.setTitleText("Time (s from start)")
             self.axis_y = QValueAxis()
-            self.axis_y.setTitleText("Value")
             self.chart.addAxis(self.axis_x, Qt.AlignBottom)
             self.chart.addAxis(self.axis_y, Qt.AlignLeft)
         else:
@@ -237,8 +244,10 @@ class SensorGraphTab(QWidget):
         self.sensor_list.blockSignals(False)
         if HAS_CHARTS:
             self.update_chart()
-        if not HAS_CHARTS and hasattr(self, "placeholder"):
-            self.placeholder.setPlainText(f"{len(self.sensor_capture.samples)} samples loaded.\\n{len(seen)} unique sensors.")
+        elif hasattr(self, "placeholder"):
+            self.placeholder.setPlainText(
+                f"{len(self.sensor_capture.samples)} samples loaded.\n{len(seen)} unique sensors."
+            )
 
     def set_vehicle_vin(self, vin):
         self.vehicle_vin = vin
@@ -261,9 +270,11 @@ class SensorGraphTab(QWidget):
         else:
             self.record_btn.setText("Start Recording")
             self.record_btn.setStyleSheet("")
-            path, _ = QFileDialog.getSaveFileName(self, "Save sensor recording", "sensor_recording.csv", "CSV (*.csv)")
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save sensor recording", "sensor_recording.csv", "CSV (*.csv)"
+            )
             if path:
-                self.sensor_capture.export_csv(path, vin=self.settings.get("current_vin"))
+                self.sensor_capture.export_csv(path, vin=self.vehicle_vin)
 
     def set_color(self):
         if not HAS_CHARTS:
@@ -284,47 +295,75 @@ class SensorGraphTab(QWidget):
             return
         self.chart.removeAllSeries()
         self.series_map.clear()
-
-        selected_ids = [
+        selected_ids = {
             self.sensor_list.item(i).text().split("(")[-1].rstrip(")")
             for i in range(self.sensor_list.count())
             if self.sensor_list.item(i).checkState() == Qt.Checked
-        ]
+        }
 
-        min_t = min_v = float("inf")
-        max_t = max_v = float("-inf")
-        base_time = self.record_start or (self.sensor_capture.samples[0].timestamp if self.sensor_capture.samples else 0)
-
+        grouped = {}
         for sample in self.sensor_capture.samples:
             sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
             if self.vehicle_vin and sample_vin != self.vehicle_vin:
                 continue
-            if sample.sensor_id not in selected_ids:
+            if sample.sensor_id not in selected_ids or sample.quality != "valid" or not math.isfinite(sample.value):
                 continue
-            t = sample.timestamp - base_time
-            if sample.sensor_id not in self.series_map:
-                series = QLineSeries()
-                series.setName(f"{sample.name} ({sample.sensor_id})")
-                color = self.color_map.get(sample.sensor_id, QColor.fromHsv(abs(hash(sample.sensor_id)) % 360, 180, 220))
-                series.setColor(color)
-                self.chart.addSeries(series)
-                series.attachAxis(self.axis_x)
-                series.attachAxis(self.axis_y)
-                self.series_map[sample.sensor_id] = series
-            self.series_map[sample.sensor_id].append(t, sample.value)
-            min_t, max_t = min(min_t, t), max(max_t, t)
-            min_v, max_v = min(min_v, sample.value), max(max_v, sample.value)
+            grouped.setdefault(sample.sensor_id, []).append(sample)
 
-        if min_t != float("inf"):
-            self.axis_x.setRange(min_t, max_t + 0.5)
-            if self.auto_scale.isChecked():
-                pad = max((max_v - min_v) * 0.15, 1.0)
-                self.axis_y.setRange(min_v - pad, max_v + pad)
+        if not grouped:
+            self.axis_x.setRange(0, 1)
+            self.axis_y.setTitleText("Value")
+            return
+
+        all_samples = [sample for values in grouped.values() for sample in values]
+        base_time = min(sample.timestamp for sample in all_samples)
+        min_t = min(sample.timestamp - base_time for sample in all_samples)
+        max_t = max(sample.timestamp - base_time for sample in all_samples)
+
+        independent = self.independent_scale.isChecked()
+        self.axis_y.setTitleText("Relative scale per sensor (%)" if independent else "Value (shared scale)")
+        raw_min = min(sample.value for sample in all_samples)
+        raw_max = max(sample.value for sample in all_samples)
+
+        for sensor_id, samples in grouped.items():
+            samples.sort(key=lambda sample: sample.timestamp)
+            raw_values = [sample.value for sample in samples]
+            if independent:
+                plotted_values, low, high = normalize_values(raw_values)
+                unit = samples[0].unit or "unitless"
+                legend_name = (
+                    f"{samples[0].name} ({sensor_id}) [{low:.4g}–{high:.4g} {unit}]"
+                )
             else:
-                try:
-                    self.axis_y.setRange(float(self.ymin.text()), float(self.ymax.text()))
-                except ValueError:
-                    pass
+                plotted_values = raw_values
+                legend_name = f"{samples[0].name} ({sensor_id}) [{samples[0].unit}]"
+
+            series = QLineSeries()
+            series.setName(legend_name)
+            color = self.color_map.get(
+                sensor_id, QColor.fromHsv(abs(hash(sensor_id)) % 360, 180, 220)
+            )
+            series.setColor(color)
+            for sample, plotted in zip(samples, plotted_values):
+                series.append(sample.timestamp - base_time, plotted)
+            self.chart.addSeries(series)
+            series.attachAxis(self.axis_x)
+            series.attachAxis(self.axis_y)
+            self.series_map[sensor_id] = series
+
+        self.axis_x.setRange(min_t, max_t + (0.5 if max_t == min_t else 0.01))
+        if independent:
+            self.axis_y.setRange(0, 100)
+        elif self.auto_scale.isChecked():
+            pad = max((raw_max - raw_min) * 0.15, 1.0)
+            self.axis_y.setRange(raw_min - pad, raw_max + pad)
+        else:
+            try:
+                low, high = float(self.ymin.text()), float(self.ymax.text())
+                if low < high:
+                    self.axis_y.setRange(low, high)
+            except ValueError:
+                pass
 
     def load_csv(self):
         path, _ = QFileDialog.getOpenFileName(self, "Load sensor CSV", "", "CSV (*.csv)")
@@ -348,8 +387,6 @@ class SensorGraphTab(QWidget):
                 except (KeyError, ValueError):
                     continue
         self.refresh_sensor_list()
-        if HAS_CHARTS:
-            self.update_chart()
         QMessageBox.information(self, "Loaded", f"Imported {count} samples.")
 
 
