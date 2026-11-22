@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QGroupBox,
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
+    QTreeWidget, QTreeWidgetItem,
 )
 
 try:
@@ -27,6 +28,7 @@ from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
 from .session import CaptureSession
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
+from .diagnostics.simulated_modules import SimulatedModuleNetwork
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -383,42 +385,147 @@ class OBDTab(QWidget):
 
 
 class ModulesTab(QWidget):
-    def __init__(self, session: CaptureSession, parent=None):
+    def __init__(self, network: SimulatedModuleNetwork, parent=None):
         super().__init__(parent)
-        self.session = session
+        self.network = network
+        self.simulation_enabled = False
+        self.current_module_code = None
         layout = QVBoxLayout(self)
-
-        note = QLabel(
-            "<b>Vehicle Modules (CAN)</b><br>"
-            "L319 module list is a placeholder. Addresses must come from verified documentation. "
-            "Select a module to filter the current capture."
-        )
+        note = QLabel("<b>Module diagnostics simulator</b><br>Synthetic L319-style module categories and example DTCs. This is a test fixture, not a scan of a real vehicle. Real ECU addressing and UDS services are not enabled.")
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        self.module_list = QListWidget()
-        for code, name, addr in L319_MODULES:
-            self.module_list.addItem(f"{code} — {name}  [{addr}]")
-        self.module_list.itemClicked.connect(self.on_module_selected)
-        layout.addWidget(self.module_list)
+        actions = QHBoxLayout()
+        self.scan_one_btn = QPushButton("Scan Selected Module")
+        self.scan_one_btn.clicked.connect(self.scan_selected)
+        actions.addWidget(self.scan_one_btn)
+        self.scan_all_btn = QPushButton("Scan All Modules")
+        self.scan_all_btn.clicked.connect(self.scan_all)
+        actions.addWidget(self.scan_all_btn)
+        self.clear_module_btn = QPushButton("Clear Selected Module")
+        self.clear_module_btn.clicked.connect(self.clear_module)
+        actions.addWidget(self.clear_module_btn)
+        self.clear_all_btn = QPushButton("Clear All Simulated DTCs")
+        self.clear_all_btn.clicked.connect(self.clear_all)
+        actions.addWidget(self.clear_all_btn)
+        layout.addLayout(actions)
 
-        self.filter_log = QPlainTextEdit()
-        self.filter_log.setReadOnly(True)
-        self.filter_log.setPlaceholderText("Select a module to see related frames from the current capture...")
-        layout.addWidget(self.filter_log)
+        split = QHBoxLayout()
+        self.module_tree = QTreeWidget()
+        self.module_tree.setHeaderLabels(["Category / module", "DTCs", "Last scan"])
+        self.module_tree.setMinimumWidth(390)
+        self.module_tree.itemSelectionChanged.connect(self.show_selected_module)
+        split.addWidget(self.module_tree, 1)
 
-        refresh_btn = QPushButton("Refresh from Capture")
-        refresh_btn.clicked.connect(lambda: self.on_module_selected(self.module_list.currentItem()))
-        layout.addWidget(refresh_btn)
+        right = QVBoxLayout()
+        right.addWidget(QLabel("Diagnostic trouble codes"))
+        self.dtc_table = QTableWidget(0, 4)
+        self.dtc_table.setHorizontalHeaderLabels(["Code", "Description", "Status", "Severity"])
+        self.dtc_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.dtc_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.dtc_table.setSelectionMode(QTableWidget.SingleSelection)
+        right.addWidget(self.dtc_table, 2)
+        self.clear_code_btn = QPushButton("Clear Selected DTC")
+        self.clear_code_btn.clicked.connect(self.clear_selected_code)
+        right.addWidget(self.clear_code_btn)
+        self.result_log = QPlainTextEdit()
+        self.result_log.setReadOnly(True)
+        self.result_log.setMaximumBlockCount(1000)
+        right.addWidget(self.result_log, 1)
+        split.addLayout(right, 2)
+        layout.addLayout(split)
+        self.set_simulation_enabled(False)
+        self.refresh_tree()
 
-    def on_module_selected(self, item):
-        if not item:
+    def set_simulation_enabled(self, enabled: bool):
+        self.simulation_enabled = bool(enabled)
+        for control in (self.scan_one_btn, self.scan_all_btn, self.clear_module_btn, self.clear_all_btn, self.clear_code_btn):
+            control.setEnabled(self.simulation_enabled)
+        if enabled:
+            self.result_log.appendPlainText("SIMULATOR ACTIVE: operations affect synthetic in-memory data only.")
+        else:
+            self.result_log.appendPlainText("Simulator inactive. Select the simulated vehicle interface to enable module operations.")
+
+    def refresh_tree(self):
+        selected = self.current_module_code
+        self.module_tree.clear()
+        groups = {}
+        for module in self.network.modules:
+            parent = groups.get(module.category)
+            if parent is None:
+                parent = QTreeWidgetItem([module.category, "", ""])
+                self.module_tree.addTopLevelItem(parent)
+                groups[module.category] = parent
+            item = QTreeWidgetItem([f"{module.code} — {module.name}", str(len(module.dtcs)), module.last_scan or "Not scanned"])
+            item.setData(0, Qt.UserRole, module.code)
+            parent.addChild(item)
+            if module.code == selected:
+                self.module_tree.setCurrentItem(item)
+        self.module_tree.expandAll()
+
+    def _selected_code(self):
+        item = self.module_tree.currentItem()
+        return item.data(0, Qt.UserRole) if item else None
+
+    def show_selected_module(self):
+        code = self._selected_code()
+        if not code:
+            self.dtc_table.setRowCount(0)
             return
-        self.filter_log.clear()
-        # Placeholder filter — real filtering needs verified IDs
-        self.filter_log.appendPlainText(f"Selected: {item.text()}\n")
-        self.filter_log.appendPlainText(f"Frames in session: {len(self.session.frames)}")
-        self.filter_log.appendPlainText("(Module-specific ID filtering will be added once verified addresses are available.)")
+        self.current_module_code = code
+        module = self.network.get_module(code)
+        self.dtc_table.setRowCount(len(module.dtcs))
+        for row, dtc in enumerate(module.dtcs):
+            for col, value in enumerate((dtc.code, dtc.description, dtc.status, dtc.severity)):
+                self.dtc_table.setItem(row, col, QTableWidgetItem(value))
+
+    def scan_selected(self):
+        code = self._selected_code()
+        if not self.simulation_enabled or not code:
+            return
+        module = self.network.scan_module(code)
+        self.result_log.appendPlainText(f"SCAN {code}: response received, {len(module.dtcs)} DTC(s).")
+        self.refresh_tree()
+        self.show_selected_module()
+
+    def scan_all(self):
+        if not self.simulation_enabled:
+            return
+        modules = self.network.scan_all()
+        total = sum(len(module.dtcs) for module in modules)
+        self.result_log.appendPlainText(f"FULL SCAN: {len(modules)} simulated modules responded; {total} DTC(s) found.")
+        self.refresh_tree()
+
+    def clear_selected_code(self):
+        code = self._selected_code()
+        row = self.dtc_table.currentRow()
+        if not self.simulation_enabled or not code or row < 0 or not self.dtc_table.item(row, 0):
+            return
+        dtc = self.dtc_table.item(row, 0).text()
+        if self.network.clear_code(code, dtc):
+            self.result_log.appendPlainText(f"CLEAR {code} {dtc}: removed from simulated module memory.")
+        self.refresh_tree()
+        self.show_selected_module()
+
+    def clear_module(self):
+        code = self._selected_code()
+        if not self.simulation_enabled or not code:
+            return
+        count = self.network.clear_module(code)
+        self.result_log.appendPlainText(f"CLEAR MODULE {code}: {count} simulated DTC(s) cleared.")
+        self.refresh_tree()
+        self.show_selected_module()
+
+    def clear_all(self):
+        if not self.simulation_enabled:
+            return
+        answer = QMessageBox.question(self, "Clear all simulated DTCs", "Remove every DTC from every simulated module?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        count = self.network.clear_all()
+        self.result_log.appendPlainText(f"CLEAR ALL: {count} simulated DTC(s) removed.")
+        self.refresh_tree()
+        self.show_selected_module()
 
 
 class MainWindow(QMainWindow):
@@ -494,7 +601,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.graph_tab, "Graph")
         self.obd_tab = OBDTab()
         self.tabs.addTab(self.obd_tab, "OBD-II")
-        self.modules_tab = ModulesTab(self.session)
+        self.module_network = SimulatedModuleNetwork()
+        self.modules_tab = ModulesTab(self.module_network)
         self.tabs.addTab(self.modules_tab, "Modules")
         self._build_settings_tab()
 
@@ -775,6 +883,7 @@ class MainWindow(QMainWindow):
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
         self.active_interface = interface
+        self.modules_tab.set_simulation_enabled(interface == "simulator")
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
         self.receiver.status.connect(self.status.setText)
