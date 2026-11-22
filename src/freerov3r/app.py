@@ -1069,7 +1069,7 @@ class MainWindow(QMainWindow):
         rail_layout.setSpacing(6)
 
         home = QToolButton()
-        home.setText("⌂\\nHome")
+        home.setText("⌂\nHome")
         home.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         home.setCheckable(False)
         home.setMinimumHeight(66)
@@ -1094,7 +1094,7 @@ class MainWindow(QMainWindow):
         for index in range(self.tabs.count()):
             label = self.tabs.tabText(index)
             button = QToolButton()
-            button.setText(f"{glyphs.get(label, '◇')}\\n{display_labels.get(label, label)}")
+            button.setText(f"{glyphs.get(label, '◇')}\n{display_labels.get(label, label)}")
             button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
             button.setCheckable(True)
             button.setMinimumHeight(68)
