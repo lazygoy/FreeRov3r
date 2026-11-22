@@ -11,3 +11,11 @@ def test_history_is_persistent_and_grouped_by_vin(tmp_path):
     assert len(loaded.for_vin("SALXXXXXXXXXXXX1")) == 1
     assert loaded.for_vin("SALXXXXXXXXXXXX1")[0]["details"]["dtcs"] == ["P0420"]
     assert len(loaded.for_vin("SALYYYYYYYYYYYY2")) == 1
+
+
+
+def test_capture_archive_is_saved_under_vin_folder(tmp_path):
+    store = VehicleHistoryStore(tmp_path / "vehicle_history.json")
+    archive = store.archive_capture("SALXXXXXXXXXXXX1", {"frames": [], "sensor_samples": []})
+    assert archive.exists()
+    assert "SALXXXXXXXXXXXX1" in str(archive)
