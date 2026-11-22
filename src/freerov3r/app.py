@@ -23,6 +23,7 @@ except ImportError:
 
 from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
+from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
 from .session import CaptureSession
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
@@ -329,6 +330,7 @@ class OBDTab(QWidget):
         layout.addWidget(note)
 
         self.table = QTableWidget(len(OBD_PIDS), 4)
+        self.pid_rows = {pid: row for row, (pid, _, _) in enumerate(OBD_PIDS)}
         self.table.setHorizontalHeaderLabels(["PID", "Description", "Unit", "Value"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         for row, (pid, desc, unit) in enumerate(OBD_PIDS):
@@ -349,6 +351,11 @@ class OBDTab(QWidget):
         layout.addLayout(btn_row)
 
     def clear_values(self):
+    def update_value(self, pid, value):
+        row = self.pid_rows.get(f"{pid:02X}")
+        if row is not None:
+            self.table.item(row, 3).setText(f"{value:.2f}".rstrip("0").rstrip("."))
+
         for row in range(self.table.rowCount()):
             self.table.item(row, 3).setText("—")
 
@@ -479,6 +486,7 @@ class MainWindow(QMainWindow):
         controls = QHBoxLayout()
         self.backend = QComboBox()
         self.backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
+        self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
         self.backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.backend.addItem("SLCAN", ("slcan", "COM3"))
@@ -699,8 +707,12 @@ class MainWindow(QMainWindow):
         channel = self.channel_edit.text().strip() or data[1]
         bitrate = int(self.bitrate.currentText())
 
-        adapter = Esp32SerialAdapter(port=channel) if interface == "esp32" else \
-                  PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
+        if interface == "simulator":
+            adapter = SimulatedVehicleAdapter(channel=channel)
+        elif interface == "esp32":
+            adapter = Esp32SerialAdapter(port=channel)
+        else:
+            adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
@@ -718,6 +730,26 @@ class MainWindow(QMainWindow):
         self.frame_count_label.setText(f"Frames: {self.frame_counter}")
         ts = frame.timestamp or 0
         self.log.appendPlainText(f"{ts:.6f}  {frame.arbitration_id:08X}  {frame.data.hex(' ').upper()}")
+        decoded = decode_mode01(frame)
+        if decoded is not None:
+            pid, name, value, unit = decoded
+            self.obd_tab.update_value(pid, value)
+            sensor_id = f"obd_{pid:02X}"
+            simulated = bool(frame.channel and "DEMO" in frame.channel)
+            self.sensor_capture.add(SensorSample(
+                timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
+                value=value, unit=unit, source="simulated" if simulated else "ecu",
+                ecu="SIMULATED ECU" if simulated else None,
+                signal=f"Mode 01 PID {pid:02X}",
+                metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex()},
+            ))
+            known = any(
+                self.graph_tab.sensor_list.item(i).text().endswith(f"({sensor_id})")
+                for i in range(self.graph_tab.sensor_list.count())
+            )
+            if not known:
+                self.graph_tab.refresh_sensor_list()
+            self.sensor_log.appendPlainText(f"{name}: {value:.2f} {unit} [{sensor_id}]")
 
     def _update_rate(self):
         now = time.monotonic()
