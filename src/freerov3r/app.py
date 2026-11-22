@@ -350,12 +350,12 @@ class OBDTab(QWidget):
         btn_row.addWidget(clear_btn)
         layout.addLayout(btn_row)
 
-    def clear_values(self):
     def update_value(self, pid, value):
         row = self.pid_rows.get(f"{pid:02X}")
         if row is not None:
             self.table.item(row, 3).setText(f"{value:.2f}".rstrip("0").rstrip("."))
 
+    def clear_values(self):
         for row in range(self.table.rowCount()):
             self.table.item(row, 3).setText("—")
 
