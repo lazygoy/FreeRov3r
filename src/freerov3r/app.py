@@ -387,9 +387,9 @@ class OBDTab(QWidget):
 
 class ModulesTab(QWidget):
     def __init__(self, network: SimulatedModuleNetwork, vin_provider=None, history_callback=None, parent=None):
+        super().__init__(parent)
         self.vin_provider = vin_provider or (lambda: None)
         self.history_callback = history_callback or (lambda *args, **kwargs: None)
-        super().__init__(parent)
         self.network = network
         self.simulation_enabled = False
         self.current_module_code = None
@@ -627,6 +627,8 @@ class MainWindow(QMainWindow):
         self.receiver = None
         self.capture_started_at = None
         self.capture_start_frames = 0
+        self.capture_start_sample_index = 0
+        self.capture_start_frame_index = 0
         self.capture_vin = None
         self.active_interface = None
         self.frame_counter = 0
@@ -971,10 +973,34 @@ class MainWindow(QMainWindow):
         if self.receiver and self.receiver.isRunning():
             self.receiver.stop()
             elapsed = max(0.0, time.time() - (self.capture_started_at or time.time()))
+            capture_samples = self.sensor_capture.samples[self.capture_start_sample_index:]
+            capture_frames = self.session.frames[self.capture_start_frame_index:]
+            archive_path = self.history_store.archive_capture(
+                self.capture_vin,
+                {
+                    "interface": self.active_interface,
+                    "started_at": self.capture_started_at,
+                    "duration_seconds": round(elapsed, 2),
+                    "frames": [
+                        {"timestamp": frame.timestamp, "arbitration_id": frame.arbitration_id,
+                         "extended": frame.is_extended_id, "data": frame.data.hex(),
+                         "channel": frame.channel}
+                        for frame in capture_frames
+                    ],
+                    "sensor_samples": [
+                        {"timestamp": sample.timestamp, "sensor_id": sample.sensor_id,
+                         "name": sample.name, "value": sample.value, "unit": sample.unit,
+                         "source": sample.source, "ecu": sample.ecu, "signal": sample.signal,
+                         "quality": sample.quality, "metadata": sample.metadata}
+                        for sample in capture_samples
+                    ],
+                },
+            )
             self.record_vehicle_event(
                 "capture_completed", "CAN capture stopped",
-                {"interface": self.active_interface, "frames": self.frame_counter,
-                 "sensor_samples": len(self.sensor_capture.samples), "duration_seconds": round(elapsed, 2)},
+                {"interface": self.active_interface, "frames": len(capture_frames),
+                 "sensor_samples": len(capture_samples), "duration_seconds": round(elapsed, 2),
+                 "archive_file": str(archive_path)},
                 vin=self.capture_vin,
             )
             self.capture_started_at = None
@@ -1000,6 +1026,8 @@ class MainWindow(QMainWindow):
         self.capture_vin = self.settings.get("current_vin")
         self.capture_started_at = time.time()
         self.capture_start_frames = 0
+        self.capture_start_sample_index = len(self.sensor_capture.samples)
+        self.capture_start_frame_index = len(self.session.frames)
         self.record_vehicle_event(
             "capture_started", "CAN capture started",
             {"interface": interface, "channel": channel, "bitrate": bitrate},
