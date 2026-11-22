@@ -952,8 +952,10 @@ class MainWindow(QMainWindow):
             "Segoe UI",
         )
         self.heading_font_family = next(
-            (installed_fonts[name.casefold()] for name in ("Inter Tight", "Inter", "Segoe UI Variable", "Segoe UI")
-             if name.casefold() in installed_fonts),
+            (installed_fonts[name.casefold()] for name in (
+                "Gill Sans MT", "Gill Sans", "Trebuchet MS",
+                "Inter Tight", "Inter", "Segoe UI Variable", "Segoe UI"
+            ) if name.casefold() in installed_fonts),
             self.body_font_family,
         )
         self.session = CaptureSession()
@@ -1009,7 +1011,9 @@ class MainWindow(QMainWindow):
             wlayout.addWidget(welcome_brand)
 
         title = QLabel("What would you like to do?")
-        title.setFont(QFont(self.heading_font_family, 25, QFont.ExtraBold))
+        title_font = QFont(self.heading_font_family, 25, QFont.Bold)
+        title_font.setItalic(True)
+        title.setFont(title_font)
         title.setAlignment(Qt.AlignCenter)
         wlayout.addWidget(title)
 
@@ -1115,7 +1119,9 @@ class MainWindow(QMainWindow):
         title_column.setSpacing(2)
         self.workspace_title = QLabel("Capture")
         self.workspace_title.setObjectName("workspaceTitle")
-        self.workspace_title.setFont(QFont(self.heading_font_family, 20, QFont.ExtraBold))
+        workspace_title_font = QFont(self.heading_font_family, 20, QFont.Bold)
+        workspace_title_font.setItalic(True)
+        self.workspace_title.setFont(workspace_title_font)
         self.workspace_subtitle = QLabel("Passive vehicle diagnostics and CAN monitoring")
         self.workspace_subtitle.setObjectName("workspaceSubtitle")
         self.workspace_subtitle.setFont(QFont(self.body_font_family, 9, QFont.Medium))
@@ -1258,7 +1264,9 @@ class MainWindow(QMainWindow):
         splash_brand_text.addWidget(eyebrow)
         title = QLabel("What would you like to do?")
         title.setObjectName("splashTitle")
-        title.setFont(QFont(self.heading_font_family, 25, QFont.ExtraBold))
+        splash_title_font = QFont(self.heading_font_family, 25, QFont.Bold)
+        splash_title_font.setItalic(True)
+        title.setFont(splash_title_font)
         splash_brand_text.addWidget(title)
         splash_brand_row.addLayout(splash_brand_text, 1)
         layout.addLayout(splash_brand_row)
@@ -1559,7 +1567,9 @@ class MainWindow(QMainWindow):
 
         title = QLabel("FreeRov3r")
         title.setObjectName("aboutTitle")
-        title.setFont(QFont(self.heading_font_family, 22, QFont.ExtraBold))
+        about_title_font = QFont(self.heading_font_family, 22, QFont.Bold)
+        about_title_font.setItalic(True)
+        title.setFont(about_title_font)
         layout.addWidget(title)
 
         description = QLabel(

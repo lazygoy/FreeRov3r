@@ -17,36 +17,51 @@
  <ellipse cx="108" cy="86" rx="104" ry="78" fill="url(#silver)"/>
  <ellipse cx="108" cy="86" rx="97" ry="71" fill="url(#green)" stroke="#f2f5f3" stroke-width="2"/>
  <path d="M46 70L78 43L94 54L111 28L130 54L146 42L174 70" fill="none" stroke="#e7efeb" stroke-width="4" stroke-linejoin="round"/>
- <text x="108" y="101" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="31" font-style="italic" font-weight="800">Free</text>
- <text x="108" y="133" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="32" font-style="italic" font-weight="800">Rov3r</text>
+ <text x="108" y="101" text-anchor="middle" fill="#fff" font-family="'Gill Sans MT','Gill Sans','Trebuchet MS',sans-serif" font-size="31" font-style="italic" font-weight="700">Free</text>
+ <text x="108" y="133" text-anchor="middle" fill="#fff" font-family="'Gill Sans MT','Gill Sans','Trebuchet MS',sans-serif" font-size="32" font-style="italic" font-weight="700">Rov3r</text>
 </g>
 <path d="M270 34V196" stroke="#8fa69a" stroke-width="2" opacity=".55"/>
-<text x="312" y="111" fill="url(#silver)" font-family="Arial,sans-serif" font-size="82" font-style="italic" font-weight="800" letter-spacing="-4">FreeRov3r</text>
-<text x="320" y="151" fill="#d6e0db" font-family="Arial,sans-serif" font-size="20" font-weight="700" letter-spacing="5">DIAGNOSTICS  •  MONITORING  •  SOLUTIONS</text>
+<text x="312" y="111" fill="url(#silver)" font-family="'Gill Sans MT','Gill Sans','Trebuchet MS',sans-serif" font-size="82" font-style="italic" font-weight="700" letter-spacing="-3">FreeRov3r</text>
+<text x="320" y="151" fill="#d6e0db" font-family="'Gill Sans MT','Gill Sans','Trebuchet MS',sans-serif" font-size="20" font-weight="700" letter-spacing="5">DIAGNOSTICS  •  MONITORING  •  SOLUTIONS</text>
 <path d="M315 177H1080" stroke="#3e9863" stroke-width="3"/>
-<!-- Original vector side profile of a Discovery 4 (L319): stepped roof, upright rear, tall cabin and split side glass. -->
-<g transform="translate(1120 20)">
- <ellipse cx="126" cy="151" rx="124" ry="8" fill="#020705" opacity=".55"/>
- <path d="M8 118L8 82L20 72L48 69L62 37L78 31L163 31L181 45L199 68L222 75L242 91L246 118L232 129L18 129Z" fill="#111b16" stroke="#c4d0ca" stroke-width="2.5" stroke-linejoin="round"/>
- <path d="M18 78L48 74L65 42L80 37L105 37L105 76Z" fill="#243b30" stroke="#a9bbb0" stroke-width="2"/>
- <path d="M111 37L159 37L176 51L191 76L111 76Z" fill="#243b30" stroke="#a9bbb0" stroke-width="2"/>
- <path d="M181 53L197 73L220 80L233 93L181 93Z" fill="#243b30" stroke="#a9bbb0" stroke-width="2"/>
- <path d="M9 91L241 91" stroke="#71877a" stroke-width="2"/>
- <path d="M107 37V126M178 49V126" stroke="#73877c" stroke-width="2"/>
- <path d="M20 104H229" stroke="#687c70" stroke-width="2"/>
- <path d="M28 83L53 81M198 83L221 87" stroke="#dce5df" stroke-width="3"/>
- <path d="M233 95L246 98L246 111L234 111Z" fill="#dce6df"/>
- <path d="M8 97L18 94V109H8Z" fill="#b7d5c2"/>
- <rect x="65" y="111" width="20" height="3" rx="1.5" fill="#9aa99f"/>
- <rect x="128" y="111" width="20" height="3" rx="1.5" fill="#9aa99f"/>
- <path d="M15 127H240" stroke="#5d7667" stroke-width="3"/>
- <circle cx="59" cy="124" r="25" fill="#050807" stroke="#87958d" stroke-width="5"/>
- <circle cx="59" cy="124" r="12" fill="#68766f" stroke="#d0d8d3" stroke-width="2"/>
- <circle cx="59" cy="124" r="4" fill="#18251e"/>
- <circle cx="195" cy="124" r="25" fill="#050807" stroke="#87958d" stroke-width="5"/>
- <circle cx="195" cy="124" r="12" fill="#68766f" stroke="#d0d8d3" stroke-width="2"/>
- <circle cx="195" cy="124" r="4" fill="#18251e"/>
- <path d="M8 146H246" stroke="#5d7667" stroke-width="3"/>
+<!-- Discovery 4 / L319-inspired profile: tall square cabin, stepped roof, long wheelbase, upright tail and detailed front fascia. -->
+<g transform="translate(1088 12)">
+ <ellipse cx="244" cy="181" rx="244" ry="10" fill="#020705" opacity=".55"/>
+ <!-- body and bumpers -->
+ <path d="M18 137L18 79L31 69L57 67L74 35L91 27L293 27L316 40L339 72L389 82L423 100L438 128L434 150L414 158L34 158L17 150Z" fill="#111b16" stroke="#cbd6d0" stroke-width="3" stroke-linejoin="round"/>
+ <!-- roof rails and stepped roof -->
+ <path d="M83 24H293L309 31M80 19H298" fill="none" stroke="#d9e2dc" stroke-width="3" stroke-linecap="round"/>
+ <!-- glass: rear quarter, rear door, front door, windscreen -->
+ <path d="M36 76L61 72L78 39L91 34L127 34L127 82L36 82Z" fill="#294638" stroke="#a9bbb0" stroke-width="2.5"/>
+ <path d="M135 34H194V83H135Z" fill="#294638" stroke="#a9bbb0" stroke-width="2.5"/>
+ <path d="M202 34H285L306 48L328 83H202Z" fill="#294638" stroke="#a9bbb0" stroke-width="2.5"/>
+ <path d="M317 52L336 76L383 85L404 99H348Z" fill="#294638" stroke="#a9bbb0" stroke-width="2.5"/>
+ <!-- pillars, door seams, beltline -->
+ <path d="M129 31V151M198 31V151M310 49L326 151" stroke="#82958a" stroke-width="2.5"/>
+ <path d="M25 94H417M31 120H420" stroke="#64796c" stroke-width="2"/>
+ <path d="M145 100H177M218 100H252M286 100H303" stroke="#d4ded8" stroke-width="3" stroke-linecap="round"/>
+ <path d="M148 111H170M221 111H243" stroke="#879b8e" stroke-width="2"/>
+ <!-- front grille, lamps and bumper at right -->
+ <path d="M410 101L432 108L437 132L422 137H408Z" fill="#17231c" stroke="#aebbb3" stroke-width="2"/>
+ <path d="M413 108H432M412 114H434M412 120H435M414 126H435" stroke="#b7c5bc" stroke-width="2"/>
+ <path d="M385 88L410 95L414 106L389 101Z" fill="#dce8e0" stroke="#f2f5f3" stroke-width="1.5"/>
+ <path d="M421 138L438 137L436 151L414 154" fill="#6b7d72" stroke="#c2cec6" stroke-width="2"/>
+ <!-- rear lamp -->
+ <path d="M18 91L31 88V123L18 126Z" fill="#a9c9b5" stroke="#d8e4dc" stroke-width="1.5"/>
+ <!-- lower cladding and wheel arches -->
+ <path d="M18 137H75M132 137H316M374 137H431" stroke="#74877b" stroke-width="8"/>
+ <path d="M59 153A48 48 0 0 1 155 153M323 153A48 48 0 0 1 419 153" fill="none" stroke="#829187" stroke-width="6"/>
+ <!-- wheels -->
+ <g>
+  <circle cx="107" cy="151" r="34" fill="#050807" stroke="#87958d" stroke-width="6"/>
+  <circle cx="107" cy="151" r="19" fill="#68766f" stroke="#d0d8d3" stroke-width="3"/>
+  <circle cx="107" cy="151" r="7" fill="#18251e"/>
+  <path d="M107 134V168M90 151H124M95 139L119 163M119 139L95 163" stroke="#d6dfda" stroke-width="2"/>
+  <circle cx="371" cy="151" r="34" fill="#050807" stroke="#87958d" stroke-width="6"/>
+  <circle cx="371" cy="151" r="19" fill="#68766f" stroke="#d0d8d3" stroke-width="3"/>
+  <circle cx="371" cy="151" r="7" fill="#18251e"/>
+  <path d="M371 134V168M354 151H388M359 139L383 163M383 139L359 163" stroke="#d6dfda" stroke-width="2"/>
+ </g>
 </g>
 <path d="M0 225H1600" stroke="#3e9863" stroke-width="5"/>
 </svg>

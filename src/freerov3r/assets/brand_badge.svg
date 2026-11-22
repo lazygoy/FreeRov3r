@@ -19,8 +19,8 @@
 <ellipse cx="256" cy="240" rx="194" ry="136" fill="url(#glass)" stroke="#f4f7f5" stroke-width="2"/>
 <path d="M118 213L180 159L211 180L259 124L301 170L326 149L397 214" fill="none" stroke="#e7efeb" stroke-width="10" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M160 213L210 177L234 193L259 158L286 192L309 174L355 213" fill="none" stroke="#8db49e" stroke-width="4" opacity=".9"/>
-<text x="256" y="285" text-anchor="middle" fill="#f7faf8" font-family="Arial, sans-serif" font-size="76" font-style="italic" font-weight="800" letter-spacing="-4">Free</text>
-<text x="256" y="357" text-anchor="middle" fill="#f7faf8" font-family="Arial, sans-serif" font-size="78" font-style="italic" font-weight="800" letter-spacing="-5">Rov3r</text>
+<text x="256" y="285" text-anchor="middle" fill="#f7faf8" font-family="'Gill Sans MT','Gill Sans','Trebuchet MS',sans-serif" font-size="76" font-style="italic" font-weight="700" letter-spacing="-4">Free</text>
+<text x="256" y="357" text-anchor="middle" fill="#f7faf8" font-family="'Gill Sans MT','Gill Sans','Trebuchet MS',sans-serif" font-size="78" font-style="italic" font-weight="700" letter-spacing="-5">Rov3r</text>
 <path d="M80 246C100 144 173 105 256 105S412 144 432 246" fill="none" stroke="#fff" stroke-width="2" opacity=".32"/>
 <path d="M48 446H464" stroke="#7fc69a" stroke-width="4" opacity=".75"/>
 </svg>
