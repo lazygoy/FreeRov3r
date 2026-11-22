@@ -1536,12 +1536,52 @@ class MainWindow(QMainWindow):
         graph_layout.addRow("Graph refresh interval:", self.graph_refresh_spin)
         layout.addWidget(graph_group)
 
+        about_group = QGroupBox("About")
+        about_layout = QVBoxLayout(about_group)
+        about_btn = QPushButton("About FreeRov3r")
+        about_btn.setToolTip("Software information and project attribution")
+        about_btn.clicked.connect(self.show_about_dialog)
+        about_layout.addWidget(about_btn)
+        layout.addWidget(about_group)
+
         layout.addStretch()
         save_btn = QPushButton("Save settings")
         save_btn.clicked.connect(self.save_current_settings)
         layout.addWidget(save_btn)
 
         self.tabs.addTab(tab, "Settings")
+
+    def show_about_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("About FreeRov3r")
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+
+        title = QLabel("FreeRov3r")
+        title.setObjectName("aboutTitle")
+        title.setFont(QFont(self.heading_font_family, 22, QFont.ExtraBold))
+        layout.addWidget(title)
+
+        description = QLabel(
+            "Open-source vehicle diagnostics, CAN monitoring, sensor capture, "
+            "and analysis tools. Built for hands-on vehicle research."
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        credit = QLabel(
+            '<b>Built with AI by Shookone</b><br>'
+            '<a href="https://x.com/shookone16">x.com/shookone16</a>'
+        )
+        credit.setOpenExternalLinks(True)
+        credit.setTextFormat(Qt.RichText)
+        credit.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        layout.addWidget(credit)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.exec()
 
     def show_dtc_mode(self):
         self.mode_label.setText("<b>Pull diagnostic codes</b><br>Listen for diagnostic traffic. Full DTC reading requires transmit (currently disabled).")
