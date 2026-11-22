@@ -1040,7 +1040,7 @@ class MainWindow(QMainWindow):
                 {"interface": self.active_interface, "frames": len(capture_frames),
                  "sensor_samples": len(capture_samples), "duration_seconds": round(elapsed, 2),
                  "archive_file": str(archive_path)},
-                vin=self.capture_vin,
+                vin=self.capture_vin or "UNASSIGNED",
             )
             self.capture_started_at = None
             self.capture_vin = None
