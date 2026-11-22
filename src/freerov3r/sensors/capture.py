@@ -14,14 +14,18 @@ class SensorCapture:
     def add(self, sample: SensorSample):
         self.samples.append(sample)
 
-    def export_csv(self, path):
-        fields = ["timestamp", "sensor_id", "name", "value", "unit",
+    def export_csv(self, path, vin=None):
+        fields = ["vin", "timestamp", "sensor_id", "name", "value", "unit",
                   "source", "ecu", "signal", "quality"]
         with Path(path).open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
             for sample in self.samples:
+                sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
+                if vin and sample_vin != vin:
+                    continue
                 row = asdict(sample)
+                row["vin"] = sample_vin
                 row.pop("metadata", None)
                 writer.writerow(row)
 
@@ -30,10 +34,12 @@ class SensorCapture:
             for sample in self.samples:
                 f.write(json.dumps(asdict(sample), ensure_ascii=False) + "\\n")
 
-    def llm_report(self, include_context=True):
+    def llm_report(self, include_context=True, vin=None):
         """Portable, provider-neutral analysis packet. No API calls or secrets."""
         grouped = {}
-        for s in self.samples:
+        selected_samples = [s for s in self.samples
+                            if not vin or (s.metadata or {}).get("vin", "UNASSIGNED") == vin]
+        for s in selected_samples:
             grouped.setdefault((s.sensor_id, s.name, s.unit, s.source), []).append(s)
         lines = [
             "# FreeRov3r sensor capture analysis",
@@ -64,5 +70,5 @@ class SensorCapture:
                   "4. Cite the exact samples supporting each conclusion."]
         return "\\n".join(lines)
 
-    def export_llm_report(self, path, include_context=True):
-        Path(path).write_text(self.llm_report(include_context), encoding="utf-8")
+    def export_llm_report(self, path, include_context=True, vin=None):
+        Path(path).write_text(self.llm_report(include_context, vin=vin), encoding="utf-8")
