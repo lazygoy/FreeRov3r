@@ -1,8 +1,8 @@
 """Native Qt drawer and toast primitives for the FreeRov3r workspace."""
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QPixmap, QDesktopServices
 from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 
@@ -101,6 +101,14 @@ class QuickDrawer(QDockWidget):
         note.setObjectName("drawerNote")
         note.setWordWrap(True)
         layout.addStretch(1)
+        support_button = QPushButton("☕  Buy Me a Coffee")
+        support_button.setObjectName("drawerSupportButton")
+        support_button.setCursor(Qt.PointingHandCursor)
+        support_button.setToolTip("Support FreeRov3r development")
+        support_button.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://www.buymeacoffee.com/lazygoy"))
+        )
+        layout.addWidget(support_button)
         layout.addWidget(note)
         scroll.setWidget(body)
         self.setWidget(scroll)
