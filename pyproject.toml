@@ -21,6 +21,9 @@ freerov3r = "freerov3r.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+freerov3r = ["assets/*.svg"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

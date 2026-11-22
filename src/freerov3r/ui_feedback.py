@@ -1,5 +1,8 @@
 """Native Qt drawer and toast primitives for the FreeRov3r workspace."""
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
@@ -17,6 +20,25 @@ class QuickDrawer(QDockWidget):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(12)
+        brand_logo = QLabel()
+        brand_logo.setObjectName("drawerBrandLogo")
+        logo_path = Path(__file__).resolve().parent / "assets" / "brand_badge.svg"
+        logo_pixmap = QPixmap(str(logo_path))
+        if not logo_pixmap.isNull():
+            brand_logo.setPixmap(logo_pixmap.scaled(66, 66, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        brand_row.addWidget(brand_logo)
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(2)
+        brand_name = QLabel("FreeRov3r")
+        brand_name.setObjectName("drawerBrandName")
+        brand_text.addWidget(brand_name)
+        brand_tagline = QLabel("DIAGNOSTICS  •  MONITORING")
+        brand_tagline.setObjectName("drawerBrandTagline")
+        brand_text.addWidget(brand_tagline)
+        brand_row.addLayout(brand_text, 1)
+        layout.addLayout(brand_row)
         title = QLabel("QUICK NAV")
         title.setObjectName("drawerTitle")
         layout.addWidget(title)
