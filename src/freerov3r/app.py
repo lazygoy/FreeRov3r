@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
     QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QGroupBox,
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
 )
 
 try:
@@ -39,6 +39,8 @@ DEFAULT_SETTINGS = {
     "dark_mode": True,
     "vehicles": {},
     "current_vin": None,
+    "auto_refresh_graph": True,
+    "graph_refresh_ms": 1000,
 }
 
 # Common OBD-II PIDs (Mode 01)
@@ -123,6 +125,7 @@ class SensorGraphTab(QWidget):
         self.sensor_capture = sensor_capture
         self.series_map = {}
         self.color_map = {}
+        self.hidden_sensor_ids = set()
         self.recording = False
         self.record_start = None
 
@@ -145,8 +148,9 @@ class SensorGraphTab(QWidget):
 
         controls = QHBoxLayout()
         self.sensor_list = QListWidget()
-        self.sensor_list.setSelectionMode(QListWidget.MultiSelection)
         self.sensor_list.setMaximumHeight(140)
+        self.sensor_list.setToolTip("Check multiple sensors to plot them together. Uncheck a sensor to hide it.")
+        self.sensor_list.itemChanged.connect(self._on_sensor_item_changed)
         controls.addWidget(self.sensor_list, 2)
 
         right = QVBoxLayout()
@@ -212,14 +216,29 @@ class SensorGraphTab(QWidget):
         self.refresh_sensor_list()
 
     def refresh_sensor_list(self):
+        self.sensor_list.blockSignals(True)
         self.sensor_list.clear()
         seen = set()
         for sample in self.sensor_capture.samples:
             if sample.sensor_id not in seen:
                 seen.add(sample.sensor_id)
-                self.sensor_list.addItem(f"{sample.name} ({sample.sensor_id})")
+                item = QListWidgetItem(f"{sample.name} ({sample.sensor_id})")
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Unchecked if sample.sensor_id in self.hidden_sensor_ids else Qt.Checked)
+                self.sensor_list.addItem(item)
+        self.sensor_list.blockSignals(False)
+        if HAS_CHARTS:
+            self.update_chart()
         if not HAS_CHARTS and hasattr(self, "placeholder"):
-            self.placeholder.setPlainText(f"{len(self.sensor_capture.samples)} samples loaded.\n{len(seen)} unique sensors.")
+            self.placeholder.setPlainText(f"{len(self.sensor_capture.samples)} samples loaded.\\n{len(seen)} unique sensors.")
+
+    def _on_sensor_item_changed(self, item):
+        sensor_id = item.text().split("(")[-1].rstrip(")")
+        if item.checkState() == Qt.Checked:
+            self.hidden_sensor_ids.discard(sensor_id)
+        else:
+            self.hidden_sensor_ids.add(sensor_id)
+        self.update_chart()
 
     def toggle_record(self):
         self.recording = not self.recording
@@ -254,9 +273,11 @@ class SensorGraphTab(QWidget):
         self.chart.removeAllSeries()
         self.series_map.clear()
 
-        selected_ids = [item.text().split("(")[-1].rstrip(")") for item in self.sensor_list.selectedItems()]
-        if not selected_ids:
-            selected_ids = [self.sensor_list.item(i).text().split("(")[-1].rstrip(")") for i in range(self.sensor_list.count())]
+        selected_ids = [
+            self.sensor_list.item(i).text().split("(")[-1].rstrip(")")
+            for i in range(self.sensor_list.count())
+            if self.sensor_list.item(i).checkState() == Qt.Checked
+        ]
 
         min_t = min_v = float("inf")
         max_t = max_v = float("-inf")
@@ -421,7 +442,7 @@ class MainWindow(QMainWindow):
 
         self.rate_timer = QTimer(self)
         self.rate_timer.timeout.connect(self._update_rate)
-        self.rate_timer.start(1000)
+        self.rate_timer.start(self.settings.get("graph_refresh_ms", 1000))
 
     def _build_ui(self):
         self.stack = QStackedWidget()
@@ -586,17 +607,46 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        connection_group = QGroupBox("Default connection")
+        connection_form = QFormLayout(connection_group)
+        self.settings_backend = QComboBox()
+        self.settings_backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
+        self.settings_backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
+        self.settings_backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
+        self.settings_backend.addItem("SocketCAN", ("socketcan", "can0"))
+        self.settings_backend.addItem("SLCAN", ("slcan", "COM3"))
+        self.settings_channel = QLineEdit()
+        self.settings_channel.setPlaceholderText("COM port or CAN channel")
+        self.settings_bitrate = QComboBox()
+        self.settings_bitrate.addItems(["125000", "250000", "500000", "1000000"])
+        connection_form.addRow("Interface:", self.settings_backend)
+        connection_form.addRow("Channel / port:", self.settings_channel)
+        connection_form.addRow("CAN bitrate:", self.settings_bitrate)
+        layout.addWidget(connection_group)
+
+        display_group = QGroupBox("Display and logging")
+        display_layout = QVBoxLayout(display_group)
         self.dark_mode_cb = QCheckBox("Dark mode")
         self.dark_mode_cb.toggled.connect(self.toggle_dark_mode)
-        layout.addWidget(self.dark_mode_cb)
-
+        display_layout.addWidget(self.dark_mode_cb)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Max log lines:"))
+        row.addWidget(QLabel("Maximum log lines:"))
         self.max_log_spin = QSpinBox()
-        self.max_log_spin.setRange(500, 20000)
-        self.max_log_spin.valueChanged.connect(lambda v: self.log.setMaximumBlockCount(v))
+        self.max_log_spin.setRange(500, 50000)
         row.addWidget(self.max_log_spin)
-        layout.addLayout(row)
+        display_layout.addLayout(row)
+        layout.addWidget(display_group)
+
+        graph_group = QGroupBox("Graphing")
+        graph_layout = QFormLayout(graph_group)
+        self.auto_refresh_graph_cb = QCheckBox("Refresh graph while listening")
+        self.graph_refresh_spin = QSpinBox()
+        self.graph_refresh_spin.setRange(250, 5000)
+        self.graph_refresh_spin.setSingleStep(250)
+        self.graph_refresh_spin.setSuffix(" ms")
+        graph_layout.addRow(self.auto_refresh_graph_cb)
+        graph_layout.addRow("Graph refresh interval:", self.graph_refresh_spin)
+        layout.addWidget(graph_group)
 
         layout.addStretch()
         save_btn = QPushButton("Save settings")
@@ -640,7 +690,15 @@ class MainWindow(QMainWindow):
                 break
         self.channel_edit.setText(self.settings.get("channel", "freerov3r"))
         self.bitrate.setCurrentText(str(self.settings.get("bitrate", 500000)))
+        for i in range(self.settings_backend.count()):
+            if self.settings_backend.itemData(i)[0] == iface:
+                self.settings_backend.setCurrentIndex(i)
+                break
+        self.settings_channel.setText(self.settings.get("channel", "freerov3r"))
+        self.settings_bitrate.setCurrentText(str(self.settings.get("bitrate", 500000)))
         self.max_log_spin.setValue(self.settings.get("max_log_lines", 5000))
+        self.auto_refresh_graph_cb.setChecked(self.settings.get("auto_refresh_graph", True))
+        self.graph_refresh_spin.setValue(self.settings.get("graph_refresh_ms", 1000))
         self.dark_mode_cb.setChecked(self.settings.get("dark_mode", True))
         self.apply_dark_mode(self.settings.get("dark_mode", True))
         self._refresh_vehicle_list()
@@ -762,7 +820,9 @@ class MainWindow(QMainWindow):
             self.rate_label.setText(f"Rate: {rate:.1f} fps")
             self.last_rate_count = self.frame_counter
             self.last_rate_time = now
-            if self.tabs.currentWidget() is self.graph_tab and self.sensor_capture.samples:
+            if (self.settings.get("auto_refresh_graph", True)
+                    and self.tabs.currentWidget() is self.graph_tab
+                    and self.sensor_capture.samples):
                 self.graph_tab.update_chart()
 
     def export_capture(self):
@@ -816,6 +876,24 @@ class MainWindow(QMainWindow):
             self.setStyleSheet("")
 
     def save_current_settings(self):
+        backend_data = self.settings_backend.currentData()
+        if backend_data:
+            self.settings["interface"] = backend_data[0]
+            self.settings["channel"] = self.settings_channel.text().strip() or backend_data[1]
+            self.settings["bitrate"] = int(self.settings_bitrate.currentText())
+            for i in range(self.backend.count()):
+                if self.backend.itemData(i)[0] == backend_data[0]:
+                    self.backend.setCurrentIndex(i)
+                    break
+            self.channel_edit.setText(self.settings["channel"])
+            self.bitrate.setCurrentText(str(self.settings["bitrate"]))
+        self.settings["max_log_lines"] = self.max_log_spin.value()
+        self.settings["dark_mode"] = self.dark_mode_cb.isChecked()
+        self.settings["auto_refresh_graph"] = self.auto_refresh_graph_cb.isChecked()
+        self.settings["graph_refresh_ms"] = self.graph_refresh_spin.value()
+        self.log.setMaximumBlockCount(self.settings["max_log_lines"])
+        if hasattr(self, "rate_timer"):
+            self.rate_timer.setInterval(self.settings["graph_refresh_ms"])
         save_settings(self.settings)
         self.status.setText("Settings saved")
 
