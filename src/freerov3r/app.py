@@ -324,7 +324,8 @@ class OBDTab(QWidget):
         note = QLabel(
             "<b>OBD-II</b><br>"
             "Transmit/request support is disabled by default for safety. "
-            "This tab shows common PIDs and will display live values once request capability is enabled."
+            "The simulator streams clearly labeled synthetic Mode 01 values; real vehicles "
+            "only populate this table when matching response frames are observed."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -406,6 +407,7 @@ class MainWindow(QMainWindow):
         self.session = CaptureSession()
         self.sensor_capture = SensorCapture()
         self.receiver = None
+        self.active_interface = None
         self.frame_counter = 0
         self.last_rate_time = time.monotonic()
         self.last_rate_count = 0
@@ -708,12 +710,13 @@ class MainWindow(QMainWindow):
         bitrate = int(self.bitrate.currentText())
 
         if interface == "simulator":
-            adapter = SimulatedVehicleAdapter(channel=channel)
+            adapter = SimulatedVehicleAdapter(channel=channel or "L319-DEMO")
         elif interface == "esp32":
             adapter = Esp32SerialAdapter(port=channel)
         else:
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
+        self.active_interface = interface
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
         self.receiver.status.connect(self.status.setText)
@@ -735,7 +738,7 @@ class MainWindow(QMainWindow):
             pid, name, value, unit = decoded
             self.obd_tab.update_value(pid, value)
             sensor_id = f"obd_{pid:02X}"
-            simulated = bool(frame.channel and "DEMO" in frame.channel)
+            simulated = self.active_interface == "simulator"
             self.sensor_capture.add(SensorSample(
                 timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
                 value=value, unit=unit, source="simulated" if simulated else "ecu",
