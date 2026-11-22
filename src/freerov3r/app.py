@@ -1799,7 +1799,27 @@ class MainWindow(QMainWindow):
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
-                QWidget#workspaceHeader { background: #202a36; border: 1px solid #354557; border-radius: 10px; }
+                QWidget#workspaceHeader { background: #222833; border: 1px solid #343e4c; border-radius: 12px; }
+                QDockWidget#quickDrawer { background: #20242c; color: #e7ebf0; border-left: 1px solid #3a4655; }
+                QDockWidget#quickDrawer::title { background: #20242c; padding: 10px 14px; font-weight: 700; }
+                QWidget#drawerBody { background: #1c222b; }
+                QFrame#drawerCard { background: #252e39; border: 1px solid #3a4655; border-radius: 12px; }
+                QLabel#drawerTitle { color: #f4f7fb; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
+                QLabel#drawerSubtitle, QLabel#drawerCaption { color: #aeb9c6; font-size: 9pt; }
+                QLabel#drawerValue { color: #f4f7fb; font-size: 10pt; font-weight: 700; }
+                QLabel#drawerStatus { color: #82c5ff; font-weight: 700; }
+                QLabel#drawerSection { color: #91a5bb; font-size: 9pt; font-weight: 800; letter-spacing: 1px; padding-top: 8px; }
+                QLabel#drawerNote { color: #9caaba; background: #202a36; border: 1px solid #34475b; border-radius: 9px; padding: 10px; font-size: 9pt; }
+                QPushButton#drawerNavButton { text-align: left; background: #252e39; border: 1px solid #354253; border-radius: 8px; padding: 9px 12px; min-height: 22px; }
+                QPushButton#drawerNavButton:hover { background: #2c4055; border-color: #5486b8; }
+                QToolButton#drawerToggle { background: #263c55; color: #eaf3fc; border: 1px solid #42678e; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
+                QToolButton#drawerToggle:hover { background: #315579; }
+                QFrame#toastNotification { background: #252e39; border: 1px solid #48617b; border-radius: 12px; }
+                QFrame#toastNotification[kind="success"] { border-left: 4px solid #35b779; }
+                QFrame#toastNotification[kind="warning"] { border-left: 4px solid #e5a93d; }
+                QFrame#toastNotification[kind="error"] { border-left: 4px solid #e05d67; }
+                QLabel#toastMarker { color: #8cc8ff; font-size: 15pt; font-weight: 800; }
+                QLabel#toastText { color: #f2f6fa; font-size: 9pt; font-weight: 600; }
                 QLabel#workspaceTitle { color: #ffffff; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
                 QLabel#workspaceSubtitle { color: #aebdcb; font-size: 9pt; }
                 QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
@@ -1834,7 +1854,27 @@ class MainWindow(QMainWindow):
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
-                QWidget#workspaceHeader { background: #ffffff; border: 1px solid #cbd6e0; border-radius: 10px; }
+                QWidget#workspaceHeader { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
+                QDockWidget#quickDrawer { background: #f8fafc; color: #1e293b; border-left: 1px solid #d9e0e8; }
+                QDockWidget#quickDrawer::title { background: #f1f5f9; padding: 10px 14px; font-weight: 700; }
+                QWidget#drawerBody { background: #f8fafc; }
+                QFrame#drawerCard { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
+                QLabel#drawerTitle { color: #172033; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
+                QLabel#drawerSubtitle, QLabel#drawerCaption { color: #64748b; font-size: 9pt; }
+                QLabel#drawerValue { color: #172033; font-size: 10pt; font-weight: 700; }
+                QLabel#drawerStatus { color: #1769aa; font-weight: 700; }
+                QLabel#drawerSection { color: #64748b; font-size: 9pt; font-weight: 800; letter-spacing: 1px; padding-top: 8px; }
+                QLabel#drawerNote { color: #475569; background: #eff6ff; border: 1px solid #d5e5f6; border-radius: 9px; padding: 10px; font-size: 9pt; }
+                QPushButton#drawerNavButton { text-align: left; background: #ffffff; border: 1px solid #d9e0e8; border-radius: 8px; padding: 9px 12px; min-height: 22px; color: #243449; }
+                QPushButton#drawerNavButton:hover { background: #eff6ff; border-color: #9bbfe2; }
+                QToolButton#drawerToggle { background: #e8f2fc; color: #174b78; border: 1px solid #b9d2eb; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
+                QToolButton#drawerToggle:hover { background: #d9eafa; }
+                QFrame#toastNotification { background: #ffffff; border: 1px solid #d3deea; border-radius: 12px; }
+                QFrame#toastNotification[kind="success"] { border-left: 4px solid #219b64; }
+                QFrame#toastNotification[kind="warning"] { border-left: 4px solid #d28a16; }
+                QFrame#toastNotification[kind="error"] { border-left: 4px solid #d94853; }
+                QLabel#toastMarker { color: #2675c9; font-size: 15pt; font-weight: 800; }
+                QLabel#toastText { color: #243449; font-size: 9pt; font-weight: 600; }
                 QLabel#workspaceTitle { color: #1d2b3a; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
                 QLabel#workspaceSubtitle { color: #596b7d; font-size: 9pt; }
                 QLabel#headerVehicle { background: #edf2f7; color: #24384c; border: 1px solid #cbd6e0; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
