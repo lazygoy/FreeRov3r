@@ -35,6 +35,7 @@ from .sensors.scaling import normalize_values
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
+from .ui_feedback import QuickDrawer, ToastManager
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -1052,6 +1053,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
         self._build_navigation_workspace()
+        self.quick_drawer = QuickDrawer(self, self._navigate_to_tab)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.quick_drawer)
+        self.quick_drawer.hide()
+        self.toast_manager = ToastManager(self)
 
     def _build_navigation_workspace(self):
         """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
@@ -1090,6 +1095,13 @@ class MainWindow(QMainWindow):
         self.header_traffic = QLabel("0 frames  |  0.0 fps")
         self.header_traffic.setObjectName("headerTraffic")
         header_layout.addWidget(self.header_traffic)
+
+        self.drawer_button = QToolButton()
+        self.drawer_button.setObjectName("drawerToggle")
+        self.drawer_button.setText("☷  Quick panel")
+        self.drawer_button.setToolTip("Open vehicle context and workspace shortcuts")
+        self.drawer_button.clicked.connect(self.toggle_quick_drawer)
+        header_layout.addWidget(self.drawer_button)
 
         outer_layout.addWidget(header)
 
@@ -1166,6 +1178,21 @@ class MainWindow(QMainWindow):
             self.workspace_subtitle.setText(descriptions.get(title, "Vehicle diagnostics workspace"))
         self._refresh_workspace_header()
 
+    def toggle_quick_drawer(self):
+        if hasattr(self, "quick_drawer"):
+            self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
+
+    def _navigate_to_tab(self, name):
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == name:
+                self.tabs.setCurrentIndex(index)
+                self.stack.setCurrentIndex(1)
+                return
+
+    def show_toast(self, message, kind="info"):
+        if hasattr(self, "toast_manager"):
+            self.toast_manager.show(message, kind)
+
     def _refresh_workspace_header(self):
         if not hasattr(self, "header_vehicle"):
             return
@@ -1189,6 +1216,11 @@ class MainWindow(QMainWindow):
         self.header_connection.style().polish(self.header_connection)
         rate = self.can_monitor.rate()
         self.header_traffic.setText(f"{self.frame_counter:,} frames  |  {rate:.1f} fps")
+        if hasattr(self, "quick_drawer"):
+            self.quick_drawer.update_context(
+                vehicle_text, self.header_connection.text().replace("● ", ""),
+                f"{self.frame_counter:,} frames · {rate:.1f} fps",
+            )
 
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
         vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
@@ -1545,6 +1577,7 @@ class MainWindow(QMainWindow):
             {"vin": vin, "source": "OBD Mode 09 PID 02 or UDS DID F190"}, vin=vin
         )
         self.log.appendPlainText(f"VIN detected from scan data: {vin}")
+        self.show_toast(f"VIN identified: {vin}", "success")
 
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
@@ -1586,6 +1619,7 @@ class MainWindow(QMainWindow):
             self.connect_btn.setText("Start listening")
             self.status.setText("Disconnected")
             self._refresh_workspace_header()
+            self.show_toast("CAN capture stopped", "info")
             return
 
         data = self.backend.currentData()
@@ -1632,6 +1666,7 @@ class MainWindow(QMainWindow):
         self.settings_channel.setText(channel)
         self.settings_bitrate.setCurrentText(str(bitrate))
         self._refresh_workspace_header()
+        self.show_toast("CAN listener started", "success")
 
     def on_frame(self, frame):
         detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
@@ -1728,17 +1763,20 @@ class MainWindow(QMainWindow):
             else:
                 self.session.export_csv(path)
             self.status.setText(f"Exported {len(self.session.frames)} frames")
+            self.show_toast(f"Exported {len(self.session.frames):,} CAN frames", "success")
 
     def export_llm_report(self):
         path, _ = QFileDialog.getSaveFileName(self, "LLM report", "analysis.md", "Markdown (*.md)")
         if path:
             self.sensor_capture.export_llm_report(path, vin=self.settings.get("current_vin"))
             self.status.setText("LLM report saved")
+            self.show_toast("Analysis report exported", "success")
 
     def export_sensor_csv(self):
         path, _ = QFileDialog.getSaveFileName(self, "Sensor CSV", "sensors.csv", "CSV (*.csv)")
         if path:
             self.sensor_capture.export_csv(path)
+            self.show_toast("Sensor data exported", "success")
 
     def toggle_dark_mode(self, enabled: bool):
         self.settings["dark_mode"] = enabled
@@ -1761,7 +1799,28 @@ class MainWindow(QMainWindow):
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
-                QWidget#workspaceHeader { background: #202a36; border: 1px solid #354557; border-radius: 10px; }
+                QWidget#workspaceHeader { background: #222833; border: 1px solid #343e4c; border-radius: 12px; }
+                QDockWidget#quickDrawer { background: #20242c; color: #e7ebf0; border-left: 1px solid #3a4655; }
+                QDockWidget#quickDrawer::title { background: #20242c; padding: 10px 14px; font-weight: 700; }
+                QWidget#drawerBody { background: #1c222b; }
+                QLabel#drawerTitle, QLabel#drawerSubtitle, QLabel#drawerCaption, QLabel#drawerValue, QLabel#drawerStatus, QLabel#drawerSection, QLabel#drawerNote, QLabel#toastMarker, QLabel#toastText { background: transparent; }
+                QFrame#drawerCard { background: #252e39; border: 1px solid #3a4655; border-radius: 12px; }
+                QLabel#drawerTitle { color: #f4f7fb; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
+                QLabel#drawerSubtitle, QLabel#drawerCaption { color: #aeb9c6; font-size: 9pt; }
+                QLabel#drawerValue { color: #f4f7fb; font-size: 10pt; font-weight: 700; }
+                QLabel#drawerStatus { color: #82c5ff; font-weight: 700; }
+                QLabel#drawerSection { color: #91a5bb; font-size: 9pt; font-weight: 800; letter-spacing: 1px; padding-top: 8px; }
+                QLabel#drawerNote { color: #9caaba; background: #202a36; border: 1px solid #34475b; border-radius: 9px; padding: 10px; font-size: 9pt; }
+                QPushButton#drawerNavButton { text-align: left; background: #252e39; border: 1px solid #354253; border-radius: 8px; padding: 9px 12px; min-height: 22px; }
+                QPushButton#drawerNavButton:hover { background: #2c4055; border-color: #5486b8; }
+                QToolButton#drawerToggle { background: #263c55; color: #eaf3fc; border: 1px solid #42678e; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
+                QToolButton#drawerToggle:hover { background: #315579; }
+                QFrame#toastNotification { background: #252e39; border: 1px solid #48617b; border-radius: 12px; }
+                QFrame#toastNotification[kind="success"] { border-left: 4px solid #35b779; }
+                QFrame#toastNotification[kind="warning"] { border-left: 4px solid #e5a93d; }
+                QFrame#toastNotification[kind="error"] { border-left: 4px solid #e05d67; }
+                QLabel#toastMarker { color: #8cc8ff; font-size: 15pt; font-weight: 800; }
+                QLabel#toastText { color: #f2f6fa; font-size: 9pt; font-weight: 600; }
                 QLabel#workspaceTitle { color: #ffffff; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
                 QLabel#workspaceSubtitle { color: #aebdcb; font-size: 9pt; }
                 QLabel#headerVehicle { background: #303d4c; color: #f3f7fb; border: 1px solid #46586b; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
@@ -1796,7 +1855,28 @@ class MainWindow(QMainWindow):
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
-                QWidget#workspaceHeader { background: #ffffff; border: 1px solid #cbd6e0; border-radius: 10px; }
+                QWidget#workspaceHeader { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
+                QDockWidget#quickDrawer { background: #f8fafc; color: #1e293b; border-left: 1px solid #d9e0e8; }
+                QDockWidget#quickDrawer::title { background: #f1f5f9; padding: 10px 14px; font-weight: 700; }
+                QWidget#drawerBody { background: #f8fafc; }
+                QLabel#drawerTitle, QLabel#drawerSubtitle, QLabel#drawerCaption, QLabel#drawerValue, QLabel#drawerStatus, QLabel#drawerSection, QLabel#drawerNote, QLabel#toastMarker, QLabel#toastText { background: transparent; }
+                QFrame#drawerCard { background: #ffffff; border: 1px solid #d9e0e8; border-radius: 12px; }
+                QLabel#drawerTitle { color: #172033; font-size: 14pt; font-weight: 800; letter-spacing: 1px; }
+                QLabel#drawerSubtitle, QLabel#drawerCaption { color: #64748b; font-size: 9pt; }
+                QLabel#drawerValue { color: #172033; font-size: 10pt; font-weight: 700; }
+                QLabel#drawerStatus { color: #1769aa; font-weight: 700; }
+                QLabel#drawerSection { color: #64748b; font-size: 9pt; font-weight: 800; letter-spacing: 1px; padding-top: 8px; }
+                QLabel#drawerNote { color: #475569; background: #eff6ff; border: 1px solid #d5e5f6; border-radius: 9px; padding: 10px; font-size: 9pt; }
+                QPushButton#drawerNavButton { text-align: left; background: #ffffff; border: 1px solid #d9e0e8; border-radius: 8px; padding: 9px 12px; min-height: 22px; color: #243449; }
+                QPushButton#drawerNavButton:hover { background: #eff6ff; border-color: #9bbfe2; }
+                QToolButton#drawerToggle { background: #e8f2fc; color: #174b78; border: 1px solid #b9d2eb; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
+                QToolButton#drawerToggle:hover { background: #d9eafa; }
+                QFrame#toastNotification { background: #ffffff; border: 1px solid #d3deea; border-radius: 12px; }
+                QFrame#toastNotification[kind="success"] { border-left: 4px solid #219b64; }
+                QFrame#toastNotification[kind="warning"] { border-left: 4px solid #d28a16; }
+                QFrame#toastNotification[kind="error"] { border-left: 4px solid #d94853; }
+                QLabel#toastMarker { color: #2675c9; font-size: 15pt; font-weight: 800; }
+                QLabel#toastText { color: #243449; font-size: 9pt; font-weight: 600; }
                 QLabel#workspaceTitle { color: #1d2b3a; font-size: 17pt; font-weight: 700; letter-spacing: 1px; }
                 QLabel#workspaceSubtitle { color: #596b7d; font-size: 9pt; }
                 QLabel#headerVehicle { background: #edf2f7; color: #24384c; border: 1px solid #cbd6e0; border-radius: 6px; padding: 8px 10px; font-size: 9pt; font-weight: 700; }
@@ -1841,6 +1921,7 @@ class MainWindow(QMainWindow):
             self.rate_timer.setInterval(self.settings["graph_refresh_ms"])
         save_settings(self.settings)
         self.status.setText("Settings saved")
+        self.show_toast("Settings saved", "success")
 
     def closeEvent(self, event):
         if self.receiver and self.receiver.isRunning():
