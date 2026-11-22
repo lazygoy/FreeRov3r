@@ -1090,14 +1090,14 @@ class MainWindow(QMainWindow):
             "Modules": "▦", "Network": "⌘", "Solutions": "✦",
             "Vehicle History": "◷", "Settings": "⚙",
         }
+        display_labels = {"Vehicle History": "History"}
         for index in range(self.tabs.count()):
             label = self.tabs.tabText(index)
             button = QToolButton()
-            button.setText(f"{glyphs.get(label, '◇')}\\n{label}")
+            button.setText(f"{glyphs.get(label, '◇')}\\n{display_labels.get(label, label)}")
             button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
             button.setCheckable(True)
             button.setMinimumHeight(68)
-            button.setSizePolicy(button.sizePolicy().horizontalPolicy(), button.sizePolicy().verticalPolicy())
             button.setToolTip(f"Open {label}")
             button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
             self.navigation_group.addButton(button, index)
@@ -1682,6 +1682,11 @@ class MainWindow(QMainWindow):
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
                 QMainWindow, QWidget { background: #171b22; color: #e7ebf0; }
+                QWidget#navigationRail { background: #111720; border: 1px solid #2c3744; border-radius: 10px; }
+                QWidget#navigationSeparator { background: #344252; max-height: 1px; }
+                QToolButton { background: transparent; color: #aebdcb; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
+                QToolButton:hover { background: #263342; color: #ffffff; border-color: #3b5269; }
+                QToolButton:checked { background: #24496b; color: #ffffff; border: 1px solid #3989d8; }
                 QGroupBox { border: 1px solid #303a47; border-radius: 8px; margin-top: 12px; padding: 12px; font-weight: 600; }
                 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
                 QLabel#modeBanner { background: #202a36; border: 1px solid #34475b; border-radius: 8px; padding: 12px; color: #dce9f7; }
@@ -1704,6 +1709,11 @@ class MainWindow(QMainWindow):
             app.setPalette(app.style().standardPalette())
             self.setStyleSheet("""
                 QWidget { font-family: "Segoe UI"; font-size: 10pt; }
+                QWidget#navigationRail { background: #f1f4f7; border: 1px solid #d5dde5; border-radius: 10px; }
+                QWidget#navigationSeparator { background: #d5dde5; max-height: 1px; }
+                QToolButton { background: transparent; color: #526273; border: 1px solid transparent; border-radius: 8px; padding: 7px 2px; font-size: 9pt; font-weight: 600; }
+                QToolButton:hover { background: #e2eaf2; color: #1f3448; border-color: #c4d1de; }
+                QToolButton:checked { background: #dceaf7; color: #174b78; border: 1px solid #6a9dcc; }
                 QLabel#modeBanner { background: #edf3f8; border: 1px solid #cbd7e2; border-radius: 8px; padding: 12px; color: #26394b; }
                 QLabel#welcomeSubtitle { color: #647386; font-size: 11pt; }
                 QPushButton { border: 1px solid #c5ced8; border-radius: 7px; padding: 8px 14px; min-height: 24px; }
