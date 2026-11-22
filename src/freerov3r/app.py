@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
-from PySide6.QtGui import QPalette, QColor, QFont, QPainter
+from PySide6.QtGui import QPalette, QColor, QFont, QPainter, QBrush
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QLabel, QMainWindow,
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
@@ -30,6 +30,7 @@ from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .vehicle_history import VehicleHistoryStore
+from .diagnostics.vin_decoder import VinFrameDecoder
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -483,6 +484,9 @@ class ModulesTab(QWidget):
             if module.code == selected:
                 self.module_tree.setCurrentItem(item)
         self.module_tree.expandAll()
+        refresh_overview = getattr(self, "network_overview_refresh", None)
+        if refresh_overview:
+            refresh_overview()
 
     def _selected_code(self):
         item = self.module_tree.currentItem()
@@ -587,6 +591,79 @@ class ModulesTab(QWidget):
         self.show_selected_module()
 
 
+
+class NetworkOverviewTab(QWidget):
+    """Thinkcar-style module status overview; colors reflect scan evidence only."""
+    def __init__(self, network, vin_provider=None, parent=None):
+        super().__init__(parent)
+        self.network = network
+        self.vin_provider = vin_provider or (lambda: None)
+        layout = QVBoxLayout(self)
+        self.heading = QLabel()
+        self.heading.setWordWrap(True)
+        layout.addWidget(self.heading)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["System / module", "Health", "DTCs", "Last scan"])
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        layout.addWidget(self.tree)
+        row = QHBoxLayout()
+        refresh = QPushButton("Refresh module status")
+        refresh.clicked.connect(self.refresh)
+        row.addWidget(refresh)
+        row.addStretch()
+        layout.addLayout(row)
+        self.refresh()
+
+    def set_network(self, network):
+        self.network = network
+        self.refresh()
+
+    def refresh(self):
+        vin = self.vin_provider() or "No VIN detected"
+        self.heading.setText(
+            f"<b>Vehicle network overview</b><br>VIN: {vin}<br>"
+            "Green = scanned, no DTCs. Red = one or more DTCs. Gray = not scanned or no response. "
+            "Current module inventory is simulated until live L319 addressing is verified."
+        )
+        self.tree.clear()
+        groups = {}
+        for module in self.network.modules:
+            group = groups.get(module.category)
+            if group is None:
+                group = QTreeWidgetItem([module.category, "", "", ""])
+                self.tree.addTopLevelItem(group)
+                groups[module.category] = group
+            if not module.available:
+                status, color = "No response", QColor("#888888")
+            elif module.last_scan is None:
+                status, color = "Not scanned", QColor("#888888")
+            elif module.dtcs:
+                status, color = "Attention", QColor("#ef5350")
+            else:
+                status, color = "No faults", QColor("#43a047")
+            item = QTreeWidgetItem([
+                f"{module.code} — {module.name}", status,
+                str(len(module.dtcs)), module.last_scan or "—"
+            ])
+            item.setData(0, Qt.UserRole, module.code)
+            for col in (0, 1):
+                item.setForeground(col, QBrush(color))
+            group.addChild(item)
+        for group in groups.values():
+            children = [self.network.get_module(group.child(i).data(0, Qt.UserRole))
+                        for i in range(group.childCount())]
+            if any(m.available and m.last_scan is not None and m.dtcs for m in children):
+                group.setForeground(0, QBrush(QColor("#ef5350")))
+            elif children and all(m.available and m.last_scan is not None and not m.dtcs for m in children):
+                group.setForeground(0, QBrush(QColor("#43a047")))
+            else:
+                group.setForeground(0, QBrush(QColor("#888888")))
+        self.tree.expandAll()
+        self.tree.resizeColumnToContents(1)
+        self.tree.resizeColumnToContents(2)
+        self.tree.resizeColumnToContents(3)
+
+
 class VehicleHistoryTab(QWidget):
     def __init__(self, store: VehicleHistoryStore, parent=None):
         super().__init__(parent)
@@ -663,6 +740,7 @@ class MainWindow(QMainWindow):
         self.capture_start_sample_index = 0
         self.capture_start_frame_index = 0
         self.capture_vin = None
+        self.vin_decoder = VinFrameDecoder()
         self.active_interface = None
         self.frame_counter = 0
         self.last_rate_time = time.monotonic()
@@ -737,6 +815,11 @@ class MainWindow(QMainWindow):
             history_callback=self.record_vehicle_event,
         )
         self.tabs.addTab(self.modules_tab, "Modules")
+        self.network_tab = NetworkOverviewTab(
+            self.module_network, vin_provider=lambda: self.settings.get("current_vin")
+        )
+        self.tabs.addTab(self.network_tab, "Network")
+        self.modules_tab.network_overview_refresh = self.network_tab.refresh
         self.history_tab = VehicleHistoryTab(self.history_store)
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
@@ -1005,8 +1088,33 @@ class MainWindow(QMainWindow):
         if vin and hasattr(self, "modules_tab"):
             network = self.module_networks.setdefault(vin, SimulatedModuleNetwork())
             self.modules_tab.set_network(network)
+            if hasattr(self, "network_tab"):
+                self.network_tab.set_network(network)
         if hasattr(self, "graph_tab"):
             self.graph_tab.set_vehicle_vin(vin)
+
+
+    def _apply_detected_vin(self, vin):
+        """Use a validated VIN decoded from observed diagnostic response traffic."""
+        previous = self.settings.get("current_vin")
+        if previous == vin:
+            return
+        if previous and previous != vin:
+            self.log.appendPlainText(
+                f"VIN mismatch: selected {previous}, scan data reports {vin}. Using scan-reported VIN."
+            )
+        self.settings.setdefault("vehicles", {}).setdefault(vin, {"nickname": ""})
+        self.settings["current_vin"] = vin
+        if self.receiver and self.receiver.isRunning():
+            self.capture_vin = vin
+        self._refresh_vehicle_list()
+        self._update_vehicle_context()
+        self.save_current_settings()
+        self.record_vehicle_event(
+            "vin_detected", "VIN decoded from diagnostic traffic",
+            {"vin": vin, "source": "OBD Mode 09 PID 02 or UDS DID F190"}, vin=vin
+        )
+        self.log.appendPlainText(f"VIN detected from scan data: {vin}")
 
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
@@ -1072,6 +1180,7 @@ class MainWindow(QMainWindow):
             {"interface": interface, "channel": channel, "bitrate": bitrate},
             vin=self.capture_vin or "UNASSIGNED",
         )
+        self.vin_decoder.reset()
         self.modules_tab.set_simulation_enabled(interface == "simulator")
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
@@ -1090,6 +1199,9 @@ class MainWindow(QMainWindow):
         self.settings_bitrate.setCurrentText(str(bitrate))
 
     def on_frame(self, frame):
+        detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
+        if detected_vin:
+            self._apply_detected_vin(detected_vin)
         self.session.add(frame)
         self.frame_counter += 1
         self.frame_count_label.setText(f"Frames: {self.frame_counter}")
