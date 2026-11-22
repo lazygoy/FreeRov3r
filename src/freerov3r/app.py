@@ -1070,7 +1070,7 @@ class MainWindow(QMainWindow):
         self.record_vehicle_event(
             "capture_started", "CAN capture started",
             {"interface": interface, "channel": channel, "bitrate": bitrate},
-            vin=self.capture_vin,
+            vin=self.capture_vin or "UNASSIGNED",
         )
         self.modules_tab.set_simulation_enabled(interface == "simulator")
         self.receiver = Receiver(adapter)
