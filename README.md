@@ -4,6 +4,10 @@ Open-source, locally operated vehicle diagnostics and CAN research platform. Ini
 
 **Status:** early development scaffold; not yet validated on a vehicle. No GAP IIDTool, JLR SDD, or Pathfinder proprietary software/data is included.
 
+## Branding
+
+The desktop shell uses original, scalable SVG artwork in `src/freerov3r/assets/`: an application badge, a wide workspace banner, and a startup/home graphic. The visual system uses deep green, brushed-silver accents, topographic contours, and generic off-road imagery. It is inspired by classic 4x4 vehicle badging but does not use Land Rover trademarks or proprietary artwork.
+
 ## First milestone
 - Windows desktop shell (PySide6)
 - Hardware-independent CAN adapter (python-can)
