@@ -29,6 +29,7 @@ from .session import CaptureSession
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
+from .vehicle_history import VehicleHistoryStore
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -385,7 +386,9 @@ class OBDTab(QWidget):
 
 
 class ModulesTab(QWidget):
-    def __init__(self, network: SimulatedModuleNetwork, parent=None):
+    def __init__(self, network: SimulatedModuleNetwork, vin_provider=None, history_callback=None, parent=None):
+        self.vin_provider = vin_provider or (lambda: None)
+        self.history_callback = history_callback or (lambda *args, **kwargs: None)
         super().__init__(parent)
         self.network = network
         self.simulation_enabled = False
@@ -483,17 +486,35 @@ class ModulesTab(QWidget):
         code = self._selected_code()
         if not self.simulation_enabled or not code:
             return
+        vin = self.vin_provider()
+        if not vin:
+            QMessageBox.warning(self, "Vehicle not selected", "Add and select a vehicle by VIN in the Sensors tab before recording diagnostic history.")
+            return
         module = self.network.scan_module(code)
         self.result_log.appendPlainText(f"SCAN {code}: response received, {len(module.dtcs)} DTC(s).")
+        self.history_callback("module_scan", f"{code} scan completed", {
+            "module": code, "module_name": module.name, "category": module.category,
+            "dtcs": [{"code": d.code, "description": d.description, "status": d.status, "severity": d.severity} for d in module.dtcs],
+        }, vin=vin)
         self.refresh_tree()
         self.show_selected_module()
 
     def scan_all(self):
         if not self.simulation_enabled:
             return
+        vin = self.vin_provider()
+        if not vin:
+            QMessageBox.warning(self, "Vehicle not selected", "Add and select a vehicle by VIN in the Sensors tab before recording diagnostic history.")
+            return
         modules = self.network.scan_all()
         total = sum(len(module.dtcs) for module in modules)
         self.result_log.appendPlainText(f"FULL SCAN: {len(modules)} simulated modules responded; {total} DTC(s) found.")
+        self.history_callback("full_module_scan", "Full module scan completed", {
+            "modules_scanned": len(modules), "dtc_count": total,
+            "modules": [{"code": m.code, "name": m.name, "category": m.category,
+                        "dtcs": [{"code": d.code, "description": d.description, "status": d.status, "severity": d.severity} for d in m.dtcs]}
+                       for m in modules],
+        }, vin=vin)
         self.refresh_tree()
 
     def clear_selected_code(self):
@@ -504,6 +525,7 @@ class ModulesTab(QWidget):
         dtc = self.dtc_table.item(row, 0).text()
         if self.network.clear_code(code, dtc):
             self.result_log.appendPlainText(f"CLEAR {code} {dtc}: removed from simulated module memory.")
+            self.history_callback("dtc_cleared", f"Cleared {dtc} from {code}", {"module": code, "dtc": dtc}, vin=self.vin_provider())
         self.refresh_tree()
         self.show_selected_module()
 
@@ -511,8 +533,10 @@ class ModulesTab(QWidget):
         code = self._selected_code()
         if not self.simulation_enabled or not code:
             return
+        before = [d.code for d in self.network.get_module(code).dtcs]
         count = self.network.clear_module(code)
         self.result_log.appendPlainText(f"CLEAR MODULE {code}: {count} simulated DTC(s) cleared.")
+        self.history_callback("module_dtcs_cleared", f"Cleared all DTCs from {code}", {"module": code, "dtcs_cleared": before}, vin=self.vin_provider())
         self.refresh_tree()
         self.show_selected_module()
 
@@ -522,10 +546,75 @@ class ModulesTab(QWidget):
         answer = QMessageBox.question(self, "Clear all simulated DTCs", "Remove every DTC from every simulated module?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return
+        before = {m.code: [d.code for d in m.dtcs] for m in self.network.modules if m.dtcs}
         count = self.network.clear_all()
         self.result_log.appendPlainText(f"CLEAR ALL: {count} simulated DTC(s) removed.")
+        self.history_callback("all_dtcs_cleared", "Cleared all simulated DTCs", {"dtcs_by_module": before, "total_cleared": count}, vin=self.vin_provider())
         self.refresh_tree()
         self.show_selected_module()
+
+
+class VehicleHistoryTab(QWidget):
+    def __init__(self, store: VehicleHistoryStore, parent=None):
+        super().__init__(parent)
+        self.store = store
+        layout = QVBoxLayout(self)
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Vehicle VIN:"))
+        self.vin_filter = QComboBox()
+        self.vin_filter.currentIndexChanged.connect(self.refresh_events)
+        controls.addWidget(self.vin_filter, 1)
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh)
+        controls.addWidget(refresh_btn)
+        layout.addLayout(controls)
+
+        split = QHBoxLayout()
+        self.events_tree = QTreeWidget()
+        self.events_tree.setHeaderLabels(["Date / time", "Event", "Summary"])
+        self.events_tree.header().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.events_tree.itemSelectionChanged.connect(self.show_details)
+        split.addWidget(self.events_tree, 3)
+        self.details = QPlainTextEdit()
+        self.details.setReadOnly(True)
+        self.details.setPlaceholderText("Select a history entry to inspect its recorded details.")
+        split.addWidget(self.details, 2)
+        layout.addLayout(split)
+        self.refresh()
+
+    def refresh(self):
+        current = self.vin_filter.currentData()
+        self.vin_filter.blockSignals(True)
+        self.vin_filter.clear()
+        self.vin_filter.addItem("All vehicles", None)
+        for vin in self.store.vehicles():
+            self.vin_filter.addItem(vin, vin)
+        index = self.vin_filter.findData(current)
+        self.vin_filter.setCurrentIndex(index if index >= 0 else 0)
+        self.vin_filter.blockSignals(False)
+        self.refresh_events()
+
+    def refresh_events(self):
+        self.events_tree.clear()
+        selected_vin = self.vin_filter.currentData()
+        events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
+        for event in reversed(events):
+            timestamp = event.get("timestamp", "")
+            item = QTreeWidgetItem([
+                timestamp.replace("T", " "),
+                event.get("type", ""),
+                event.get("summary", ""),
+            ])
+            item.setData(0, Qt.UserRole, event)
+            self.events_tree.addTopLevelItem(item)
+        self.events_tree.resizeColumnToContents(0)
+        self.events_tree.resizeColumnToContents(1)
+        self.details.clear()
+
+    def show_details(self):
+        item = self.events_tree.currentItem()
+        event = item.data(0, Qt.UserRole) if item else None
+        self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False) if event else "")
 
 
 class MainWindow(QMainWindow):
@@ -534,7 +623,11 @@ class MainWindow(QMainWindow):
         self.settings = load_settings()
         self.session = CaptureSession()
         self.sensor_capture = SensorCapture()
+        self.history_store = VehicleHistoryStore(SETTINGS_DIR / "vehicle_history.json")
         self.receiver = None
+        self.capture_started_at = None
+        self.capture_start_frames = 0
+        self.capture_vin = None
         self.active_interface = None
         self.frame_counter = 0
         self.last_rate_time = time.monotonic()
@@ -602,9 +695,21 @@ class MainWindow(QMainWindow):
         self.obd_tab = OBDTab()
         self.tabs.addTab(self.obd_tab, "OBD-II")
         self.module_network = SimulatedModuleNetwork()
-        self.modules_tab = ModulesTab(self.module_network)
+        self.modules_tab = ModulesTab(
+            self.module_network,
+            vin_provider=lambda: self.settings.get("current_vin"),
+            history_callback=self.record_vehicle_event,
+        )
         self.tabs.addTab(self.modules_tab, "Modules")
+        self.history_tab = VehicleHistoryTab(self.history_store)
+        self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
+
+    def record_vehicle_event(self, event_type, summary, details=None, vin=None):
+        vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
+        self.history_store.record(vehicle_vin, event_type, summary, details)
+        if hasattr(self, "history_tab"):
+            self.history_tab.refresh()
 
     def _build_capture_tab(self):
         tab = QWidget()
@@ -865,6 +970,15 @@ class MainWindow(QMainWindow):
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
             self.receiver.stop()
+            elapsed = max(0.0, time.time() - (self.capture_started_at or time.time()))
+            self.record_vehicle_event(
+                "capture_completed", "CAN capture stopped",
+                {"interface": self.active_interface, "frames": self.frame_counter,
+                 "sensor_samples": len(self.sensor_capture.samples), "duration_seconds": round(elapsed, 2)},
+                vin=self.capture_vin,
+            )
+            self.capture_started_at = None
+            self.capture_vin = None
             self.receiver = None
             self.connect_btn.setText("Start listening")
             self.status.setText("Disconnected")
@@ -883,6 +997,14 @@ class MainWindow(QMainWindow):
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
         self.active_interface = interface
+        self.capture_vin = self.settings.get("current_vin")
+        self.capture_started_at = time.time()
+        self.capture_start_frames = 0
+        self.record_vehicle_event(
+            "capture_started", "CAN capture started",
+            {"interface": interface, "channel": channel, "bitrate": bitrate},
+            vin=self.capture_vin,
+        )
         self.modules_tab.set_simulation_enabled(interface == "simulator")
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
@@ -917,7 +1039,8 @@ class MainWindow(QMainWindow):
                 value=value, unit=unit, source="simulated" if simulated else "ecu",
                 ecu="SIMULATED ECU" if simulated else None,
                 signal=f"Mode 01 PID {pid:02X}",
-                metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex()},
+                metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
+                         "vin": self.capture_vin or "UNASSIGNED"},
             ))
             known = any(
                 self.graph_tab.sensor_list.item(i).text().endswith(f"({sensor_id})")
