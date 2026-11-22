@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="460" viewBox="0 0 1000 460">
+<defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="#0a1d15"/><stop offset=".62" stop-color="#102c20"/><stop offset="1" stop-color="#050c09"/></linearGradient><linearGradient id="metal" x2="0" y2="1"><stop stop-color="#fff"/><stop offset=".5" stop-color="#c2cec7"/><stop offset="1" stop-color="#6b7971"/></linearGradient></defs>
+<rect width="1000" height="460" rx="28" fill="url(#bg)" stroke="#789083" stroke-width="3"/>
+<g opacity=".18" fill="none" stroke="#6aa27d" stroke-width="2"><path d="M0 90C120 10 190 110 300 40S500 0 600 80S820 130 1000 35M0 130C120 50 190 150 300 80S500 40 600 120S820 170 1000 75"/><path d="M0 330C120 250 190 350 300 280S500 240 600 320S820 370 1000 275"/></g>
+<path d="M0 310L130 230L235 278L365 145L485 260L610 165L720 278L850 180L1000 280V460H0Z" fill="#1c3a2b"/>
+<path d="M0 360L145 300L260 340L405 260L560 345L720 280L860 350L1000 300V460H0Z" fill="#0b1c14"/>
+<path d="M325 188L410 85L455 132L500 54L552 125L600 88L690 190" fill="none" stroke="#dbe5df" stroke-width="12" stroke-linejoin="round"/>
+<path d="M380 190L455 132L500 164L552 125L625 190" fill="none" stroke="#789a86" stroke-width="5"/>
+<text x="500" y="285" text-anchor="middle" fill="url(#metal)" font-family="Arial,sans-serif" font-size="100" font-style="italic" font-weight="800" letter-spacing="-5">FreeRov3r</text>
+<path d="M185 315H815" stroke="#58a675" stroke-width="4"/>
+<text x="500" y="365" text-anchor="middle" fill="#e2ebe5" font-family="Arial,sans-serif" font-size="25" font-weight="700" letter-spacing="5">VEHICLE DIAGNOSTICS &amp; CAN ANALYSIS</text>
+<text x="500" y="415" text-anchor="middle" fill="#a9bdb0" font-family="Arial,sans-serif" font-size="16" letter-spacing="7">EXPLORE  •  DIAGNOSE  •  SOLVE</text>
+</svg>
