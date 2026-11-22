@@ -42,7 +42,7 @@ class VehicleHistoryStore:
     def archive_capture(self, vin, capture):
         vehicle_key = vin or "UNASSIGNED"
         safe_key = "".join(ch for ch in vehicle_key if ch.isalnum() or ch in "-_")
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         folder = self.path.parent / "vehicles" / safe_key / "captures"
         folder.mkdir(parents=True, exist_ok=True)
         archive = folder / f"capture_{stamp}.json"
