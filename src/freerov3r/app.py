@@ -1083,8 +1083,8 @@ class MainWindow(QMainWindow):
         self._build_navigation_workspace()
         self.quick_drawer = QuickDrawer(self, self._navigate_to_tab)
         self.addDockWidget(Qt.RightDockWidgetArea, self.quick_drawer)
-        self.quick_drawer.setMinimumWidth(260)
-        self.quick_drawer.setMaximumWidth(340)
+        self.quick_drawer.setMinimumWidth(250)
+        self.quick_drawer.setMaximumWidth(310)
         self.quick_drawer.show()
         self.quick_drawer.set_current_workspace(self.tabs.tabText(self.tabs.currentIndex()))
         self.toast_manager = ToastManager(self)
@@ -1102,10 +1102,10 @@ class MainWindow(QMainWindow):
         self.brand_banner.setObjectName("brandBanner")
         banner_pixmap = QPixmap(str(ASSET_DIR / "brand_banner.svg"))
         if not banner_pixmap.isNull():
-            self.brand_banner.setPixmap(banner_pixmap.scaled(980, 132, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.brand_banner.setPixmap(banner_pixmap.scaled(640, 88, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             self.brand_banner.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            self.brand_banner.setMinimumHeight(110)
-            self.brand_banner.setMaximumHeight(132)
+            self.brand_banner.setMinimumHeight(72)
+            self.brand_banner.setMaximumHeight(92)
             outer_layout.addWidget(self.brand_banner)
 
         # Persistent instrument header: the key context stays visible on every page.
@@ -2081,6 +2081,67 @@ class MainWindow(QMainWindow):
                 QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #2d7048; }
                 QLabel#splashLogo { background: transparent; }
             """.replace("{BODY_FONT}", self.body_font_family).replace("{HEADING_FONT}", self.heading_font_family))
+
+
+        # Shared interaction and data-view polish inspired by Beautiful UI / Notchset.
+        # Kept native to Qt so the desktop app does not acquire a React runtime.
+        self.setStyleSheet(self.styleSheet() + """
+            QPushButton {
+                border-radius: 9px;
+                padding: 9px 15px;
+                min-height: 27px;
+                font-weight: 650;
+            }
+            QPushButton:disabled { opacity: 0.45; }
+            QLineEdit, QComboBox, QSpinBox, QListWidget, QTreeWidget,
+            QTableWidget, QPlainTextEdit {
+                border-radius: 8px;
+                padding: 7px 9px;
+            }
+            QGroupBox {
+                border-radius: 12px;
+                margin-top: 16px;
+                padding: 16px 12px 12px 12px;
+                font-weight: 700;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 14px;
+                padding: 0 7px;
+            }
+            QTableWidget {
+                alternate-background-color: rgba(120, 145, 160, 0.08);
+                gridline-color: rgba(130, 150, 170, 0.18);
+                selection-background-color: #286344;
+            }
+            QTableWidget::item {
+                padding: 7px 8px;
+                border-bottom: 1px solid rgba(130, 150, 170, 0.12);
+            }
+            QHeaderView::section {
+                padding: 10px 9px;
+                font-weight: 750;
+                border: none;
+            }
+            QCheckBox, QRadioButton { spacing: 9px; padding: 4px 2px; }
+            QToolTip { padding: 7px 9px; border-radius: 6px; }
+            QScrollBar:vertical {
+                width: 10px; margin: 3px; border: none; border-radius: 5px;
+            }
+            QScrollBar::handle:vertical {
+                min-height: 28px; border-radius: 5px;
+                background: rgba(130, 150, 170, 0.45);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar:horizontal {
+                height: 10px; margin: 3px; border: none; border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal {
+                min-width: 28px; border-radius: 5px;
+                background: rgba(130, 150, 170, 0.45);
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+        """)
 
     def save_current_settings(self):
         backend_data = self.settings_backend.currentData()
