@@ -129,6 +129,7 @@ class SensorGraphTab(QWidget):
         self.series_map = {}
         self.color_map = {}
         self.hidden_sensor_ids = set()
+        self.vehicle_vin = None
         self.recording = False
         self.record_start = None
 
@@ -223,6 +224,9 @@ class SensorGraphTab(QWidget):
         self.sensor_list.clear()
         seen = set()
         for sample in self.sensor_capture.samples:
+            sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
+            if self.vehicle_vin and sample_vin != self.vehicle_vin:
+                continue
             if sample.sensor_id not in seen:
                 seen.add(sample.sensor_id)
                 item = QListWidgetItem(f"{sample.name} ({sample.sensor_id})")
@@ -234,6 +238,10 @@ class SensorGraphTab(QWidget):
             self.update_chart()
         if not HAS_CHARTS and hasattr(self, "placeholder"):
             self.placeholder.setPlainText(f"{len(self.sensor_capture.samples)} samples loaded.\\n{len(seen)} unique sensors.")
+
+    def set_vehicle_vin(self, vin):
+        self.vehicle_vin = vin
+        self.refresh_sensor_list()
 
     def _on_sensor_item_changed(self, item):
         sensor_id = item.text().split("(")[-1].rstrip(")")
@@ -287,6 +295,9 @@ class SensorGraphTab(QWidget):
         base_time = self.record_start or (self.sensor_capture.samples[0].timestamp if self.sensor_capture.samples else 0)
 
         for sample in self.sensor_capture.samples:
+            sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
+            if self.vehicle_vin and sample_vin != self.vehicle_vin:
+                continue
             if sample.sensor_id not in selected_ids:
                 continue
             t = sample.timestamp - base_time
@@ -983,6 +994,8 @@ class MainWindow(QMainWindow):
         if vin and vin in vehicles:
             ctx = {"vin": vin, "nickname": vehicles[vin].get("nickname", "")}
         self.sensor_capture.vehicle_context = ctx
+        if hasattr(self, "graph_tab"):
+            self.graph_tab.set_vehicle_vin(vin)
 
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
