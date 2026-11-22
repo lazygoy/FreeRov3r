@@ -35,6 +35,7 @@ from .sensors.scaling import normalize_values
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
+from .ui_feedback import QuickDrawer, ToastManager
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -1052,6 +1053,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self._build_settings_tab()
         self._build_navigation_workspace()
+        self.quick_drawer = QuickDrawer(self, self._navigate_to_tab)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.quick_drawer)
+        self.quick_drawer.hide()
+        self.toast_manager = ToastManager(self)
 
     def _build_navigation_workspace(self):
         """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
@@ -1090,6 +1095,13 @@ class MainWindow(QMainWindow):
         self.header_traffic = QLabel("0 frames  |  0.0 fps")
         self.header_traffic.setObjectName("headerTraffic")
         header_layout.addWidget(self.header_traffic)
+
+        self.drawer_button = QToolButton()
+        self.drawer_button.setObjectName("drawerToggle")
+        self.drawer_button.setText("☷  Quick panel")
+        self.drawer_button.setToolTip("Open vehicle context and workspace shortcuts")
+        self.drawer_button.clicked.connect(self.toggle_quick_drawer)
+        header_layout.addWidget(self.drawer_button)
 
         outer_layout.addWidget(header)
 
@@ -1166,6 +1178,21 @@ class MainWindow(QMainWindow):
             self.workspace_subtitle.setText(descriptions.get(title, "Vehicle diagnostics workspace"))
         self._refresh_workspace_header()
 
+    def toggle_quick_drawer(self):
+        if hasattr(self, "quick_drawer"):
+            self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
+
+    def _navigate_to_tab(self, name):
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == name:
+                self.tabs.setCurrentIndex(index)
+                self.stack.setCurrentIndex(1)
+                return
+
+    def show_toast(self, message, kind="info"):
+        if hasattr(self, "toast_manager"):
+            self.toast_manager.show(message, kind)
+
     def _refresh_workspace_header(self):
         if not hasattr(self, "header_vehicle"):
             return
@@ -1189,6 +1216,11 @@ class MainWindow(QMainWindow):
         self.header_connection.style().polish(self.header_connection)
         rate = self.can_monitor.rate()
         self.header_traffic.setText(f"{self.frame_counter:,} frames  |  {rate:.1f} fps")
+        if hasattr(self, "quick_drawer"):
+            self.quick_drawer.update_context(
+                vehicle_text, self.header_connection.text().replace("● ", ""),
+                f"{self.frame_counter:,} frames · {rate:.1f} fps",
+            )
 
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
         vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
@@ -1545,6 +1577,7 @@ class MainWindow(QMainWindow):
             {"vin": vin, "source": "OBD Mode 09 PID 02 or UDS DID F190"}, vin=vin
         )
         self.log.appendPlainText(f"VIN detected from scan data: {vin}")
+        self.show_toast(f"VIN identified: {vin}", "success")
 
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
@@ -1586,6 +1619,7 @@ class MainWindow(QMainWindow):
             self.connect_btn.setText("Start listening")
             self.status.setText("Disconnected")
             self._refresh_workspace_header()
+            self.show_toast("CAN capture stopped", "info")
             return
 
         data = self.backend.currentData()
@@ -1632,6 +1666,7 @@ class MainWindow(QMainWindow):
         self.settings_channel.setText(channel)
         self.settings_bitrate.setCurrentText(str(bitrate))
         self._refresh_workspace_header()
+        self.show_toast("CAN listener started", "success")
 
     def on_frame(self, frame):
         detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
@@ -1728,17 +1763,20 @@ class MainWindow(QMainWindow):
             else:
                 self.session.export_csv(path)
             self.status.setText(f"Exported {len(self.session.frames)} frames")
+            self.show_toast(f"Exported {len(self.session.frames):,} CAN frames", "success")
 
     def export_llm_report(self):
         path, _ = QFileDialog.getSaveFileName(self, "LLM report", "analysis.md", "Markdown (*.md)")
         if path:
             self.sensor_capture.export_llm_report(path, vin=self.settings.get("current_vin"))
             self.status.setText("LLM report saved")
+            self.show_toast("Analysis report exported", "success")
 
     def export_sensor_csv(self):
         path, _ = QFileDialog.getSaveFileName(self, "Sensor CSV", "sensors.csv", "CSV (*.csv)")
         if path:
             self.sensor_capture.export_csv(path)
+            self.show_toast("Sensor data exported", "success")
 
     def toggle_dark_mode(self, enabled: bool):
         self.settings["dark_mode"] = enabled
@@ -1841,6 +1879,7 @@ class MainWindow(QMainWindow):
             self.rate_timer.setInterval(self.settings["graph_refresh_ms"])
         save_settings(self.settings)
         self.status.setText("Settings saved")
+        self.show_toast("Settings saved", "success")
 
     def closeEvent(self, event):
         if self.receiver and self.receiver.isRunning():
