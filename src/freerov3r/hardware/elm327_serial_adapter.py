@@ -96,3 +96,103 @@ class Elm327SerialAdapter(CanAdapter):
             return None
         self.frames_received += 1
         return frame
+
+
+def parse_elm_vin_response(response):
+    """Extract a Mode 09 PID 02 VIN from ELM text, including ISO-TP frames."""
+    chunks = {}
+    unaddressed = []
+    for raw_line in str(response).replace(">", "\n").replace("\r", "\n").splitlines():
+        tokens = raw_line.strip().split()
+        if not tokens or tokens[0].upper() in {"SEARCHING...", "NO", "DATA", "STOPPED", "OK"}:
+            continue
+        can_id = None
+        if len(tokens[0]) in (3, 8):
+            try:
+                can_id = int(tokens[0], 16)
+                tokens = tokens[1:]
+            except ValueError:
+                pass
+        try:
+            payload = bytes(int(token, 16) for token in tokens if len(token) == 2)
+        except ValueError:
+            continue
+        if not payload:
+            continue
+        if can_id is None:
+            unaddressed.extend(payload)
+            continue
+        frames = chunks.setdefault(can_id, [])
+        frames.append(payload)
+
+    candidates = [unaddressed]
+    for frames in chunks.values():
+        assembled = bytearray()
+        expected = None
+        for frame in frames:
+            pci = frame[0] >> 4
+            if pci == 0:
+                length = frame[0] & 0x0F
+                assembled.extend(frame[1:1 + length])
+            elif pci == 1 and len(frame) >= 2:
+                expected = ((frame[0] & 0x0F) << 8) | frame[1]
+                assembled.extend(frame[2:])
+            elif pci == 2:
+                assembled.extend(frame[1:])
+        if expected is not None:
+            assembled = assembled[:expected]
+        candidates.append(assembled)
+
+    for data in candidates:
+        raw = bytes(data)
+        for marker in (b"\x49\x02",):
+            start = raw.find(marker)
+            if start < 0:
+                continue
+            offset = start + 2
+            if len(raw) >= offset + 18 and raw[offset] in (1, 2, 3):
+                offset += 1
+            vin_bytes = raw[offset:offset + 17]
+            try:
+                vin = vin_bytes.decode("ascii").upper()
+            except UnicodeDecodeError:
+                continue
+            from ..diagnostics.vin_decoder import validate_vin
+            valid = validate_vin(vin)
+            if valid:
+                return valid
+    return None
+
+
+def query_vin(port, baudrate=38400, timeout=2.5):
+    """Perform the read-only OBD-II Mode 09 PID 02 VIN request over ELM327."""
+    connection = serial.Serial(
+        str(port), int(baudrate), timeout=0.25, write_timeout=1
+    )
+    try:
+        connection.reset_input_buffer()
+        for command in ("ATZ", "ATE0", "ATL0", "ATS1", "ATH1", "ATSP0", "ATCAF1"):
+            connection.write((command + "\\r").encode("ascii"))
+            connection.flush()
+            time.sleep(0.2 if command == "ATZ" else 0.08)
+            connection.read_until(b">")
+        connection.reset_input_buffer()
+        connection.write(b"0902\\r")
+        connection.flush()
+        deadline = time.monotonic() + float(timeout)
+        response = bytearray()
+        while time.monotonic() < deadline:
+            chunk = connection.read_until(b">")
+            if chunk:
+                response.extend(chunk)
+                if b">" in chunk:
+                    break
+        vin = parse_elm_vin_response(response.decode("ascii", errors="replace"))
+        if not vin:
+            raise RuntimeError(
+                "The adapter did not return a valid VIN. Check ignition state, "
+                "OBD connection, protocol support, and adapter compatibility."
+            )
+        return vin
+    finally:
+        connection.close()
