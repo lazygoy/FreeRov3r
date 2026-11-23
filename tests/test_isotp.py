@@ -133,3 +133,15 @@ def test_rejects_invalid_configuration():
         reassemble_isotp([], timeout=-1)
     with pytest.raises(ValueError):
         reassemble_isotp([], max_payload=0)
+
+
+
+def test_interleaved_messages_are_returned_by_start_timestamp():
+    frames = [
+        frame(0x7E0, 1.0, "10 0A 62 F1 90 31 32 33"),
+        frame(0x7E8, 1.005, "03 62 F1 90"),
+        frame(0x7E0, 1.01, "21 34 35 36 37 38 39 30"),
+    ]
+    messages = reassemble_isotp(frames)
+    assert [item["arbitration_id"] for item in messages] == [0x7E0, 0x7E8]
+    assert [item["status"] for item in messages] == ["complete", "complete"]
