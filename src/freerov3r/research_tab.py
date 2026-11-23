@@ -336,7 +336,11 @@ class ResearchTab(QWidget):
 
     def set_context(self, vin=None, interface=None):
         self.vin_label.setText(f"VIN: {vin or 'not set'}  |  Interface: {interface or 'not connected'}")
-        self.metadata.update({"vin": vin, "interface": interface})
+        self.metadata.update({
+            "vin": vin,
+            "interface": interface,
+            "scanner": "LAUNCH Creader Elite V2.0 for Land Rover/Jaguar",
+        })
 
     def _set_live_enabled(self, enabled):
         self.live_enabled = bool(enabled)
@@ -624,6 +628,8 @@ class ResearchTab(QWidget):
         )
         if answer != QMessageBox.Yes:
             return
+        self.recording = False
+        self.record_button.setText("Start research recording")
         self.frames.clear()
         self.live_preview.clear()
         self._pending_records.clear()
