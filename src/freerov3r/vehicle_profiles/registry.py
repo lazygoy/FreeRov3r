@@ -35,6 +35,8 @@ class VehicleProfileRegistry:
                 capabilities={"can_capture", "obd2", "pid_monitoring", "graphing", "logging"},
             )
         }
+        from .l319 import L319Profile
+        self.register(L319Profile())
         self.plugin_errors = []
         self.load_plugins()
 
