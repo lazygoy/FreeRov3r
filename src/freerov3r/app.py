@@ -565,6 +565,13 @@ class ModulesTab(QWidget):
         self.scan_all_btn = QPushButton("Scan All Modules")
         self.scan_all_btn.clicked.connect(self.scan_all)
         actions.addWidget(self.scan_all_btn)
+        self.health_report_btn = QPushButton("Generate Health Report")
+        self.health_report_btn.setObjectName("primaryButton")
+        self.health_report_btn.setToolTip(
+            "Scan the complete module inventory and create a concise vehicle health summary."
+        )
+        self.health_report_btn.clicked.connect(self.generate_health_report)
+        actions.addWidget(self.health_report_btn)
         self.clear_module_btn = QPushButton("Clear Selected Module")
         self.clear_module_btn.clicked.connect(self.clear_module)
         actions.addWidget(self.clear_module_btn)
@@ -595,6 +602,20 @@ class ModulesTab(QWidget):
         self.result_log.setReadOnly(True)
         self.result_log.setMaximumBlockCount(1000)
         right.addWidget(self.result_log, 1)
+        right.addWidget(QLabel("VEHICLE HEALTH REPORT"))
+        self.health_report = QPlainTextEdit()
+        self.health_report.setReadOnly(True)
+        self.health_report.setMinimumHeight(150)
+        self.health_report.setPlaceholderText(
+            "Run Generate Health Report for a module-by-module summary."
+        )
+        right.addWidget(self.health_report, 1)
+        report_export_row = QHBoxLayout()
+        self.export_health_report_btn = QPushButton("Export Health Report")
+        self.export_health_report_btn.clicked.connect(self.export_health_report)
+        report_export_row.addWidget(self.export_health_report_btn)
+        report_export_row.addStretch()
+        right.addLayout(report_export_row)
         split.addLayout(right, 2)
         layout.addLayout(split)
         self.set_simulation_enabled(False)
@@ -691,6 +712,146 @@ class ModulesTab(QWidget):
                        for m in modules],
         }, vin=vin)
         self.refresh_tree()
+
+    def generate_health_report(self):
+        """Run the available complete inventory check and render an evidence-labelled report."""
+        vin = self.vin_provider()
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        if not self.simulation_enabled:
+            report = [
+                "FREEROV3R VEHICLE HEALTH REPORT",
+                f"Generated: {timestamp}",
+                f"Vehicle VIN: {vin or 'Not selected'}",
+                "",
+                "RESULT: LIVE MODULE SCAN NOT AVAILABLE",
+                "",
+                "No physical vehicle modules were interrogated. The current live hardware "
+                "connection supports passive CAN capture only; live ECU addressing and "
+                "module diagnostic requests are not implemented in this build.",
+                "",
+                "The module inventory shown in this workspace is a development fixture. "
+                "It must not be interpreted as the installed modules or actual condition "
+                "of the vehicle.",
+                "",
+                "NEXT STEP",
+                "Select 'Simulated vehicle (synthetic OBD-II)' in Capture and start listening "
+                "to generate a clearly labelled demonstration report. For a real vehicle "
+                "report, verified model-specific ECU addressing and read-only diagnostic "
+                "services must be implemented first.",
+                "",
+                "DATA INTEGRITY: No real ECU results were created or inferred.",
+            ]
+            self.health_report.setPlainText("\n".join(report))
+            self.result_log.appendPlainText(
+                "HEALTH REPORT: blocked. Live module interrogation is not implemented; no ECU was queried."
+            )
+            return
+
+        if not vin:
+            self.health_report.setPlainText(
+                "FREEROV3R VEHICLE HEALTH REPORT\n"
+                f"Generated: {timestamp}\n"
+                "RESULT: NOT RUN\n\n"
+                "Select a vehicle and save its 17-character VIN in the Sensors tab, "
+                "then run the report again. No module scan was performed."
+            )
+            return
+
+        modules = self.network.scan_all()
+        dtc_entries = [
+            (module, dtc) for module in modules for dtc in module.dtcs
+        ]
+        affected = [module for module in modules if module.dtcs]
+        severity_counts = {}
+        for module, dtc in dtc_entries:
+            severity = (dtc.severity or "Unclassified").strip()
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+        lines = [
+            "FREEROV3R VEHICLE HEALTH REPORT",
+            f"Generated: {timestamp}",
+            f"Vehicle VIN: {vin}",
+            "DATA SOURCE: SYNTHETIC MODULE SIMULATOR",
+            "IMPORTANT: This is a demonstration report, not a scan of a physical vehicle.",
+            "",
+            "EXECUTIVE SUMMARY",
+            f"Module inventory scanned: {len(modules)}",
+            f"Modules responding in simulator: {sum(1 for module in modules if module.available)}",
+            f"Modules with DTC entries: {len(affected)}",
+            f"Total DTC entries: {len(dtc_entries)}",
+        ]
+        if severity_counts:
+            lines.append("DTC severity breakdown:")
+            lines.extend(
+                f"  • {severity}: {count}"
+                for severity, count in sorted(severity_counts.items())
+            )
+        else:
+            lines.append("DTC severity breakdown: No DTC entries.")
+        lines.extend(["", "MODULE FINDINGS"])
+        for module in modules:
+            status = "FAULTS RECORDED" if module.dtcs else "NO DTC ENTRIES"
+            if not module.available:
+                status = "NO SIMULATOR RESPONSE"
+            lines.append(f"{module.code} — {module.name} [{module.category}]")
+            lines.append(f"  Status: {status}")
+            if module.dtcs:
+                for dtc in module.dtcs:
+                    lines.append(
+                        f"  • {dtc.code} | {dtc.status} | {dtc.severity}: {dtc.description}"
+                    )
+            else:
+                lines.append("  • No DTC entries in simulator fixture.")
+        lines.extend([
+            "",
+            "ASSESSMENT",
+            (
+                f"{len(affected)} module(s) contain example DTC entries. "
+                "Review each listed code against verified service information."
+                if affected else
+                "No DTC entries are present in this simulator fixture."
+            ),
+            "",
+            "LIMITATIONS",
+            "All module names, response states and DTC entries above are synthetic test data. "
+            "They do not establish actual vehicle fitment, ECU communication, fault status, "
+            "roadworthiness or repair requirements. No commands were sent to a physical ECU.",
+        ])
+        report_text = "\n".join(lines)
+        self.health_report.setPlainText(report_text)
+        self.result_log.appendPlainText(
+            f"HEALTH REPORT: {len(modules)} simulated modules checked; "
+            f"{len(affected)} with DTC entries; {len(dtc_entries)} total DTC(s)."
+        )
+        self.history_callback(
+            "module_health_report",
+            "Module health report generated (simulator)",
+            {
+                "source": "synthetic_module_simulator",
+                "modules_scanned": len(modules),
+                "modules_with_dtcs": len(affected),
+                "dtc_count": len(dtc_entries),
+                "severity_counts": severity_counts,
+                "report": report_text,
+            },
+            vin=vin,
+        )
+        self.refresh_tree()
+
+    def export_health_report(self):
+        report = self.health_report.toPlainText().strip()
+        if not report:
+            QMessageBox.information(
+                self, "No health report", "Generate a health report before exporting."
+            )
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export vehicle health report", "vehicle_health_report.txt",
+            "Text report (*.txt);;Markdown (*.md)"
+        )
+        if path:
+            Path(path).write_text(report + "\n", encoding="utf-8")
+            self.result_log.appendPlainText(f"Health report exported: {path}")
 
     def clear_selected_code(self):
         code = self._selected_code()
@@ -1886,6 +2047,7 @@ class MainWindow(QMainWindow):
             ("Graph sensor data", self.show_graph_mode),
             ("Read vehicle information", self.show_vehicle_info_mode),
             ("Vehicle modules (CAN)", self.show_modules_mode),
+            ("Run Module Health Report", self.open_health_report),
         ]
         for index, (text, slot) in enumerate(tasks):
             btn = QPushButton(text)
@@ -2052,6 +2214,11 @@ class MainWindow(QMainWindow):
     def toggle_quick_drawer(self):
         if hasattr(self, "quick_drawer"):
             self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
+
+    def open_health_report(self):
+        """Open module diagnostics and immediately run the health-report workflow."""
+        self._navigate_to_tab("Modules")
+        self.modules_tab.generate_health_report()
 
     def _navigate_to_tab(self, name):
         if name == "Home":
