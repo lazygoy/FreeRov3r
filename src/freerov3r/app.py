@@ -2289,6 +2289,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = load_settings()
+        self.vehicle_profiles = VehicleProfileRegistry()
         installed_fonts = {family.casefold(): family for family in QFontDatabase.families()}
         self.body_font_family = next(
             (installed_fonts[name.casefold()] for name in ("Inter", "Segoe UI Variable", "Segoe UI")
@@ -2376,6 +2377,7 @@ class MainWindow(QMainWindow):
             ("Read vehicle information", self.show_vehicle_info_mode),
             ("Vehicle modules (CAN)", self.show_modules_mode),
             ("Run Module Health Report", self.open_health_report),
+            ("Vehicle setup wizard", self.run_setup_wizard),
         ]
         for index, (text, slot) in enumerate(tasks):
             btn = QPushButton(text)
@@ -2548,6 +2550,48 @@ class MainWindow(QMainWindow):
         self._navigate_to_tab("Modules")
         self.modules_tab.generate_health_report()
 
+    def run_setup_wizard(self):
+        """Guide interface selection and vehicle-profile setup."""
+        wizard = VehicleSetupWizard(self, self.settings)
+        if wizard.exec() != QDialog.Accepted or not wizard.result_data:
+            return
+        data = wizard.result_data
+        self.settings.update({
+            "interface": data["interface"], "channel": data["channel"],
+            "bitrate": data["bitrate"],
+        })
+        for combo in (self.backend, self.settings_backend):
+            for index in range(combo.count()):
+                item_data = combo.itemData(index)
+                if item_data and item_data[0] == data["interface"]:
+                    combo.setCurrentIndex(index)
+                    break
+        self.channel_edit.setCurrentText(data["channel"])
+        self.settings_channel.setText(data["channel"])
+        self.bitrate.setCurrentText(str(data["bitrate"]))
+        self.settings_bitrate.setCurrentText(str(data["bitrate"]))
+        vehicle = {
+            "make": data["make"], "model": data["model"],
+            "model_year": data["model_year"], "profile_id": data["profile_id"],
+            "identification_confidence": data["identification"].get("confidence", "manual"),
+            "variant_id": data["identification"].get("variant_id"), "nickname": "",
+        }
+        vin = data["vin"]
+        if vin:
+            existing = self.settings.setdefault("vehicles", {}).get(vin, {})
+            existing.update(vehicle)
+            self.settings["vehicles"][vin] = existing
+            self.settings["current_vin"] = vin
+            self.settings["active_vehicle"] = existing.copy()
+        else:
+            self.settings["current_vin"] = None
+            self.settings["active_vehicle"] = vehicle
+        self._refresh_vehicle_list()
+        self._update_vehicle_context()
+        self.save_current_settings()
+        self._navigate_to_tab("Capture")
+        self.show_toast("Vehicle setup applied", "success")
+
     def _navigate_to_tab(self, name):
         if name == "Home":
             self.stack.setCurrentIndex(0)
@@ -2608,7 +2652,7 @@ class MainWindow(QMainWindow):
         dialog.setObjectName("startupSplash")
         dialog.setWindowTitle("Welcome to FreeRov3r")
         dialog.setWindowModality(Qt.ApplicationModal)
-        dialog.setMinimumSize(1000, 560)
+        dialog.setMinimumSize(1100, 660)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(30, 26, 30, 24)
         layout.setSpacing(14)
@@ -2656,8 +2700,10 @@ class MainWindow(QMainWindow):
              "Start demo", self._start_simulator_demo),
             ("Explore sample modules", "Browse example module categories and sample faults. These are test fixtures, not a real scan.",
              "View sample modules", lambda: self._navigate_to_tab("Modules")),
-            ("Open the full workspace", "Go straight to the complete set of diagnostic, graphing and history tools.",
+            ("Open the full workspace", "Go straight to the complete set of generic diagnostic, graphing and history tools.",
              "Open workspace", lambda: self._navigate_to_tab("Capture")),
+             ("Vehicle setup wizard", "Detect an interface, read or enter a VIN, identify the vehicle and select its capability package.",
+              "Start setup", self.run_setup_wizard),
         ]
         for index, (heading, description, action_text, action) in enumerate(choices):
             card = QFrame()
@@ -2679,7 +2725,7 @@ class MainWindow(QMainWindow):
                 lambda checked=False, callback=action: (dialog.accept(), callback())
             )
             card_layout.addWidget(action_button)
-            grid.addWidget(card, index // 2, index % 2)
+            grid.addWidget(card, index // 3, index % 3)
         layout.addLayout(grid, 1)
         footer = QHBoxLayout()
         self.splash_skip_checkbox = QCheckBox("Don't show this welcome screen at startup")
