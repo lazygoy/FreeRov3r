@@ -31,7 +31,7 @@ def test_execute_is_denied_by_default_even_with_registered_executor():
     routine = sample_routine()
     manager.register_executor(routine.routine_id, lambda **kwargs: called.append(kwargs))
 
-    with pytest.raises(PermissionError, match="Transmit disabled"):
+    with pytest.raises(PermissionError, match="Write/service operation disabled"):
         manager.execute(
             routine,
             "SALXXXXXXXXXXXX1",
