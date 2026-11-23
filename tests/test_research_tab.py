@@ -1,6 +1,10 @@
 import csv
 
-from freerov3r.research_tab import classify_can_payload, load_capture_file
+from freerov3r.research_tab import (
+    classify_can_payload,
+    classify_uds_payload,
+    load_capture_file,
+)
 
 
 def test_classify_isotp_uds_request_and_response():
@@ -46,3 +50,14 @@ def test_load_candump_with_channel_prefix(tmp_path):
     assert frames[0]["timestamp"] == 12.5
     assert frames[0]["arbitration_id"] == 0x7E8
     assert frames[0]["data"] == "03410c1a"
+
+
+
+def test_classify_reassembled_uds_payloads():
+    assert classify_uds_payload(bytes.fromhex("22 F1 90")) == "ReadDataByIdentifier"
+    assert classify_uds_payload(bytes.fromhex("62 F1 90")) == (
+        "Positive response to ReadDataByIdentifier"
+    )
+    assert classify_uds_payload(bytes.fromhex("7F 22 31")) == (
+        "Negative response to ReadDataByIdentifier (NRC 0x31)"
+    )
