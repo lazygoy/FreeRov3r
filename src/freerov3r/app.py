@@ -263,7 +263,7 @@ class VehicleSetupWizard(QDialog):
         self.result_data = None
         self._vin_worker = None
         self._decoded = None
-        self.setObjectName("vehicleSetupWizard")
+        self.setObjectName("startupSplash")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 22, 24, 20)
