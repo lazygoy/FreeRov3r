@@ -1854,9 +1854,9 @@ class MainWindow(QMainWindow):
             vin_provider=lambda: self.settings.get("current_vin"),
             history_callback=self.record_vehicle_event,
         )
-        self.tabs.addTab(self.network_tab, "Module Status")
+        self.tabs.addTab(self.network_tab, "Topology")
         self.wiring_tab = WiringDiagramsTab()
-        self.tabs.addTab(self.wiring_tab, "Vehicle Topology")
+        self.tabs.addTab(self.wiring_tab, "Wiring Diagrams")
         self.modules_tab.network_overview_refresh = self.network_tab.refresh
         self.solutions_tab = SolutionsTab(
             self.module_network,
@@ -1966,8 +1966,8 @@ class MainWindow(QMainWindow):
                 "OBD-II": "Standard diagnostic parameters and trouble codes",
                 "Modules": "Module-level diagnostic workspace",
                 "Special Functions": "Service resets, calibrations and module-specific routines",
-                "Module Status": "Simulated module inventory and fixture DTC status",
-                "Vehicle Topology": "Factory-documented L319 HS-CAN, MS-CAN and MOST wiring reference",
+                "Topology": "Interactive ECU module map, scan status and DTC overview",
+                "Wiring Diagrams": "Factory-documented L319 HS-CAN, MS-CAN and MOST wiring reference",
                 "Solutions": "Review diagnostic evidence and analysis notes",
                 "Vehicle History": "Previous captures and vehicle-specific events",
                 "Settings": "Connection, display and logging configuration",
