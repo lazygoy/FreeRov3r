@@ -486,7 +486,7 @@ class VehicleSetupWizard(QDialog):
     def _vin_query_completed(self, vin):
         self.vin_edit.setText(vin)
         self.decode_vin()
-        self.vin_status.setText("VIN successfully read from the vehicle using a read-only OBD-II request.")
+        self.vin_status.setText("VIN read successfully from the vehicle. " + self.vin_status.text())
 
     def _vin_query_failed(self, message):
         self.vin_status.setText(f"VIN query failed: {message}")
@@ -633,7 +633,7 @@ class VehicleSetupWizard(QDialog):
     def reject(self):
         for worker in (self._vin_worker, self._decode_worker):
             if worker and worker.isRunning():
-                worker.wait(5000)
+                worker.wait(8000)
         super().reject()
 
 
@@ -3215,8 +3215,8 @@ class MainWindow(QMainWindow):
     def add_or_update_vehicle(self):
         vin = self.vin_edit.text().strip().upper()
         nickname = self.nickname_edit.text().strip()
-        if len(vin) != 17:
-            QMessageBox.warning(self, "Invalid VIN", "VIN must be 17 characters.")
+        if not validate_vin(vin):
+            QMessageBox.warning(self, "Invalid VIN", "Enter a valid 17-character VIN (letters I, O and Q are not used).")
             return
         identification = identify_vehicle(vin)
         vehicle = self.settings.setdefault("vehicles", {}).get(vin, {}).copy()
