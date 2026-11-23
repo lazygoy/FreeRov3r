@@ -734,6 +734,7 @@ class ResearchTab(QWidget):
             lines.append(
                 f'| {item["started_at"]:.6f} | 0x{item["arbitration_id"]:X} | '
                 f'{item["status"]} | {item["payload"].upper()} | '
+                f'{classify_uds_payload(bytes.fromhex(item["payload"]))} | '
                 f'{item["frame_count"]} | {item["detail"]} |'
             )
         lines += ["", "## Operation markers"]
