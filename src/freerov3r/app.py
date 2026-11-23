@@ -31,7 +31,8 @@ from .diagnostics.vehicle_identification import identify_vehicle, validate_vin, 
 from .vehicle_profiles.registry import VehicleProfileRegistry
 from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
-from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
+from .hardware.simulated_vehicle import SimulatedVehicleAdapter
+from .diagnostics.obd2 import OBD_PIDS, decode_mode01
 from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
@@ -68,24 +69,6 @@ DEFAULT_SETTINGS = {
     "graph_refresh_ms": 1000,
     "show_startup_splash": True,
 }
-
-# Common OBD-II PIDs (Mode 01)
-OBD_PIDS = [
-    ("0C", "Engine RPM", "rpm"),
-    ("0D", "Vehicle Speed", "km/h"),
-    ("05", "Engine Coolant Temp", "°C"),
-    ("0F", "Intake Air Temp", "°C"),
-    ("11", "Throttle Position", "%"),
-    ("04", "Calculated Engine Load", "%"),
-    ("0B", "Intake Manifold Pressure", "kPa"),
-    ("10", "MAF Air Flow Rate", "g/s"),
-    ("1F", "Run Time Since Engine Start", "s"),
-    ("21", "Distance Traveled with MIL On", "km"),
-    ("2F", "Fuel Tank Level", "%"),
-    ("42", "Control Module Voltage", "V"),
-    ("46", "Ambient Air Temp", "°C"),
-    ("5C", "Engine Oil Temp", "°C"),
-]
 
 # Placeholder L319 modules (do not treat addresses as verified)
 L319_MODULES = [
