@@ -209,7 +209,6 @@ def pair_uds_transactions(messages, *, response_window=2.0):
     )
     pending = []
     results = []
-    used_requests = set()
 
     def payload_of(item):
         try:
@@ -233,7 +232,7 @@ def pair_uds_transactions(messages, *, response_window=2.0):
         if sid == 0x7F and len(payload) >= 3:
             request_sid = payload[1]
             response_kind = "negative"
-        elif 0x40 <= sid <= 0x7E:
+        elif sid >= 0x40 and (sid - 0x40) in UDS_REQUEST_SERVICE_IDS:
             request_sid = sid - 0x40
             response_kind = "positive"
         else:
@@ -276,7 +275,6 @@ def pair_uds_transactions(messages, *, response_window=2.0):
                 ),
                 "confidence": "probable",
             })
-            used_requests.add(id(request))
         elif sid in range(0x10, 0x40) or sid in (0x3E, 0x85):
             pending.append({
                 "sid": sid,
@@ -295,7 +293,10 @@ def pair_uds_transactions(messages, *, response_window=2.0):
             results.append({
                 "request": message if payload and payload[0] in UDS_REQUEST_SERVICE_IDS else None,
                 "response": message if payload and (
-                    payload[0] == 0x7F or 0x40 <= payload[0] <= 0x7E
+                    payload[0] == 0x7F or (
+                        payload[0] >= 0x40
+                        and payload[0] - 0x40 in UDS_REQUEST_SERVICE_IDS
+                    )
                 ) else None,
                 "request_service": payload[0] if payload and payload[0] in UDS_REQUEST_SERVICE_IDS else None,
                 "response_kind": None,
