@@ -836,6 +836,16 @@ class NetworkOverviewTab(QWidget):
         self.map_grid = QGridLayout(self.map_body)
         self.map_grid.setContentsMargins(8, 8, 8, 8)
         self.map_grid.setSpacing(10)
+        self.map_tree = QTreeWidget()
+        self.map_tree.setObjectName("thinkcarTopologyTree")
+        self.map_tree.setHeaderLabels(["VEHICLE NETWORK / MODULE", "SCAN STATUS", "DTCs"])
+        self.map_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.map_tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.map_tree.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.map_tree.setAlternatingRowColors(False)
+        self.map_tree.setUniformRowHeights(True)
+        self.map_tree.itemSelectionChanged.connect(self._map_selection_changed)
+        self.map_grid.addWidget(self.map_tree, 0, 0)
         self.map_scroll.setWidget(self.map_body)
         content.addWidget(self.map_scroll, 3)
 
@@ -900,11 +910,7 @@ class NetworkOverviewTab(QWidget):
         self.view_toggle.setText("Topology Map" if list_mode else "System List")
 
     def _clear_map(self):
-        while self.map_grid.count():
-            item = self.map_grid.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        self.map_tree.clear()
         self.map_buttons.clear()
 
     def _make_module_node(self, module):
@@ -933,49 +939,114 @@ class NetworkOverviewTab(QWidget):
         return node
 
     def _build_map(self):
+        """Build a Thinkcar-style expandable vehicle/network/module tree.
+
+        Network membership comes from the transcribed 2010 L319 factory
+        reference. Scan state is overlaid only where a simulator fixture can
+        be matched; unmatched factory entries remain reference-only.
+        """
         self._clear_map()
-        groups = {}
-        for module in self.network.modules:
-            groups.setdefault(module.category, []).append(module)
+        root = QTreeWidgetItem([
+            f"2010 DISCOVERY 4  •  {L319_DEFAULT_ENGINE}",
+            "FACTORY REFERENCE",
+            "—",
+        ])
+        root.setExpanded(True)
+        root.setForeground(0, QBrush(QColor("#58a6ff")))
+        self.map_tree.addTopLevelItem(root)
 
-        category_order = ["Powertrain", "Chassis", "Safety", "Body", "Climate",
-                          "Driver Assistance", "Network", "Information", "Infotainment"]
-        ordered = [name for name in category_order if name in groups]
-        ordered.extend(name for name in groups if name not in ordered)
+        # Explicit aliases only where the simulator fixture represents the
+        # same functional module. No guessed mapping for optional equipment.
+        fixture_aliases = {
+            "ABS/DSC": "ABS",
+            "AIR-SUS": "RLM",
+            "SAS": "SASM",
+            "IC-HS": "IC",
+            "IC-MS": "IC",
+        }
+        for network_key in ("HS-CAN", "MS-CAN", "MOST"):
+            info = L319_WIRING_NETWORKS.get(network_key, {})
+            branch = QTreeWidgetItem([
+                f"▰  {info.get('title', network_key)}",
+                "WIRING REFERENCE",
+                "—",
+            ])
+            branch.setExpanded(True)
+            branch.setForeground(0, QBrush(QColor("#58a6ff")))
+            branch.setToolTip(0, f"{info.get('description', '')}\n{info.get('pages', '')}")
+            root.addChild(branch)
 
-        # Group cards are deliberately not connected by bus lines: the simulator
-        # contains no verified bus membership, gateway routing or ECU addresses.
-        for index, category in enumerate(ordered):
-            modules = groups[category]
-            group_frame = QFrame()
-            group_frame.setObjectName("topologyGroup")
-            group_layout = QVBoxLayout(group_frame)
-            group_layout.setContentsMargins(12, 10, 12, 12)
-            group_layout.setSpacing(8)
-            title_row = QHBoxLayout()
-            group_title = QLabel(category.upper())
-            group_title.setObjectName("topologyGroupTitle")
-            title_row.addWidget(group_title)
-            title_row.addStretch(1)
-            count = QLabel(f"{len(modules)} MODULES")
-            count.setObjectName("mutedText")
-            title_row.addWidget(count)
-            group_layout.addLayout(title_row)
-            nodes = QGridLayout()
-            nodes.setSpacing(8)
-            for node_index, module in enumerate(modules):
-                nodes.addWidget(self._make_module_node(module), node_index // 2, node_index % 2)
-            group_layout.addLayout(nodes)
-            self.map_grid.addWidget(group_frame, index // 2, index % 2)
+            for code, component, name, connector, notes in info.get("modules", []):
+                fixture_code = fixture_aliases.get(code, code)
+                try:
+                    module = self.network.get_module(fixture_code)
+                except (KeyError, AttributeError):
+                    module = None
 
-        disclaimer = QLabel(
-            "SIMULATED INVENTORY  •  Grouping reflects example software categories, "
-            "not confirmed CAN buses, wiring paths or gateway connections."
+                if module is None:
+                    status = "REFERENCE ONLY"
+                    dtc_count = "—"
+                    accent = "#8995a3"
+                else:
+                    status = self._status_text(module)
+                    dtc_count = str(len(module.dtcs))
+                    accent = self.STATUS_STYLES[self._module_status(module)][0]
+
+                item = QTreeWidgetItem([
+                    f"{code}  ·  {name}  [{component}]",
+                    status,
+                    dtc_count,
+                ])
+                item.setData(0, Qt.UserRole, {
+                    "fixture_code": fixture_code if module is not None else None,
+                    "code": code,
+                    "component": component,
+                    "name": name,
+                    "connector": connector,
+                    "notes": notes,
+                    "network": network_key,
+                })
+                item.setForeground(0, QBrush(QColor(accent)))
+                item.setForeground(1, QBrush(QColor(accent)))
+                item.setToolTip(
+                    0,
+                    f"{info.get('title', network_key)}\nFactory component: {component}\n"
+                    f"Connector: {connector}\n{notes}"
+                )
+                branch.addChild(item)
+
+        self.map_tree.expandAll()
+        self.map_tree.resizeColumnToContents(1)
+        self.map_tree.resizeColumnToContents(2)
+
+    def _map_selection_changed(self):
+        item = self.map_tree.currentItem()
+        data = item.data(0, Qt.UserRole) if item else None
+        if not isinstance(data, dict):
+            return
+        fixture_code = data.get("fixture_code")
+        if fixture_code:
+            self.select_module(fixture_code)
+            return
+
+        network_key = data.get("network")
+        info = L319_WIRING_NETWORKS.get(network_key, {})
+        self.selected_code = None
+        self.detail_name.setText(f"{data.get('code')}  |  {data.get('name')}")
+        self.detail_status.setText("FACTORY REFERENCE ONLY  •  NOT IN SIMULATOR INVENTORY")
+        self.detail_status.setStyleSheet("color:#8995a3;font-weight:700;")
+        self.detail_text.setPlainText(
+            f"FACTORY COMPONENT: {data.get('component')}\n"
+            f"NETWORK: {info.get('title', network_key)}\n"
+            f"REFERENCE: {info.get('pages', '')}\n\n"
+            f"CONNECTOR / PIN REFERENCES\n{data.get('connector', '')}\n\n"
+            f"NOTES\n{data.get('notes', '')}\n\n"
+            f"NETWORK CONDUCTORS\n{info.get('pair', '')}\n\n"
+            f"DIAGNOSTIC SOCKET\n{info.get('dlc', '')}\n\n"
+            "DATA SOURCE: TRANSCRIBED 2010 L319 FACTORY WIRING REFERENCE.\n"
+            "LIVE ECU PRESENCE AND SCAN STATUS HAVE NOT BEEN VERIFIED."
         )
-        disclaimer.setWordWrap(True)
-        disclaimer.setObjectName("mutedText")
-        self.map_grid.addWidget(disclaimer, (len(ordered) + 1) // 2, 0, 1, 2)
-        self.map_grid.setRowStretch((len(ordered) + 1) // 2 + 1, 1)
+        self.scan_selected_button.setEnabled(False)
 
     def _build_system_list(self):
         self.system_list.clear()
