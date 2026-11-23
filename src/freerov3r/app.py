@@ -27,6 +27,7 @@ except ImportError:
 from .hardware.serial_ports import list_serial_ports
 from .hardware.interface_discovery import discover_interfaces
 from .hardware.elm327_serial_adapter import Elm327SerialAdapter, query_vin
+from .hardware.elm327_obd_adapter import Elm327ObdAdapter
 from .diagnostics.vehicle_identification import identify_vehicle, validate_vin, decode_vin_online
 from .vehicle_profiles.registry import VehicleProfileRegistry
 from .hardware.python_can_adapter import PythonCanAdapter
@@ -293,7 +294,8 @@ class VehicleSetupWizard(QDialog):
             ("virtual", "Virtual CAN (no hardware)", "freerov3r"),
             ("simulator", "Simulated vehicle (demo)", "L319-DEMO"),
             ("esp32", "Recommended ESP32 CAN interface", "COM3"),
-            ("elm327", "ELM327 Bluetooth / serial", ""),
+            ("elm327", "ELM327 raw CAN monitor", ""),
+            ("elm327_obd", "ELM327 active OBD-II polling", ""),
             ("socketcan", "SocketCAN", "can0"),
             ("slcan", "SLCAN", "COM3"),
         ]
@@ -441,7 +443,7 @@ class VehicleSetupWizard(QDialog):
 
     def _update_vin_query_availability(self):
         data = self.interface_combo.currentData()
-        is_elm = bool(data and data[0] == "elm327")
+        is_elm = bool(data and data[0] in ("elm327", "elm327_obd"))
         self.read_vin_button.setEnabled(is_elm and bool(self.channel_edit.currentText().strip()))
         if is_elm:
             self.read_vin_button.setToolTip("Send the read-only OBD-II Mode 09 PID 02 VIN request.")
@@ -923,42 +925,69 @@ class OBDTab(QWidget):
 
         note = QLabel(
             "<b>OBD-II</b><br>"
-            "Transmit/request support is disabled by default for safety. "
+            "Read-only Mode 01 polling is available when using the dedicated ELM327 OBD-II "
+            "connection. Other interfaces remain passive unless their transmit support is "
+            "implemented and explicitly enabled. No ECU write commands are sent. "
             "The simulator streams clearly labeled synthetic Mode 01 values; real vehicles "
-            "only populate this table when matching response frames are observed."
+            "also populate this table when matching response frames are observed."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        self.table = QTableWidget(len(OBD_PIDS), 4)
+        self.table = QTableWidget(len(OBD_PIDS), 5)
         self.pid_rows = {pid: row for row, (pid, _, _) in enumerate(OBD_PIDS)}
-        self.table.setHorizontalHeaderLabels(["PID", "Description", "Unit", "Value"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.setHorizontalHeaderLabels(["Poll", "PID", "Description", "Unit", "Value"])
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         for row, (pid, desc, unit) in enumerate(OBD_PIDS):
-            self.table.setItem(row, 0, QTableWidgetItem(pid))
-            self.table.setItem(row, 1, QTableWidgetItem(desc))
-            self.table.setItem(row, 2, QTableWidgetItem(unit))
-            self.table.setItem(row, 3, QTableWidgetItem("—"))
+            poll_item = QTableWidgetItem()
+            poll_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+            poll_item.setCheckState(Qt.Checked)
+            self.table.setItem(row, 0, poll_item)
+            self.table.setItem(row, 1, QTableWidgetItem(pid))
+            self.table.setItem(row, 2, QTableWidgetItem(desc))
+            self.table.setItem(row, 3, QTableWidgetItem(unit))
+            self.table.setItem(row, 4, QTableWidgetItem("—"))
+        self.table.setColumnWidth(0, 48)
+        self.table.setColumnWidth(1, 58)
+        self.table.setColumnWidth(3, 70)
         layout.addWidget(self.table)
 
+        poll_row = QHBoxLayout()
+        poll_row.addWidget(QLabel("Request interval:"))
+        self.poll_interval_ms = QSpinBox()
+        self.poll_interval_ms.setRange(50, 2000)
+        self.poll_interval_ms.setValue(200)
+        self.poll_interval_ms.setSuffix(" ms / PID")
+        self.poll_interval_ms.setToolTip("Delay between sequential Mode 01 PID requests on an active ELM327 connection.")
+        poll_row.addWidget(self.poll_interval_ms)
+        poll_row.addStretch()
+        layout.addLayout(poll_row)
+
         btn_row = QHBoxLayout()
-        self.request_btn = QPushButton("Request Selected PIDs (disabled)")
+        self.request_btn = QPushButton("Active polling is selected by the ELM327 OBD-II connection")
         self.request_btn.setEnabled(False)
-        self.request_btn.setToolTip("Transmit is disabled by SafetyPolicy")
+        self.request_btn.setToolTip("Polling starts only when the dedicated ELM327 OBD-II adapter is selected.")
         btn_row.addWidget(self.request_btn)
         clear_btn = QPushButton("Clear Values")
         clear_btn.clicked.connect(self.clear_values)
         btn_row.addWidget(clear_btn)
         layout.addLayout(btn_row)
 
+    def selected_pids(self):
+        return [
+            int(self.table.item(row, 1).text(), 16)
+            for row in range(self.table.rowCount())
+            if self.table.item(row, 0).checkState() == Qt.Checked
+        ]
+
     def update_value(self, pid, value):
         row = self.pid_rows.get(f"{pid:02X}")
         if row is not None:
-            self.table.item(row, 3).setText(f"{value:.2f}".rstrip("0").rstrip("."))
+            self.table.item(row, 4).setText(f"{value:.2f}".rstrip("0").rstrip("."))
 
     def clear_values(self):
         for row in range(self.table.rowCount()):
-            self.table.item(row, 3).setText("—")
+            self.table.item(row, 4).setText("—")
 
 
 class ModulesTab(QWidget):
@@ -2865,7 +2894,8 @@ class MainWindow(QMainWindow):
         self.backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
-        self.backend.addItem("ELM327 Bluetooth / serial", ("elm327", ""))
+        self.backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
+        self.backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.backend.addItem("SLCAN", ("slcan", "COM3"))
         controls.addWidget(QLabel("Connection:"))
@@ -3054,7 +3084,8 @@ class MainWindow(QMainWindow):
         self.settings_backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.settings_backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.settings_backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
-        self.settings_backend.addItem("ELM327 Bluetooth / serial", ("elm327", ""))
+        self.settings_backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
+        self.settings_backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.settings_backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.settings_backend.addItem("SLCAN", ("slcan", "COM3"))
         self.settings_channel = QLineEdit()
@@ -3403,6 +3434,12 @@ class MainWindow(QMainWindow):
             adapter = Esp32SerialAdapter(port=channel)
         elif interface == "elm327":
             adapter = Elm327SerialAdapter(port=channel)
+        elif interface == "elm327_obd":
+            adapter = Elm327ObdAdapter(
+                port=channel,
+                pids=self.obd_tab.selected_pids(),
+                request_interval=self.obd_tab.poll_interval_ms.value() / 1000.0,
+            )
         else:
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
