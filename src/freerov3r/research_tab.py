@@ -803,7 +803,7 @@ class ResearchTab(QWidget):
         layout.addWidget(summary)
         output = QPlainTextEdit()
         output.setReadOnly(True)
-        output.setPlainText("\\n".join(lines))
+        output.setPlainText("\n".join(lines))
         layout.addWidget(output, 1)
         close_button = QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
