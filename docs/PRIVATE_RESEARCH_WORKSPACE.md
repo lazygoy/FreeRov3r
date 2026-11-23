@@ -29,6 +29,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Conservative request/response pairing using UDS service semantics, CAN-ID separation, channel, frame format and a configurable time window.
 - Response latency measurements and a cautious hint for the common 11-bit request/response CAN-ID +0x8 pattern.
 - A Research-tab transaction analysis view and paired-transaction export for REA.
+- Candidate CAN responder-address aggregation by request/response ID pair, channel and frame format, including pair counts, observed services, positive/negative response counts and average latency.
 - A Research-tab action to inspect reassembled messages, plus ISO-TP results in the REA analysis packet.
 - Frame bookmarks and annotations.
 - Capture comparison by CAN identifier traffic counts.
@@ -38,7 +39,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 
 - The Research tab itself never transmits CAN frames, sends diagnostic requests, or replays captured traffic.
 - The selected adapter still determines whether the overall application is passive. The \`elm327_obd\` backend actively polls standard OBD-II Mode 01 PIDs; use the receive-only ESP32 interface or another known passive adapter when observing LAUNCH scanner traffic.
-- A CAN ID alone does not establish ECU identity or request/response direction.
+- A CAN ID alone does not establish ECU identity or request/response direction. The address map reports candidate responder IDs from observed pairs only; it does not assign module names.
 - ISO-TP reassembly currently assumes normal addressing and separates transfers by CAN ID, CAN ID format and capture channel. Extended/mixed addressing modes and automatic request/response pairing are not implemented.
 - Flow Control frames are recognized as transport metadata but are never answered or generated. A passive capture may therefore show an incomplete transfer if the observed sender waits for Flow Control that the capture interface does not provide.
 - UDS service names and request/response associations are protocol hints only. Pairing requires matching service semantics, different CAN IDs, matching channel/format and close timing; it remains probable, not confirmed. The +0x8 relationship is reported only as a common pattern, not assumed as a rule.
@@ -48,7 +49,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 ## Not yet implemented
 
 - Extended/mixed ISO-TP addressing and more advanced transaction grouping.
-- ECU address mapping based on verified vehicle-specific evidence.
+- Cross-capture ECU address mapping and validation against independently verified vehicle-specific evidence.
 - Multi-network capture and bus selection.
 - Timing-aligned operation markers and capture comparison by sequence.
 - LAUNCH-specific protocol decoding.
