@@ -48,17 +48,24 @@ def classify_can_payload(payload):
         return "—", "—"
 
     pci_type = data[0] >> 4
-    if pci_type == 0 and (data[0] & 0x0F) and len(data) > 1:
-        service = data[1]
+    if pci_type == 0 and len(data) > 1:
+        if data[0] & 0x0F:
+            service_index = 1
+        elif len(data) > 2:
+            service_index = 2
+        else:
+            return "ISO-TP SF", "Extended-length single frame"
+        service = data[service_index]
         name = UDS_SERVICES.get(service)
         if service == 0x7F and len(data) >= 3:
             original = UDS_SERVICES.get(data[2], f"0x{data[2]:02X}")
             return "ISO-TP SF", f"Negative response to {original} (NRC 0x{data[3]:02X})" if len(data) > 3 else f"Negative response to {original}"
         if name:
-            if service >= 0x40 and service not in UDS_SERVICES:
-                return "ISO-TP SF", f"Possible positive response 0x{service:02X}"
             return "ISO-TP SF", name
-        if service >= 0x40:
+        if 0x40 <= service <= 0x7E:
+            request_name = UDS_SERVICES.get(service - 0x40)
+            if request_name:
+                return "ISO-TP SF", f"Positive response to {request_name} (0x{service:02X})"
             return "ISO-TP SF", f"Possible positive response 0x{service:02X}"
         return "ISO-TP SF", "Unclassified service"
 
@@ -106,10 +113,15 @@ def _normalize_record(record):
             if text.lower().startswith("0x"):
                 text = text[2:]
             payload = bytes.fromhex(text)
+        extended_value = record.get("extended", record.get("is_extended_id", arbitration_id > 0x7FF))
+        if isinstance(extended_value, str):
+            extended = extended_value.strip().lower() in ("1", "true", "yes", "ext", "extended")
+        else:
+            extended = bool(extended_value)
         return {
             "timestamp": float(record.get("timestamp", record.get("time", 0.0)) or 0.0),
             "arbitration_id": arbitration_id,
-            "extended": bool(record.get("extended", record.get("is_extended_id", arbitration_id > 0x7FF))),
+            "extended": extended,
             "data": payload.hex(),
             "channel": record.get("channel"),
         }
@@ -152,15 +164,15 @@ def load_capture_file(path):
                 records.append(_normalize_record(row))
     else:
         # candump: (channel timestamp) CAN_ID#DATA or CAN_ID##FLAGS+DATA
-        pattern = re.compile(r"^\s*(?:\((?P<time>\d+(?:\.\d+)?)\)\s+)?(?P<id>[0-9A-Fa-f]+)##?(?P<data>[0-9A-Fa-f]*)")
+        pattern = re.compile(r"^\s*(?:\((?P<time>\d+(?:\.\d+)?)\)\s+)?(?:\S+\s+)?(?P<id>[0-9A-Fa-f]+)(?P<sep>##|#)(?P<data>[0-9A-Fa-f]*)")
         for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
             match = pattern.match(line)
             if not match:
                 continue
             can_id = int(match.group("id"), 16)
             data = match.group("data")
-            if "##" in line:
-                data = data[2:] if len(data) >= 2 else ""
+            if match.group("sep") == "##":
+                data = data[1:] if data else ""
             try:
                 records.append(_normalize_record({
                     "timestamp": match.group("time") or 0,
@@ -430,7 +442,9 @@ class ResearchTab(QWidget):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.frame_table.setItem(row, col, item)
         self.frame_table.setUpdatesEnabled(True)
-        self.count_label.setText(f"{len(rows):,} displayed · {len(self.frames):,} in working set")
+        source_count = len(self.frames) if self.frames else len(self.live_preview)
+        source_label = "recorded/imported" if self.frames else "live preview"
+        self.count_label.setText(f"{len(rows):,} displayed · {source_count:,} {source_label}")
         self._update_summary()
 
     def show_selected_frame(self):
@@ -449,7 +463,8 @@ class ResearchTab(QWidget):
             f'Payload: {record["data"].upper()}\nISO-TP: {iso}\nUDS hint: {uds}\n'
             f'Channel: {record.get("channel") or "unknown"}'
         )
-        self.annotation.setText(self.bookmarks.get(str(row), ""))
+        key = f'{record["timestamp"]:.6f}|{record["arbitration_id"]:X}|{record["data"]}'
+        self.annotation.setText(self.bookmarks.get(key, ""))
 
     def bookmark_selected(self):
         row = self.frame_table.currentRow()
@@ -487,7 +502,7 @@ class ResearchTab(QWidget):
         lines += ["", "Recognized protocol hints (heuristic only):"]
         lines.extend(f"  {name}: {count:,}" for name, count in services.most_common(12))
         if self.reference_frames:
-            current_ids = Counter((r["arbitration_id"], r["extended"]) for r in self.frames)
+            current_ids = Counter((r["arbitration_id"], r["extended"]) for r in dataset)
             reference_ids = Counter((r["arbitration_id"], r["extended"]) for r in self.reference_frames)
             changed = sorted(set(current_ids) | set(reference_ids),
                              key=lambda key: abs(current_ids[key] - reference_ids[key]), reverse=True)
