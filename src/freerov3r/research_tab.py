@@ -93,6 +93,27 @@ def classify_can_payload(payload):
     return "Unclassified", "No reliable UDS classification"
 
 
+
+def classify_uds_payload(payload):
+    """Name a UDS service in a reassembled application payload."""
+    data = bytes(payload or b"")
+    if not data:
+        return "Empty payload"
+    service = data[0]
+    if service == 0x7F:
+        if len(data) < 3:
+            return "Malformed negative response"
+        original = UDS_SERVICES.get(data[1], f"0x{data[1]:02X}")
+        return f"Negative response to {original} (NRC 0x{data[2]:02X})"
+    if service in UDS_SERVICES:
+        return UDS_SERVICES[service]
+    if 0x40 <= service <= 0x7E:
+        original = UDS_SERVICES.get(service - 0x40)
+        if original:
+            return f"Positive response to {original}"
+    return f"Unclassified service 0x{service:02X}"
+
+
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
@@ -645,6 +666,7 @@ class ResearchTab(QWidget):
             lines.append(
                 f'{item["started_at"]:.6f}  CAN 0x{item["arbitration_id"]:X}  '
                 f'{item["status"].upper()}  {item["payload"].upper()}  '
+                f'UDS: {classify_uds_payload(bytes.fromhex(item["payload"]))}  '
                 f'[{item["frame_count"]} frame(s)]  {item["detail"]}'
             )
         if len(messages) > 500:
@@ -705,8 +727,8 @@ class ResearchTab(QWidget):
             "## Reassembled ISO-TP messages",
             f"Complete: {sum(item['status'] == 'complete' for item in messages)}",
             f"Incomplete / malformed: {sum(item['status'] != 'complete' for item in messages)}",
-            "| Start timestamp | CAN ID | Status | Payload | Frames | Detail |",
-            "|---:|---:|---|---|---:|---|",
+            "| Start timestamp | CAN ID | Status | Payload | UDS service | Frames | Detail |",
+            "|---:|---:|---|---|---|---:|---|",
         ]
         for item in messages[:20000]:
             lines.append(
