@@ -1856,13 +1856,12 @@ class MainWindow(QMainWindow):
         wlayout.setSpacing(18)
         wlayout.setContentsMargins(48, 40, 48, 40)
 
-        welcome_brand = QLabel()
-        welcome_brand.setObjectName("welcomeBrand")
-        brand_pixmap = QPixmap(str(ASSET_DIR / "brand_splash.svg"))
-        if not brand_pixmap.isNull():
-            welcome_brand.setPixmap(brand_pixmap.scaled(600, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            welcome_brand.setAlignment(Qt.AlignCenter)
-            wlayout.addWidget(welcome_brand)
+        # Reuse the exact photographic banner shown by the startup splash.
+        self.welcome_banner = ResponsiveBanner()
+        self.welcome_banner.set_source_pixmap(
+            QPixmap(str(ASSET_DIR / "brand_banner.jpg"))
+        )
+        wlayout.addWidget(self.welcome_banner)
 
         title = QLabel("What would you like to do?")
         title_font = QFont(self.heading_font_family, 25, QFont.Bold)
