@@ -15,7 +15,7 @@ def frame(can_id, timestamp, data, *, extended=False, channel="can0"):
 
 def test_reassembles_multiframe_uds_message():
     frames = [
-        frame(0x7E8, 1.0, "10 0A 62 F1 90 31 32 33"),
+        frame(0x7E8, 1.0, "10 0D 62 F1 90 31 32 33"),
         frame(0x7E8, 1.01, "21 34 35 36 37 38 39 30"),
     ]
     messages = reassemble_isotp(frames)
@@ -77,7 +77,7 @@ def test_reports_timeout_before_later_frame():
 
 
 def test_sequence_number_wraps_after_f():
-    payload = bytes(range(1, 26))
+    payload = bytes(range(1, 121))
     first = bytes([0x10, len(payload)]) + payload[:6]
     rest = payload[6:]
     cf_frames = []
