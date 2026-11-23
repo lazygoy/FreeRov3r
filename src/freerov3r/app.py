@@ -2677,7 +2677,7 @@ class MainWindow(QMainWindow):
             if self.tabs.tabText(index) == name:
                 if not self.tabs.isTabEnabled(index):
                     self.show_toast(
-                        "This workspace requires the Land Rover LR3/LR4 vehicle package. Run Vehicle setup first.",
+                        "This workspace currently requires the LR4 2010–2016 support package. LR3-specific factory definitions are not yet available.",
                         "info",
                     )
                     return
@@ -3284,7 +3284,7 @@ class MainWindow(QMainWindow):
                 self.tabs.setTabToolTip(
                     index,
                     "" if l319_enabled else
-                    "Select or manually configure a Land Rover LR3/LR4 (L319) vehicle to enable this manufacturer-specific workspace."
+                    "Currently implemented factory network and wiring workspaces require the LR4 2010–2016 profile. LR3-specific factory definitions are not yet available."
                 )
 
         if vin and hasattr(self, "modules_tab"):
