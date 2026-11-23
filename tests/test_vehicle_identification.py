@@ -10,14 +10,16 @@ def test_vin_validation_and_year():
 
 def test_lr3_vin_suggests_lr3_profile():
     result = identify_vehicle("SALAE25458A444549")
-    assert result["profile_id"] == "land_rover_l319_lr3"
+    assert result["profile_id"] == "land_rover_l319"
+    assert result["variant_id"] == "lr3"
     assert result["model_year"] == 2008
     assert result["confidence"] == "probable"
 
 
 def test_lr4_vin_suggests_lr4_profile():
     result = identify_vehicle("SALAG2V62GA780105")
-    assert result["profile_id"] == "land_rover_l319_lr4"
+    assert result["profile_id"] == "land_rover_l319"
+    assert result["variant_id"] == "lr4"
     assert result["model_year"] == 2016
 
 
