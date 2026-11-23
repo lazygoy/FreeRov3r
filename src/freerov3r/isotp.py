@@ -188,3 +188,132 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=1_048_576):
         ))
 
     return sorted(output, key=lambda message: message["started_at"])
+
+
+
+def pair_uds_transactions(messages, *, response_window=2.0):
+    """Pair UDS requests with later responses using service semantics.
+
+    Pairing is deliberately conservative: the response must use the matching
+    positive-response SID (request SID + 0x40), or be a negative response
+    (0x7F, original request SID), and must come from a different CAN ID on
+    the same channel and CAN-ID format. This is a probable association, not
+    proof of ECU identity or physical addressing.
+    """
+    if response_window < 0:
+        raise ValueError("response_window must be non-negative")
+
+    ordered = sorted(
+        (dict(item) for item in messages if item.get("status") == "complete"),
+        key=lambda item: item.get("started_at", item.get("timestamp", 0.0)),
+    )
+    pending = []
+    results = []
+    used_requests = set()
+
+    def payload_of(item):
+        try:
+            return bytes.fromhex(item.get("payload", ""))
+        except (TypeError, ValueError):
+            return b""
+
+    for index, message in enumerate(ordered):
+        payload = payload_of(message)
+        if not payload:
+            continue
+        sid = payload[0]
+        stamp = float(message.get("started_at", message.get("timestamp", 0.0)) or 0.0)
+
+        # Expire old requests before considering this message.
+        pending = [
+            entry for entry in pending
+            if stamp - entry["timestamp"] <= response_window
+        ]
+
+        if sid == 0x7F and len(payload) >= 3:
+            request_sid = payload[1]
+            response_kind = "negative"
+        elif 0x40 <= sid <= 0x7E:
+            request_sid = sid - 0x40
+            response_kind = "positive"
+        else:
+            request_sid = None
+            response_kind = None
+
+        match = None
+        if request_sid is not None:
+            candidates = [
+                entry for entry in pending
+                if entry["sid"] == request_sid
+                and entry["can_id"] != message.get("arbitration_id")
+                and entry["extended"] == bool(message.get("extended", False))
+                and entry["channel"] == message.get("channel")
+                and 0 <= stamp - entry["timestamp"] <= response_window
+            ]
+            if candidates:
+                match = max(candidates, key=lambda entry: entry["timestamp"])
+
+        if match is not None:
+            pending.remove(match)
+            request = match["message"]
+            request_id = int(request["arbitration_id"])
+            response_id = int(message["arbitration_id"])
+            conventional_pair = (
+                not bool(message.get("extended", False))
+                and request_id <= 0x7FF and response_id <= 0x7FF
+                and response_id == request_id + 8
+            )
+            results.append({
+                "request": request,
+                "response": message,
+                "request_service": request_sid,
+                "response_kind": response_kind,
+                "latency_seconds": stamp - match["timestamp"],
+                "addressing_hint": (
+                    "Common 11-bit request/response ID offset (+0x8)"
+                    if conventional_pair else
+                    "Opposite CAN IDs; address relationship unverified"
+                ),
+                "confidence": "probable",
+            })
+            used_requests.add(id(request))
+        elif sid in range(0x10, 0x40) or sid in (0x3E, 0x85):
+            pending.append({
+                "sid": sid,
+                "timestamp": stamp,
+                "can_id": int(message.get("arbitration_id", -1)),
+                "extended": bool(message.get("extended", False)),
+                "channel": message.get("channel"),
+                "message": message,
+            })
+
+    paired_response_ids = {id(pair["response"]) for pair in results}
+    paired_request_ids = {id(pair["request"]) for pair in results}
+    for message in ordered:
+        if id(message) not in paired_response_ids and id(message) not in paired_request_ids:
+            payload = payload_of(message)
+            results.append({
+                "request": message if payload and payload[0] in UDS_REQUEST_SERVICE_IDS else None,
+                "response": message if payload and (
+                    payload[0] == 0x7F or 0x40 <= payload[0] <= 0x7E
+                ) else None,
+                "request_service": payload[0] if payload and payload[0] in UDS_REQUEST_SERVICE_IDS else None,
+                "response_kind": None,
+                "latency_seconds": None,
+                "addressing_hint": "Unpaired; insufficient matching evidence",
+                "confidence": "unmatched",
+                "message": message,
+            })
+    return sorted(
+        results,
+        key=lambda item: min(
+            (item.get("request") or item.get("message") or {}).get("started_at", 0.0),
+            (item.get("response") or {}).get("started_at", float("inf")),
+        ),
+    )
+
+
+UDS_REQUEST_SERVICE_IDS = {
+    0x10, 0x11, 0x14, 0x19, 0x22, 0x23, 0x27, 0x28,
+    0x2E, 0x2F, 0x31, 0x34, 0x35, 0x36, 0x37, 0x3E, 0x85,
+}
