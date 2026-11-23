@@ -34,6 +34,7 @@ from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .sensors.scaling import normalize_values
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
+from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -1034,7 +1035,7 @@ class SolutionsTab(QWidget):
 
 
 class SpecialFunctionsTab(QWidget):
-    """Vehicle-specific service routine catalog; execution stays locked until protocols are verified."""
+    """Service-routine catalog with guarded preflight and VIN-linked audit history."""
     ROUTINES = [
         ("Service & Maintenance", "Instrument cluster / service system", "Service interval reset",
          "Reset the oil-service or scheduled-maintenance reminder after the required maintenance has been completed.",
@@ -1092,15 +1093,19 @@ class SpecialFunctionsTab(QWidget):
          "Vehicle load and ride height set to the specified calibration condition."),
     ]
 
-    def __init__(self, vin_provider=None, parent=None):
+    def __init__(self, vin_provider=None, history_callback=None, parent=None):
         super().__init__(parent)
         self.vin_provider = vin_provider or (lambda: None)
+        self.history_callback = history_callback or (lambda *args, **kwargs: None)
+        self.routine_manager = ServiceRoutineManager()
+        self.current_routine = None
+
         layout = QVBoxLayout(self)
         intro = QLabel(
             "<b>Service routines and module-specific procedures</b><br>"
-            "A growing catalog for the Discovery 4 / LR4 (L319) project. Entries are candidate functions, "
-            "not confirmation that a particular VIN or module supports them. Live execution is disabled "
-            "until the correct diagnostic protocol, security access and prerequisites are verified."
+            "Candidate procedures for the Discovery 4 / LR4 (L319) project. "
+            "Compatibility and live command support are not yet verified. "
+            "Preflight checks are read-only and do not transmit ECU commands."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -1131,20 +1136,40 @@ class SpecialFunctionsTab(QWidget):
         self.details.setReadOnly(True)
         self.details.setPlaceholderText("Select a routine to inspect its purpose and prerequisites.")
         details_panel.addWidget(self.details, 1)
-        self.run_button = QPushButton("Execution unavailable")
-        self.run_button.setEnabled(False)
-        self.run_button.setToolTip(
-            "Live ECU commands are disabled until a verified vehicle-specific implementation is available."
-        )
-        details_panel.addWidget(self.run_button)
+
+        self.preflight_button = QPushButton("Run Readiness Check")
+        self.preflight_button.setEnabled(False)
+        self.preflight_button.setToolTip("Checks available vehicle context and reports missing implementation requirements. Sends no ECU commands.")
+        self.preflight_button.clicked.connect(self.run_preflight)
+        details_panel.addWidget(self.preflight_button)
+
         self.execution_note = QLabel(
-            "CATALOG ONLY  •  NO COMMANDS SENT TO THE VEHICLE"
+            "LIVE EXECUTION LOCKED  •  NO ECU COMMANDS SENT"
         )
         self.execution_note.setWordWrap(True)
         details_panel.addWidget(self.execution_note)
         split.addLayout(details_panel, 2)
         layout.addLayout(split, 1)
         self.refresh()
+
+    @staticmethod
+    def _routine_id(category, name):
+        return f"{category.strip().lower()}::{name.strip().lower()}"
+
+    def _selected_routine(self):
+        item = self.routine_tree.currentItem()
+        data = item.data(0, Qt.UserRole) if item else None
+        if not data:
+            return None
+        category, module, name, description, prerequisites = data
+        return ServiceRoutine(
+            routine_id=self._routine_id(category, name),
+            category=category,
+            target_module=module,
+            name=name,
+            description=description,
+            prerequisites=prerequisites,
+        )
 
     def refresh(self, *_):
         vin = self.vin_provider()
@@ -1160,7 +1185,7 @@ class SpecialFunctionsTab(QWidget):
                 group = QTreeWidgetItem([category, "", ""])
                 self.routine_tree.addTopLevelItem(group)
                 groups[category] = group
-            item = QTreeWidgetItem([name, module, "PROTOCOL PENDING"])
+            item = QTreeWidgetItem([name, module, "CATALOG ONLY"])
             item.setData(0, Qt.UserRole, (category, module, name, description, prerequisites))
             group.addChild(item)
         self.routine_tree.expandAll()
@@ -1169,27 +1194,56 @@ class SpecialFunctionsTab(QWidget):
             if first.childCount():
                 self.routine_tree.setCurrentItem(first.child(0))
         else:
+            self.current_routine = None
             self.details.clear()
+            self.preflight_button.setEnabled(False)
 
     def show_selected(self):
-        item = self.routine_tree.currentItem()
-        data = item.data(0, Qt.UserRole) if item else None
-        if not data:
+        routine = self._selected_routine()
+        self.current_routine = routine
+        if routine is None:
             self.details.clear()
+            self.preflight_button.setEnabled(False)
             return
-        category, module, name, description, prerequisites = data
         vin = self.vin_provider() or "Not selected"
+        self.preflight_button.setEnabled(True)
         self.details.setPlainText(
-            f"ROUTINE: {name}\n"
-            f"SYSTEM: {category}\n"
-            f"TARGET MODULE: {module}\n"
+            f"ROUTINE: {routine.name}\n"
+            f"SYSTEM: {routine.category}\n"
+            f"TARGET MODULE: {routine.target_module}\n"
             f"CURRENT VIN: {vin}\n"
-            f"STATUS: CATALOG ENTRY — PROTOCOL NOT IMPLEMENTED\n\n"
-            f"PURPOSE\n{description}\n\n"
-            f"PREREQUISITES TO VERIFY\n{prerequisites}\n\n"
-            "Before enabling this routine, FreeRov3r must identify the exact vehicle variant, "
-            "confirm module addressing and diagnostic services, validate any security-access "
-            "requirements, and implement the manufacturer's procedure. No ECU command is sent."
+            "SUPPORT STATUS: CATALOG ONLY\n\n"
+            f"PURPOSE\n{routine.description}\n\n"
+            f"PREREQUISITES TO VERIFY\n{routine.prerequisites}\n\n"
+            "READINESS REQUIREMENTS\n"
+            "• Exact vehicle and module compatibility verified\n"
+            "• Module addressing and diagnostic protocol verified\n"
+            "• Security-access requirements documented, if applicable\n"
+            "• Manufacturer procedure and safety conditions verified\n"
+            "• A reviewed routine executor implemented\n\n"
+            "The readiness check below reports missing requirements. It does not send commands."
+        )
+        self.execution_note.setText("LIVE EXECUTION LOCKED  •  NO ECU COMMANDS SENT")
+
+    def run_preflight(self):
+        routine = self.current_routine or self._selected_routine()
+        if routine is None:
+            return
+        vin = self.vin_provider()
+        result = self.routine_manager.preflight(routine, vin=vin)
+        status = "READY" if result.ready else "BLOCKED"
+        self.execution_note.setText(
+            f"{status}  •  READ-ONLY CHECK  •  NO ECU COMMANDS SENT"
+        )
+        blockers = "\n".join(f"• {item}" for item in result.blockers) or "No blockers reported."
+        self.details.appendPlainText(
+            f"\n\nREADINESS RESULT: {status}\n{blockers}"
+        )
+        self.history_callback(
+            "service_routine_preflight",
+            f"Preflight {status.lower()}: {routine.name}",
+            result.to_dict(),
+            vin=vin,
         )
 
 
@@ -1315,7 +1369,8 @@ class MainWindow(QMainWindow):
         )
         self.tabs.addTab(self.modules_tab, "Modules")
         self.special_functions_tab = SpecialFunctionsTab(
-            vin_provider=lambda: self.settings.get("current_vin")
+            vin_provider=lambda: self.settings.get("current_vin"),
+            history_callback=self.record_vehicle_event,
         )
         self.tabs.addTab(self.special_functions_tab, "Special Functions")
         self.network_tab = NetworkOverviewTab(
