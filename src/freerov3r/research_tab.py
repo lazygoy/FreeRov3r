@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from freerov3r.isotp import pair_uds_transactions, reassemble_isotp
+from freerov3r.isotp import pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs
 
 
 UDS_SERVICES = {
@@ -365,12 +365,15 @@ class ResearchTab(QWidget):
         self.isotp_button.clicked.connect(self.analyze_isotp)
         self.pair_button = QPushButton("Pair UDS transactions")
         self.pair_button.clicked.connect(self.analyze_uds_pairs)
+        self.address_map_button = QPushButton("Build CAN address map")
+        self.address_map_button.clicked.connect(self.analyze_address_map)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
         self.clear_button.clicked.connect(self.clear_data)
         footer.addWidget(self.isotp_button)
         footer.addWidget(self.pair_button)
+        footer.addWidget(self.address_map_button)
         footer.addWidget(self.packet_button)
         footer.addWidget(self.clear_button)
         footer.addStretch(1)
@@ -754,6 +757,62 @@ class ResearchTab(QWidget):
             f"UDS pairing complete: {len(matched):,} probable pairs, {len(unmatched):,} unmatched"
         )
 
+    def analyze_address_map(self):
+        """Aggregate repeated probable pairs into candidate responder addresses."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(self, "CAN address map", "Capture or import CAN frames first.")
+            return
+
+        messages = reassemble_isotp(dataset)
+        transactions = pair_uds_transactions(messages)
+        candidates = summarize_ecu_address_pairs(transactions)
+        matched_count = sum(item.get("confidence") == "probable" for item in transactions)
+        lines = [
+            f"Complete ISO-TP messages: {sum(item['status'] == 'complete' for item in messages):,}",
+            f"Probable UDS pairs used: {matched_count:,}",
+            f"Candidate request/response ID groups: {len(candidates):,}",
+            "",
+            "These are observed responder CAN IDs, not identified ECUs.",
+            "Confidence is based on repeated protocol-level pair observations only.",
+            "",
+        ]
+        for item in candidates:
+            services = ", ".join(f"0x{sid:02X}" for sid in item["services"])
+            channel = item["channel"] if item["channel"] is not None else "unspecified"
+            lines.append(
+                f'Request 0x{item["request_id"]:X} → candidate responder 0x{item["response_id"]:X}  '
+                f'{"EXT" if item["extended"] else "STD"}  channel={channel}  '
+                f'pairs={item["pair_count"]}  services={services or "none"}  '
+                f'positive={item["positive_count"]} negative={item["negative_count"]}  '
+                f'avg={item["average_latency_seconds"] * 1000:.2f} ms  '
+                f'{item["addressing_hint"]}'
+            )
+            lines.append(f'  Status: {item["interpretation"]}')
+        if not candidates:
+            lines.append("No probable request/response pairs were available to build a candidate map.")
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Evidence-based CAN address map")
+        dialog.resize(1050, 650)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(
+            f"{len(candidates):,} candidate ID groups from {matched_count:,} probable UDS pairs"
+        )
+        layout.addWidget(summary)
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\\n".join(lines))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"CAN address analysis complete: {len(candidates):,} candidate ID groups; ECU identities remain unknown"
+        )
+
     def build_analysis_packet(self):
         self._flush_pending_frames()
         lines = [
@@ -817,6 +876,22 @@ class ResearchTab(QWidget):
                     f'{pair["latency_seconds"] * 1000:.3f} | {pair["response_kind"]} | '
                     f'{pair["addressing_hint"]} |'
                 )
+        address_candidates = summarize_ecu_address_pairs(transactions)
+        lines += [
+            "",
+            "## Candidate CAN responder address map",
+            "Observed ID relationships only; physical ECU identities are unknown.",
+            "| Request ID | Candidate responder ID | Format | Channel | Pair count | Services | Positive | Negative | Average latency ms |",
+            "|---:|---:|---|---|---:|---|---:|---:|---:|",
+        ]
+        for item in address_candidates:
+            lines.append(
+                f'| 0x{item["request_id"]:X} | 0x{item["response_id"]:X} | '
+                f'{"EXT" if item["extended"] else "STD"} | {item["channel"] or "unspecified"} | '
+                f'{item["pair_count"]} | {", ".join(f"0x{sid:02X}" for sid in item["services"])} | '
+                f'{item["positive_count"]} | {item["negative_count"]} | '
+                f'{item["average_latency_seconds"] * 1000:.3f} |'
+            )
         lines += ["", "## Operation markers"]
         lines.extend(
             f'- {m["elapsed_seconds"]:.3f}s | {m["operation"]} | {m["note"]}'
