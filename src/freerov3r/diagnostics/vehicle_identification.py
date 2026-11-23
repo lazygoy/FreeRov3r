@@ -54,14 +54,14 @@ def identify_vehicle(vin):
             return {
                 "vin": valid, "valid": True, "make": "Land Rover",
                 "model": "LR3 / Discovery 3", "model_year": year,
-                "profile_id": "land_rover_l319", "variant_id": "lr3", "confidence": "probable",
+                "profile_id": "land_rover_l319_lr3", "variant_id": "lr3", "confidence": "probable",
                 "reason": "SAL manufacturer code, Discovery model-range character A, and LR3 model-year window.",
             }
         if 2010 <= year <= 2016:
             return {
                 "vin": valid, "valid": True, "make": "Land Rover",
                 "model": "LR4 / Discovery 4", "model_year": year,
-                "profile_id": "land_rover_l319", "variant_id": "lr4", "confidence": "probable",
+                "profile_id": "land_rover_l319_lr4", "variant_id": "lr4", "confidence": "probable",
                 "reason": "SAL manufacturer code, Discovery model-range character A, and LR4 model-year window.",
             }
 
