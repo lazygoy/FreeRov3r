@@ -82,8 +82,8 @@ class QuickDrawer(QDockWidget):
             ("⌂   Home", "Home"), ("⌁   CAN Capture", "Capture"), ("◉   Sensor Monitor", "Sensors"),
             ("▥   Sensor Graph", "Graph"), ("◫   OBD-II", "OBD-II"),
             ("▦   Module Diagnostics", "Modules"), ("✦   Special Functions", "Special Functions"),
-            ("⌘   Vehicle Topology", "Vehicle Topology"),
-            ("▤   Module Status", "Module Status"),
+            ("⌘   Vehicle Topology", "Topology"),
+            ("▤   Wiring Diagrams", "Wiring Diagrams"),
             ("✦   Diagnostic Solutions", "Solutions"), ("◷   Vehicle History", "Vehicle History"),
             ("⚙   Settings", "Settings"),
         ]
