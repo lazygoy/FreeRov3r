@@ -233,3 +233,62 @@ def test_pairs_positive_response_for_service_above_0x7e():
     pairs = pair_uds_transactions(messages)
     assert len(pairs) == 1
     assert pairs[0]["response_kind"] == "positive"
+
+
+def test_summarizes_repeated_address_pairs_without_claiming_ecu_identity():
+    from freerov3r.isotp import summarize_ecu_address_pairs
+
+    request = {
+        "arbitration_id": 0x7E0, "extended": False, "channel": "can0",
+        "started_at": 1.0, "payload": "22f190", "status": "complete",
+    }
+    response = {
+        "arbitration_id": 0x7E8, "extended": False, "channel": "can0",
+        "started_at": 1.02, "payload": "62f190", "status": "complete",
+    }
+    transactions = [
+        {"confidence": "probable", "request": request, "response": response,
+         "request_service": 0x22, "response_kind": "positive", "latency_seconds": 0.02},
+        {"confidence": "probable", "request": request, "response": response,
+         "request_service": 0x19, "response_kind": "negative", "latency_seconds": 0.04},
+        {"confidence": "unmatched", "request": None, "response": response},
+    ]
+    result = summarize_ecu_address_pairs(transactions)
+    assert len(result) == 1
+    item = result[0]
+    assert item["request_id"] == 0x7E0
+    assert item["response_id"] == 0x7E8
+    assert item["pair_count"] == 2
+    assert item["positive_count"] == 1
+    assert item["negative_count"] == 1
+    assert item["services"] == [0x19, 0x22]
+    assert item["average_latency_seconds"] == pytest.approx(0.03)
+    assert item["addressing_hint"] == "Common 11-bit +0x8 pattern"
+    assert item["interpretation"].endswith("identity unknown")
+
+
+def test_address_summary_keeps_channels_and_id_formats_separate():
+    from freerov3r.isotp import summarize_ecu_address_pairs
+
+    def pair(channel, extended):
+        request = {"arbitration_id": 0x700, "extended": extended, "channel": channel}
+        response = {"arbitration_id": 0x708, "extended": extended, "channel": channel}
+        return {"confidence": "probable", "request": request, "response": response,
+                "request_service": 0x22, "response_kind": "positive", "latency_seconds": 0.01}
+
+    result = summarize_ecu_address_pairs([
+        pair("can0", False), pair("can1", False), pair("can0", True)
+    ])
+    assert len(result) == 3
+    assert {item["channel"] for item in result} == {"can0", "can1"}
+    assert sum(item["extended"] for item in result) == 1
+
+
+def test_address_summary_ignores_unmatched_and_invalid_pairs():
+    from freerov3r.isotp import summarize_ecu_address_pairs
+
+    assert summarize_ecu_address_pairs([
+        {"confidence": "unmatched"},
+        {"confidence": "probable", "request": {}, "response": {},
+         "request_service": 0x22, "latency_seconds": 0.1},
+    ]) == []
