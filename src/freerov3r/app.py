@@ -27,7 +27,7 @@ except ImportError:
 from .hardware.serial_ports import list_serial_ports
 from .hardware.interface_discovery import discover_interfaces
 from .hardware.elm327_serial_adapter import Elm327SerialAdapter, query_vin
-from .diagnostics.vehicle_identification import identify_vehicle, validate_vin
+from .diagnostics.vehicle_identification import identify_vehicle, validate_vin, decode_vin_online
 from .vehicle_profiles.registry import VehicleProfileRegistry
 from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
@@ -252,6 +252,21 @@ class VinQueryWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class VinDecodeWorker(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, vin, parent=None):
+        super().__init__(parent)
+        self.vin = vin
+
+    def run(self):
+        try:
+            self.completed.emit(decode_vin_online(self.vin))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class VehicleSetupWizard(QDialog):
     """Optional connection and vehicle setup wizard."""
 
@@ -262,6 +277,7 @@ class VehicleSetupWizard(QDialog):
         self.setModal(True)
         self.result_data = None
         self._vin_worker = None
+        self._decode_worker = None
         self._decoded = None
         self.setObjectName("startupSplash")
 
@@ -475,12 +491,7 @@ class VehicleSetupWizard(QDialog):
     def _vin_query_finished(self):
         self._update_vin_query_availability()
 
-    def decode_vin(self):
-        vin = validate_vin(self.vin_edit.text())
-        if not vin:
-            self.vin_status.setText("Enter a valid 17-character VIN before identifying the vehicle.")
-            return
-        result = identify_vehicle(vin)
+    def _apply_vehicle_identification(self, result):
         self._decoded = result
         if result.get("make"):
             self.make_edit.setText(result["make"])
@@ -488,13 +499,55 @@ class VehicleSetupWizard(QDialog):
             self.model_edit.setText(result["model"])
         if result.get("model_year"):
             self.year_edit.setText(str(result["model_year"]))
-        profile_index = self.profile_combo.findData(result["profile_id"])
+        profile_index = self.profile_combo.findData(result.get("profile_id", "generic"))
         if profile_index >= 0:
             self.profile_combo.setCurrentIndex(profile_index)
+
+    def decode_vin(self):
+        vin = validate_vin(self.vin_edit.text())
+        if not vin:
+            self.vin_status.setText("Enter a valid 17-character VIN before identifying the vehicle.")
+            return
+        result = identify_vehicle(vin)
+        self._apply_vehicle_identification(result)
+        if result.get("profile_id") == "land_rover_l319":
+            self.vin_status.setText(
+                f'{result["confidence"].upper()} LOCAL MATCH: {result["reason"]} '
+                "Review the suggested vehicle details before continuing."
+            )
+            return
         self.vin_status.setText(
-            f'{result["confidence"].upper()}: {result["reason"]} '
-            "Review the suggested vehicle details before continuing."
+            "No installed manufacturer-specific package matches this VIN. "
+            "Checking NHTSA vPIC for manufacturer-reported make, model and year…"
         )
+        self.read_vin_button.setEnabled(False)
+        self._decode_worker = VinDecodeWorker(vin, self)
+        self._decode_worker.completed.connect(self._vin_decode_completed)
+        self._decode_worker.failed.connect(self._vin_decode_failed)
+        self._decode_worker.finished.connect(self._vin_decode_finished)
+        self._decode_worker.start()
+
+    def _vin_decode_completed(self, result):
+        self._apply_vehicle_identification(result)
+        details = [
+            f'{result.get("make") or "Unknown make"} {result.get("model") or "Unknown model"}',
+            str(result.get("model_year") or "Year unavailable"),
+        ]
+        if result.get("engine_model"):
+            details.append(result["engine_model"])
+        self.vin_status.setText(
+            "NHTSA vPIC result: " + " | ".join(details)
+            + ". Generic OBD-II/CAN package selected; manufacturer-specific support is not inferred."
+        )
+
+    def _vin_decode_failed(self, message):
+        self.vin_status.setText(
+            "Online VIN decoding unavailable. The VIN remains saved as an unidentified "
+            "vehicle; enter make, model and year manually if needed. " + message
+        )
+
+    def _vin_decode_finished(self):
+        self._update_vin_query_availability()
 
     def _show_page(self, index):
         self.pages.setCurrentIndex(index)
