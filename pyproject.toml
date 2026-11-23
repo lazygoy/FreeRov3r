@@ -16,7 +16,7 @@ protocols = ["can-isotp>=2.0", "udsoncan>=1.23", "cantools>=39"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.entry-points."freerov3r.vehicle_profiles"]
-land_rover_l319 = "freerov3r.vehicle_profiles.l319:L319Profile"
+land_rover_l319_lr4 = "freerov3r.vehicle_profiles.l319:L319Profile"
 
 [project.scripts]
 freerov3r = "freerov3r.app:main"
