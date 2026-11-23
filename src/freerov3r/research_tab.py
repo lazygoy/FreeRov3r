@@ -14,10 +14,12 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
+    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
+
+from freerov3r.isotp import reassemble_isotp
 
 
 UDS_SERVICES = {
@@ -77,10 +79,17 @@ def classify_can_payload(payload):
         flow = {0: "Continue", 1: "Wait", 2: "Overflow"}.get(data[0] & 0x0F, "Unknown")
         return "ISO-TP FC", f"Flow control: {flow}"
 
-    # Some capture sources may provide an application payload without ISO-TP PCI.
+    # Reassembled ISO-TP payloads no longer contain a PCI byte.
     service = data[0]
+    if service == 0x7F and len(data) >= 3:
+        original = UDS_SERVICES.get(data[1], f"0x{data[1]:02X}")
+        return "UDS payload", f"Negative response to {original} (NRC 0x{data[2]:02X})"
+    if 0x40 <= service <= 0x7E:
+        request_name = UDS_SERVICES.get(service - 0x40)
+        if request_name:
+            return "UDS payload", f"Positive response to {request_name} (0x{service:02X})"
     if service in UDS_SERVICES:
-        return "No ISO-TP PCI", f"Possible raw UDS: {UDS_SERVICES[service]}"
+        return "UDS payload", f"Possible raw UDS: {UDS_SERVICES[service]}"
     return "Unclassified", "No reliable UDS classification"
 
 
@@ -331,10 +340,13 @@ class ResearchTab(QWidget):
         root.addWidget(splitter, 1)
 
         footer = QHBoxLayout()
+        self.isotp_button = QPushButton("Reassemble ISO-TP")
+        self.isotp_button.clicked.connect(self.analyze_isotp)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
         self.clear_button.clicked.connect(self.clear_data)
+        footer.addWidget(self.isotp_button)
         footer.addWidget(self.packet_button)
         footer.addWidget(self.clear_button)
         footer.addStretch(1)
@@ -611,6 +623,54 @@ class ResearchTab(QWidget):
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         self.status_label.setText(f"Saved {len(self.frames):,} frames to {Path(path).name}")
 
+    def analyze_isotp(self):
+        """Reassemble captured ISO-TP messages without transmitting anything."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(self, "ISO-TP reassembly", "Capture or import CAN frames first.")
+            return
+
+        messages = reassemble_isotp(dataset)
+        complete = [item for item in messages if item["status"] == "complete"]
+        incomplete = [item for item in messages if item["status"] != "complete"]
+        lines = [
+            f"Input frames: {len(dataset):,}",
+            f"Complete messages: {len(complete):,}",
+            f"Incomplete / malformed: {len(incomplete):,}",
+            "",
+            "Messages (capture order):",
+        ]
+        for item in messages[-500:]:
+            lines.append(
+                f'{item["started_at"]:.6f}  CAN 0x{item["arbitration_id"]:X}  '
+                f'{item["status"].upper()}  {item["payload"].upper()}  '
+                f'[{item["frame_count"]} frame(s)]  {item["detail"]}'
+            )
+        if len(messages) > 500:
+            lines.append(f"... {len(messages) - 500:,} earlier messages omitted from this view.")
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("ISO-TP reassembly results")
+        dialog.resize(900, 600)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(
+            f"{len(complete):,} complete messages · {len(incomplete):,} incomplete or malformed"
+        )
+        layout.addWidget(summary)
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\n".join(lines))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"ISO-TP analysis complete: {len(complete):,} complete, "
+            f"{len(incomplete):,} incomplete or malformed"
+        )
+
     def build_analysis_packet(self):
         self._flush_pending_frames()
         lines = [
@@ -638,6 +698,21 @@ class ResearchTab(QWidget):
             lines.append(
                 f'| {record["timestamp"]:.6f} | 0x{record["arbitration_id"]:X} | '
                 f'{"EXT" if record["extended"] else "STD"} | {record["data"].upper()} | {iso} | {uds} |'
+            )
+        messages = reassemble_isotp(self.frames)
+        lines += [
+            "",
+            "## Reassembled ISO-TP messages",
+            f"Complete: {sum(item['status'] == 'complete' for item in messages)}",
+            f"Incomplete / malformed: {sum(item['status'] != 'complete' for item in messages)}",
+            "| Start timestamp | CAN ID | Status | Payload | Frames | Detail |",
+            "|---:|---:|---|---|---:|---|",
+        ]
+        for item in messages[:20000]:
+            lines.append(
+                f'| {item["started_at"]:.6f} | 0x{item["arbitration_id"]:X} | '
+                f'{item["status"]} | {item["payload"].upper()} | '
+                f'{item["frame_count"]} | {item["detail"]} |'
             )
         lines += ["", "## Operation markers"]
         lines.extend(
