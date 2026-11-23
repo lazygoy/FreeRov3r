@@ -62,7 +62,8 @@ class Elm327SerialAdapter(CanAdapter):
             self.connection.reset_input_buffer()
             identity = self._command("ATI", wait=0.35).upper()
             if "ELM327" not in identity and "STN" not in identity:
-                raise RuntimeError(f"No ELM327/STN identity response on {self.port}: {identity.strip()[:100] or "no response"}")
+                detail = identity.strip()[:100] or "no response"
+                raise RuntimeError(f"No ELM327/STN identity response on {self.port}: {detail}")
             for command in ("ATE0", "ATL0", "ATS1", "ATH1", "ATSP0"):
                 self._command(command)
             self.connection.reset_input_buffer()
