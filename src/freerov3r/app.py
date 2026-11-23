@@ -53,6 +53,7 @@ except ImportError:
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
+from .research_tab import ResearchTab
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -2553,6 +2554,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.solutions_tab, "Solutions")
         self.history_tab = VehicleHistoryTab(self.history_store)
         self.tabs.addTab(self.history_tab, "Vehicle History")
+        self.research_tab = ResearchTab()
+        self.tabs.addTab(self.research_tab, "Research")
         self._build_settings_tab()
         self._build_navigation_workspace()
         for group_box in self.findChildren(QGroupBox):
@@ -2652,6 +2655,7 @@ class MainWindow(QMainWindow):
                 "Wiring Diagrams": "Factory-documented L319 HS-CAN, MS-CAN and MOST wiring reference",
                 "Solutions": "Review diagnostic evidence and analysis notes",
                 "Vehicle History": "Previous captures and vehicle-specific events",
+                "Research": "Private protocol capture, comparison, annotation and REA handoff",
                 "Settings": "Connection, display and logging configuration",
             }
             self.workspace_subtitle.setText(descriptions.get(title, "Vehicle diagnostics workspace"))
@@ -3450,6 +3454,7 @@ class MainWindow(QMainWindow):
 
         self.active_interface = interface
         self.capture_vin = self.settings.get("current_vin")
+        self.research_tab.set_context(self.capture_vin, interface)
         self.capture_started_at = time.time()
         self.capture_start_frames = 0
         self.capture_start_sample_index = len(self.sensor_capture.samples)
@@ -3488,6 +3493,7 @@ class MainWindow(QMainWindow):
             self._apply_detected_vin(detected_vin)
         self.session.add(frame)
         self.can_monitor.add(frame)
+        self.research_tab.observe_frame(frame)
         self.frame_counter += 1
         self.frame_count_label.setText(f"Frames: {self.frame_counter}")
         ts = frame.timestamp or 0
