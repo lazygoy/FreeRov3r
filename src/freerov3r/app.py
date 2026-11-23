@@ -2613,8 +2613,13 @@ class MainWindow(QMainWindow):
             return
         vin = self.settings.get("current_vin")
         vehicles = self.settings.get("vehicles", {})
-        nickname = vehicles.get(vin, {}).get("nickname", "") if vin else ""
-        vehicle_text = f"{nickname}  |  {vin}" if nickname and vin else (vin or "NO VEHICLE SELECTED")
+        active = vehicles.get(vin, {}) if vin else self.settings.get("active_vehicle", {})
+        nickname = active.get("nickname", "")
+        model = active.get("model") or active.get("make", "")
+        vehicle_text = (
+            f"{nickname or model}  |  {vin}" if vin and (nickname or model)
+            else (vin or model or "NO VEHICLE SELECTED")
+        )
         self.header_vehicle.setText(vehicle_text)
         running = bool(self.receiver and self.receiver.isRunning())
         if running:
@@ -3117,7 +3122,9 @@ class MainWindow(QMainWindow):
         vehicles = self.settings.get("vehicles", {})
         for vin, info in sorted(vehicles.items()):
             nick = info.get("nickname", "")
-            self.vehicle_list.addItem(f"{vin}  —  {nick}" if nick else vin)
+            model = info.get("model", "")
+            label = nick or model
+            self.vehicle_list.addItem(f"{vin}  —  {label}" if label else vin)
         current = self.settings.get("current_vin")
         if current and current in vehicles:
             nick = vehicles[current].get("nickname", "")
@@ -3131,8 +3138,20 @@ class MainWindow(QMainWindow):
         if len(vin) != 17:
             QMessageBox.warning(self, "Invalid VIN", "VIN must be 17 characters.")
             return
-        self.settings.setdefault("vehicles", {})[vin] = {"nickname": nickname}
+        identification = identify_vehicle(vin)
+        vehicle = self.settings.setdefault("vehicles", {}).get(vin, {}).copy()
+        vehicle.update({
+            "nickname": nickname,
+            "make": identification.get("make") or vehicle.get("make", ""),
+            "model": identification.get("model") or vehicle.get("model", ""),
+            "model_year": identification.get("model_year") or vehicle.get("model_year"),
+            "profile_id": identification.get("profile_id", "generic"),
+            "variant_id": identification.get("variant_id"),
+            "identification_confidence": identification.get("confidence", "unknown"),
+        })
+        self.settings["vehicles"][vin] = vehicle
         self.settings["current_vin"] = vin
+        self.settings["active_vehicle"] = vehicle.copy()
         self._refresh_vehicle_list()
         self._update_vehicle_context()
         self.save_current_settings()
@@ -3145,6 +3164,7 @@ class MainWindow(QMainWindow):
             return
         vin = item.text().split("  —  ")[0]
         self.settings["current_vin"] = vin
+        self.settings["active_vehicle"] = self.settings.get("vehicles", {}).get(vin, {}).copy()
         self._refresh_vehicle_list()
         self._update_vehicle_context()
         self.save_current_settings()
@@ -3158,10 +3178,25 @@ class MainWindow(QMainWindow):
     def _update_vehicle_context(self):
         vin = self.settings.get("current_vin")
         vehicles = self.settings.get("vehicles", {})
-        ctx = {}
-        if vin and vin in vehicles:
-            ctx = {"vin": vin, "nickname": vehicles[vin].get("nickname", "")}
-        self.sensor_capture.vehicle_context = ctx
+        active = vehicles.get(vin, {}) if vin and vin in vehicles else self.settings.get("active_vehicle", {})
+        active = dict(active or {})
+        if vin and not active:
+            active = identify_vehicle(vin)
+            vehicles[vin] = active.copy()
+        profile_id = active.get("profile_id", "generic")
+        self.active_vehicle_profile = self.vehicle_profiles.get(profile_id)
+        self.sensor_capture.vehicle_context = {**active, "vin": vin}
+        l319_enabled = profile_id == "land_rover_l319"
+        l319_tabs = {"Special Functions", "Topology", "Wiring Diagrams"}
+        for index in range(self.tabs.count()):
+            tab_name = self.tabs.tabText(index)
+            if tab_name in l319_tabs:
+                self.tabs.setTabEnabled(index, l319_enabled)
+                self.tabs.setTabToolTip(
+                    index,
+                    "" if l319_enabled else
+                    "Select or manually configure a Land Rover LR3/LR4 (L319) vehicle to enable this manufacturer-specific workspace."
+                )
 
         if vin and hasattr(self, "modules_tab"):
             network = self.module_networks.setdefault(vin, SimulatedModuleNetwork())
@@ -3187,7 +3222,18 @@ class MainWindow(QMainWindow):
             self.log.appendPlainText(
                 f"VIN mismatch: selected {previous}, scan data reports {vin}. Using scan-reported VIN."
             )
-        self.settings.setdefault("vehicles", {}).setdefault(vin, {"nickname": ""})
+        identification = identify_vehicle(vin)
+        vehicle = self.settings.setdefault("vehicles", {}).get(vin, {})
+        vehicle.update({
+            "make": identification.get("make") or vehicle.get("make", ""),
+            "model": identification.get("model") or vehicle.get("model", ""),
+            "model_year": identification.get("model_year") or vehicle.get("model_year"),
+            "profile_id": identification.get("profile_id", "generic"),
+            "variant_id": identification.get("variant_id"),
+            "identification_confidence": identification.get("confidence", "unknown"),
+        })
+        self.settings["vehicles"][vin] = vehicle
+        self.settings["active_vehicle"] = vehicle.copy()
         self.settings["current_vin"] = vin
         if self.receiver and self.receiver.isRunning():
             self.capture_vin = vin
