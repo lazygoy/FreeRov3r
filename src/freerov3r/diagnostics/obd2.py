@@ -39,6 +39,8 @@ def decode_mode01(frame: CanFrame):
     pid = data[2]
     if pid not in PID_DEFINITIONS:
         return None
+    if pid in (0x0C, 0x10, 0x1F, 0x21, 0x42) and len(data) < 5:
+        return None
     a, b = data[3], data[4] if len(data) > 4 else 0
     name, unit = PID_DEFINITIONS[pid]
     if pid == 0x04 or pid == 0x11 or pid == 0x2F:
