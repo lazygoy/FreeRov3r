@@ -316,7 +316,8 @@ class VehicleSetupWizard(QDialog):
         connection_layout.addLayout(detect_row)
         self.interface_status = QLabel(
             "ESP32 is the recommended raw-CAN interface, but its current firmware is receive-only. "
-            "Bluetooth/serial ELM327 can perform limited OBD requests. Wi-Fi adapter support is not implemented yet."
+            "Bluetooth/serial ELM327 supports either passive CAN monitoring or read-only Mode 01 polling. "
+            "Wi-Fi adapter support is not implemented yet."
         )
         self.interface_status.setWordWrap(True)
         self.interface_status.setObjectName("mutedText")
@@ -3427,6 +3428,10 @@ class MainWindow(QMainWindow):
         interface = data[0]
         channel = self.channel_edit.currentText().strip() or data[1]
         bitrate = int(self.bitrate.currentText())
+
+        if interface == "elm327_obd" and not self.obd_tab.selected_pids():
+            self.show_toast("Select at least one OBD-II PID to poll", "warning")
+            return
 
         if interface == "simulator":
             adapter = SimulatedVehicleAdapter(channel=channel or "L319-DEMO")
