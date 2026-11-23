@@ -187,4 +187,4 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=1_048_576):
             transfer["frame_count"], transfer["started_at"], transfer["last_timestamp"],
         ))
 
-    return output
+    return sorted(output, key=lambda message: message["started_at"])
