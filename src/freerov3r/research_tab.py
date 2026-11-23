@@ -141,7 +141,9 @@ def load_capture_file(path):
         if suffix == ".json":
             parsed = json.loads(text)
             if isinstance(parsed, dict):
-                metadata = parsed.get("metadata", {})
+                metadata = dict(parsed.get("metadata", {}))
+                metadata["bookmarks"] = parsed.get("bookmarks", {})
+                metadata["markers"] = parsed.get("markers", [])
                 source = parsed.get("frames", [])
             else:
                 source = parsed
@@ -523,7 +525,7 @@ class ResearchTab(QWidget):
             f"Recorded frames: {len(self.frames):,}",
             f"Live preview frames: {len(self.live_preview):,}" if not self.frames else "Live preview paused while a recorded/imported set is active.",
             f"Unique CAN IDs: {len(counts):,}",
-            f"Bookmarks: {len(self.bookmarks):,}",
+            f"Bookmarks: {len(self.bookmarks):,}  |  Operation markers: {len(self.markers):,}",
             "",
             "Most frequent CAN IDs:",
         ]
@@ -561,8 +563,10 @@ class ResearchTab(QWidget):
         self.frames = records
         self.live_preview.clear()
         self._pending_preview.clear()
-        self.metadata = {**metadata, "imported_from": path}
-        self.bookmarks = {}
+        self.metadata = dict(metadata)
+        self.bookmarks = self.metadata.pop("bookmarks", {})
+        self.markers = self.metadata.pop("markers", [])
+        self.metadata["imported_from"] = path
         self.refresh_table()
         self.status_label.setText(f"Imported {len(records):,} frames from {Path(path).name}")
 
