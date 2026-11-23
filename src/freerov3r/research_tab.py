@@ -885,10 +885,11 @@ class ResearchTab(QWidget):
             "|---:|---:|---|---|---:|---|---:|---:|---:|",
         ]
         for item in address_candidates:
+            service_text = ", ".join("0x{:02X}".format(sid) for sid in item["services"])
             lines.append(
                 f'| 0x{item["request_id"]:X} | 0x{item["response_id"]:X} | '
                 f'{"EXT" if item["extended"] else "STD"} | {item["channel"] or "unspecified"} | '
-                f'{item["pair_count"]} | {", ".join(f"0x{sid:02X}" for sid in item["services"])} | '
+                f'{item["pair_count"]} | {service_text} | '
                 f'{item["positive_count"]} | {item["negative_count"]} | '
                 f'{item["average_latency_seconds"] * 1000:.3f} |'
             )
