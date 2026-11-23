@@ -25,6 +25,8 @@ except ImportError:
     HAS_CHARTS = False
 
 from .hardware.serial_ports import list_serial_ports
+from .hardware.interface_discovery import discover_interfaces
+from .hardware.elm327_serial_adapter import Elm327SerialAdapter
 from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
@@ -2223,6 +2225,7 @@ class MainWindow(QMainWindow):
         self.backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
+        self.backend.addItem("ELM327 Bluetooth / serial", ("elm327", ""))
         self.backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.backend.addItem("SLCAN", ("slcan", "COM3"))
         controls.addWidget(QLabel("Connection:"))
@@ -2237,8 +2240,10 @@ class MainWindow(QMainWindow):
         )
         controls.addWidget(self.channel_edit)
 
-        refresh_ports_btn = QPushButton("Refresh ports")
-        refresh_ports_btn.setToolTip("Detect serial devices currently connected to Windows.")
+        refresh_ports_btn = QPushButton("Detect interfaces")
+        refresh_ports_btn.setToolTip(
+            "List USB and paired Bluetooth serial adapters without opening or probing them."
+        )
         refresh_ports_btn.clicked.connect(self.refresh_serial_ports)
         controls.addWidget(refresh_ports_btn)
 
@@ -2298,9 +2303,9 @@ class MainWindow(QMainWindow):
         self.refresh_serial_ports()
 
     def refresh_serial_ports(self):
-        """Refresh the editable channel selector with detected serial devices."""
+        """Inventory serial interfaces and select only a single clear candidate."""
         current = self.channel_edit.currentText().strip()
-        ports = list_serial_ports()
+        ports = discover_interfaces()
         self.channel_edit.blockSignals(True)
         self.channel_edit.clear()
         for port in ports:
@@ -2308,8 +2313,8 @@ class MainWindow(QMainWindow):
             index = self.channel_edit.count() - 1
             self.channel_edit.setItemData(
                 index,
-                f'{port["description"]} | VID:PID '
-                f'{port["vid"] or "----"}:{port["pid"] or "----"}',
+                f'{port["label"]} | {port["description"]} | '
+                f'VID:PID {port["vid"] or "----"}:{port["pid"] or "----"}',
                 Qt.ToolTipRole,
             )
         if current:
@@ -2320,12 +2325,27 @@ class MainWindow(QMainWindow):
             self.channel_edit.setEditText("")
             self.channel_edit.setPlaceholderText("No serial ports found; enter channel manually")
         self.channel_edit.blockSignals(False)
+
+        # Only auto-select when exactly one recognized adapter candidate exists.
+        recognized = [port for port in ports if port["kind"] in ("esp32", "elm327", "slcan")]
+        if len(recognized) == 1:
+            candidate = recognized[0]
+            for index in range(self.backend.count()):
+                data = self.backend.itemData(index)
+                if data and data[0] == candidate["kind"]:
+                    self.backend.setCurrentIndex(index)
+                    self.channel_edit.setCurrentText(candidate["device"])
+                    break
+
         if ports:
-            self.status.setText(
-                "Detected serial ports: " + ", ".join(port["device"] for port in ports)
+            summary = ", ".join(
+                f'{port["device"]}: {port["label"]}' for port in ports
             )
+            self.status.setText("Interface inventory: " + summary)
         else:
-            self.status.setText("No serial ports detected. Manual CAN channel entry remains available.")
+            self.status.setText(
+                "No USB/Bluetooth serial interfaces found. CAN channels can still be entered manually."
+            )
 
     def _build_sensors_tab(self):
         tab = QWidget()
@@ -2382,6 +2402,7 @@ class MainWindow(QMainWindow):
         self.settings_backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.settings_backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.settings_backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
+        self.settings_backend.addItem("ELM327 Bluetooth / serial", ("elm327", ""))
         self.settings_backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.settings_backend.addItem("SLCAN", ("slcan", "COM3"))
         self.settings_channel = QLineEdit()
@@ -2663,6 +2684,8 @@ class MainWindow(QMainWindow):
             adapter = SimulatedVehicleAdapter(channel=channel or "L319-DEMO")
         elif interface == "esp32":
             adapter = Esp32SerialAdapter(port=channel)
+        elif interface == "elm327":
+            adapter = Elm327SerialAdapter(port=channel)
         else:
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
