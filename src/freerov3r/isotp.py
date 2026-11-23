@@ -68,7 +68,7 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=1_048_576):
                 output.append(make_message(
                     transfer["first_frame"], transfer["payload"], "incomplete",
                     "Timed out waiting for Consecutive Frame data",
-                    transfer["frame_count"], transfer["started_at"],
+                    transfer["frame_count"], transfer["started_at"], transfer["last_timestamp"],
                 ))
                 del pending[expired_key]
 
@@ -172,7 +172,7 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=1_048_576):
                 output.append(make_message(
                     transfer["first_frame"], payload, "complete",
                     "Reassembled First Frame + Consecutive Frames",
-                    transfer["frame_count"], transfer["started_at"],
+                    transfer["frame_count"], transfer["started_at"], timestamp,
                 ))
                 del pending[key]
 
@@ -184,7 +184,7 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=1_048_576):
         output.append(make_message(
             transfer["first_frame"], transfer["payload"], "incomplete",
             "Capture ended before the declared payload was complete",
-            transfer["frame_count"], transfer["started_at"],
+            transfer["frame_count"], transfer["started_at"], transfer["last_timestamp"],
         ))
 
     return output
