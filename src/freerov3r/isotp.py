@@ -318,3 +318,71 @@ UDS_REQUEST_SERVICE_IDS = {
     0x10, 0x11, 0x14, 0x19, 0x22, 0x23, 0x27, 0x28,
     0x2E, 0x2F, 0x31, 0x34, 0x35, 0x36, 0x37, 0x3E, 0x85,
 }
+
+
+def summarize_ecu_address_pairs(transactions):
+    """Aggregate probable UDS pairs into candidate responder-address evidence.
+
+    The output describes observed CAN-ID relationships only. It does not
+    identify physical ECUs or prove that a responder ID belongs to a module.
+    """
+    groups = {}
+    for pair in transactions:
+        if pair.get("confidence") != "probable":
+            continue
+        request = pair.get("request") or {}
+        response = pair.get("response") or {}
+        try:
+            request_id = int(request["arbitration_id"])
+            response_id = int(response["arbitration_id"])
+            latency = float(pair["latency_seconds"])
+            service = int(pair["request_service"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if request_id == response_id or latency < 0:
+            continue
+        key = (
+            request_id, response_id,
+            bool(request.get("extended", False)),
+            request.get("channel"),
+        )
+        group = groups.setdefault(key, {
+            "request_id": request_id,
+            "response_id": response_id,
+            "extended": bool(request.get("extended", False)),
+            "channel": request.get("channel"),
+            "pair_count": 0,
+            "positive_count": 0,
+            "negative_count": 0,
+            "services": set(),
+            "latencies": [],
+        })
+        group["pair_count"] += 1
+        group["positive_count"] += pair.get("response_kind") == "positive"
+        group["negative_count"] += pair.get("response_kind") == "negative"
+        group["services"].add(service)
+        group["latencies"].append(latency)
+
+    summaries = []
+    for group in groups.values():
+        latencies = group.pop("latencies")
+        services = sorted(group.pop("services"))
+        group["services"] = services
+        group["unique_service_count"] = len(services)
+        group["average_latency_seconds"] = sum(latencies) / len(latencies)
+        group["min_latency_seconds"] = min(latencies)
+        group["max_latency_seconds"] = max(latencies)
+        group["addressing_hint"] = (
+            "Common 11-bit +0x8 pattern"
+            if not group["extended"]
+            and group["request_id"] <= 0x7FF
+            and group["response_id"] == group["request_id"] + 8
+            else "Observed ID pair; relationship unverified"
+        )
+        group["interpretation"] = "Candidate responder CAN ID; ECU identity unknown"
+        summaries.append(group)
+
+    return sorted(
+        summaries,
+        key=lambda item: (-item["pair_count"], item["request_id"], item["response_id"]),
+    )
