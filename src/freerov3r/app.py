@@ -274,8 +274,8 @@ class VehicleSetupWizard(QDialog):
         self.page_title.setObjectName("splashTitle")
         root.addWidget(self.page_title)
         self.page_description = QLabel(
-            "Detect a supported adapter or choose one manually. Detection inventories "
-            "local interfaces; it does not transmit to the vehicle."
+            "Detect USB serial and paired Bluetooth COM interfaces, or choose one manually. "
+            "Wi-Fi discovery is not implemented yet. Detection does not transmit to the vehicle."
         )
         self.page_description.setWordWrap(True)
         self.page_description.setObjectName("splashSubtitle")
@@ -313,8 +313,8 @@ class VehicleSetupWizard(QDialog):
         detect_row.addStretch()
         connection_layout.addLayout(detect_row)
         self.interface_status = QLabel(
-            "ESP32 is the recommended raw-CAN interface. ELM327 support depends on "
-            "adapter firmware and protocol capabilities."
+            "ESP32 is the recommended raw-CAN interface, but its current firmware is receive-only. "
+            "Bluetooth/serial ELM327 can perform limited OBD requests. Wi-Fi adapter support is not implemented yet."
         )
         self.interface_status.setWordWrap(True)
         self.interface_status.setObjectName("mutedText")
