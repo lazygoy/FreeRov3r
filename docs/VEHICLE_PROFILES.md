@@ -12,8 +12,11 @@ The generic profile is intended to provide reusable features such as:
 - Sensor recording, graphing and exports
 - VIN and vehicle history association
 
-Actual capabilities depend on the connected interface. A receive-only CAN
-adapter can capture traffic but cannot actively request OBD-II PIDs.
+Actual capabilities depend on the connected interface. In the current build,
+the OBD-II table and graphs decode supported Mode 01 responses observed on
+11-bit CAN (0x7E8–0x7EF); general active PID polling is not implemented yet.
+A receive-only CAN adapter can capture traffic but cannot actively request
+OBD-II PIDs. The ELM327 VIN query is a separate read-only Mode 09 PID 02 request.
 
 ## Built-in package
 
