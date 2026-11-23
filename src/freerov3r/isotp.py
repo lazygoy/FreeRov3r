@@ -5,7 +5,7 @@ transmits Flow Control frames or interacts with a CAN adapter.
 """
 
 
-def reassemble_isotp(frames, *, timeout=1.0, max_payload=4095):
+def reassemble_isotp(frames, *, timeout=1.0, max_payload=1_048_576):
     """Reassemble ISO-TP Single and multi-frame messages.
 
     Args:
@@ -38,7 +38,7 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=4095):
             frame.get("channel"),
         )
 
-    def make_message(frame, payload, status, detail, frame_count, started_at=None):
+    def make_message(frame, payload, status, detail, frame_count, started_at=None, completed_at=None):
         stamp = float(frame.get("timestamp", 0.0) or 0.0)
         return {
             "arbitration_id": int(frame["arbitration_id"]),
@@ -46,7 +46,7 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=4095):
             "channel": frame.get("channel"),
             "timestamp": stamp,
             "started_at": float(started_at if started_at is not None else stamp),
-            "completed_at": stamp,
+            "completed_at": float(completed_at if completed_at is not None else stamp),
             "payload": bytes(payload).hex(),
             "status": status,
             "detail": detail,
@@ -159,7 +159,7 @@ def reassemble_isotp(frames, *, timeout=1.0, max_payload=4095):
                 output.append(make_message(
                     transfer["first_frame"], transfer["payload"], "incomplete",
                     f"Sequence error: expected {transfer['next_sequence']:X}, got {sequence:X}",
-                    transfer["frame_count"], transfer["started_at"],
+                    transfer["frame_count"], transfer["started_at"], timestamp,
                 ))
                 del pending[key]
                 continue
