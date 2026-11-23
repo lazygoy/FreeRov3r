@@ -13,7 +13,7 @@ def parse_elm_line(raw, channel=None):
     """Parse an ELM327 ATH1/ATS1 monitor line into a classical CAN frame."""
     try:
         line = raw.decode("ascii", errors="ignore") if isinstance(raw, bytes) else str(raw)
-        line = line.strip().replace("\\r", "").replace("\\n", "")
+        line = line.strip().replace("\r", "").replace("\n", "")
         if not line or line in {">", "STOPPED", "SEARCHING..."}:
             return None
         parts = line.split()
@@ -51,7 +51,7 @@ class Elm327SerialAdapter(CanAdapter):
         return f"ELM327 serial: {self.port} @ {self.baudrate}"
 
     def _command(self, command, wait=0.15):
-        self.connection.write((command + "\\r").encode("ascii"))
+        self.connection.write((command + "\r").encode("ascii"))
         self.connection.flush()
         time.sleep(wait)
         return self.connection.read_all().decode("ascii", errors="replace")
@@ -67,7 +67,7 @@ class Elm327SerialAdapter(CanAdapter):
             for command in ("ATE0", "ATL0", "ATS1", "ATH1", "ATSP0"):
                 self._command(command)
             self.connection.reset_input_buffer()
-            self.connection.write(b"ATMA\\r")
+            self.connection.write(b"ATMA\r")
             self.connection.flush()
         except Exception:
             self.close()
@@ -76,7 +76,7 @@ class Elm327SerialAdapter(CanAdapter):
     def close(self):
         if self.connection is not None:
             try:
-                self.connection.write(b"\\r")
+                self.connection.write(b"\r")
                 self.connection.flush()
             except Exception:
                 pass
@@ -87,7 +87,7 @@ class Elm327SerialAdapter(CanAdapter):
         if self.connection is None:
             raise RuntimeError("ELM327 adapter is not open")
         self.connection.timeout = timeout
-        raw = self.connection.read_until(b"\\r")
+        raw = self.connection.read_until(b"\r")
         if not raw:
             return None
         frame = parse_elm_line(raw, channel=self.port)
