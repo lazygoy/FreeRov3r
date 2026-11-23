@@ -182,12 +182,14 @@ class ResearchTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.frames = []
+        self.live_preview = []
         self.reference_frames = []
         self.bookmarks = {}
         self.metadata = {}
         self.recording = False
         self.live_enabled = True
         self._pending_records = []
+        self._pending_preview = []
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(250)
@@ -348,24 +350,38 @@ class ResearchTab(QWidget):
             self.status_label.setText("Recording stopped. Save the session or copy its REA analysis packet.")
 
     def observe_frame(self, frame):
-        if self.live_enabled or self.recording:
-            self._pending_records.append(_frame_record(frame))
+        record = _frame_record(frame)
+        if self.recording:
+            self._pending_records.append(record)
+        elif self.live_enabled:
+            self._pending_preview.append(record)
 
     def _flush_pending_frames(self):
-        if not self._pending_records:
-            return
-        self.frames.extend(self._pending_records)
-        self._pending_records.clear()
-        if len(self.frames) > 100000:
-            self.frames = self.frames[-100000:]
-        self.refresh_table()
+        changed = False
+        if self._pending_records:
+            self.frames.extend(self._pending_records)
+            self._pending_records.clear()
+            if len(self.frames) > 100000:
+                self.frames = self.frames[-100000:]
+            changed = True
+        if self._pending_preview:
+            self.live_preview.extend(self._pending_preview)
+            self._pending_preview.clear()
+            if len(self.live_preview) > 5000:
+                self.live_preview = self.live_preview[-5000:]
+            changed = True
+        if changed:
+            self.refresh_table()
+
+    def _visible_records(self):
+        return self.frames if self.frames else self.live_preview
 
     def _filtered_records(self):
         id_text = self.id_filter.text().strip().lower().replace("0x", "")
         payload_text = self.payload_filter.text().strip().lower().replace(" ", "").replace("0x", "")
         protocol = self.protocol_filter.currentText()
         output = []
-        for record in self.frames:
+        for record in self._visible_records():
             can_id = int(record["arbitration_id"])
             payload = bytes.fromhex(record["data"])
             iso, uds = classify_can_payload(payload)
@@ -449,14 +465,16 @@ class ResearchTab(QWidget):
     def _update_summary(self):
         if not hasattr(self, "summary"):
             return
-        counts = Counter((r["arbitration_id"], r["extended"]) for r in self.frames)
+        dataset = self._visible_records()
+        counts = Counter((r["arbitration_id"], r["extended"]) for r in dataset)
         services = Counter()
-        for record in self.frames:
+        for record in dataset:
             _, hint = classify_can_payload(bytes.fromhex(record["data"]))
             if hint in UDS_SERVICES.values() or hint.startswith("Negative response") or hint.startswith("Possible"):
                 services[hint] += 1
         lines = [
-            f"Working-set frames: {len(self.frames):,}",
+            f"Recorded frames: {len(self.frames):,}",
+            f"Live preview frames: {len(self.live_preview):,}" if not self.frames else "Live preview paused while a recorded/imported set is active.",
             f"Unique CAN IDs: {len(counts):,}",
             f"Bookmarks: {len(self.bookmarks):,}",
             "",
@@ -494,6 +512,8 @@ class ResearchTab(QWidget):
             QMessageBox.critical(self, "Import failed", str(exc))
             return
         self.frames = records
+        self.live_preview.clear()
+        self._pending_preview.clear()
         self.metadata = {**metadata, "imported_from": path}
         self.bookmarks = {}
         self.refresh_table()
@@ -588,7 +608,9 @@ class ResearchTab(QWidget):
         if answer != QMessageBox.Yes:
             return
         self.frames.clear()
+        self.live_preview.clear()
         self._pending_records.clear()
+        self._pending_preview.clear()
         self.reference_frames.clear()
         self.bookmarks.clear()
         self.metadata = {}
