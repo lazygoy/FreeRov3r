@@ -8,7 +8,7 @@ import re
 VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 YEAR_CODES = {
     **{str(n): 2001 + n - 1 for n in range(1, 10)},
-    **dict(zip("ABCDEFGHJKLMNPRSTVWXY", range(2010, 2030))),
+    **dict(zip("ABCDEFGHJKLMNPRSTVWXY", range(2010, 2031))),
 }
 
 
