@@ -216,3 +216,20 @@ def test_does_not_pair_response_outside_time_window():
     ]
     pairs = pair_uds_transactions(messages, response_window=1.0)
     assert all(pair["confidence"] == "unmatched" for pair in pairs)
+
+
+
+def test_pairs_positive_response_for_service_above_0x7e():
+    messages = [
+        {
+            "arbitration_id": 0x700, "extended": False, "channel": "can0",
+            "started_at": 1.0, "payload": "8501", "status": "complete",
+        },
+        {
+            "arbitration_id": 0x708, "extended": False, "channel": "can0",
+            "started_at": 1.1, "payload": "c501", "status": "complete",
+        },
+    ]
+    pairs = pair_uds_transactions(messages)
+    assert len(pairs) == 1
+    assert pairs[0]["response_kind"] == "positive"
