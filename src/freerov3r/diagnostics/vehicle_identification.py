@@ -68,7 +68,9 @@ def identify_vehicle(vin):
     return {
         "vin": valid, "valid": True,
         "make": "Land Rover" if valid[:3] == "SAL" else None,
-        "model": None, "model_year": year, "profile_id": "generic",
+        "model": None,
+        "model_year": year if valid[9].isdigit() else None,
+        "profile_id": "generic",
         "confidence": "unknown",
         "reason": "VIN syntax is valid, but no installed vehicle profile matches this VIN pattern.",
     }
@@ -79,7 +81,7 @@ def decode_vin_online(vin, timeout=6):
     valid = validate_vin(vin)
     if not valid:
         raise ValueError("A valid 17-character VIN is required.")
-    year_hint = model_year_from_vin(valid)
+    year_hint = model_year_from_vin(valid) if valid[9].isdigit() else None
     query = "?format=json" + (f"&modelyear={year_hint}" if year_hint else "")
     url = (
         "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/"
