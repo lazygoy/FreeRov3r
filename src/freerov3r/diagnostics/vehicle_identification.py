@@ -79,9 +79,11 @@ def decode_vin_online(vin, timeout=6):
     valid = validate_vin(vin)
     if not valid:
         raise ValueError("A valid 17-character VIN is required.")
+    year_hint = model_year_from_vin(valid)
+    query = "?format=json" + (f"&modelyear={year_hint}" if year_hint else "")
     url = (
         "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/"
-        + quote(valid) + "?format=json"
+        + quote(valid) + query
     )
     request = Request(url, headers={"User-Agent": "FreeRov3r/0.1"})
     with urlopen(request, timeout=float(timeout)) as response:
