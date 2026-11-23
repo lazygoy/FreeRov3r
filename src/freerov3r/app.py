@@ -2253,6 +2253,18 @@ class MainWindow(QMainWindow):
         controls.addWidget(self.bitrate)
         layout.addLayout(controls)
 
+        hardware_notice = QLabel(
+            "ⓘ  Full diagnostic functionality requires the recommended ESP32 CAN interface. "
+            "ELM327 Bluetooth/Wi-Fi and other adapters may provide limited access and may not "
+            "support complete CAN monitoring, all vehicle modules, or advanced diagnostic functions."
+        )
+        hardware_notice.setObjectName("hardwareCompatibilityNotice")
+        hardware_notice.setWordWrap(True)
+        hardware_notice.setToolTip(
+            "The ESP32 CAN interface is the recommended hardware for full FreeRov3r functionality."
+        )
+        layout.addWidget(hardware_notice)
+
         self.connect_btn = QPushButton("Start listening")
         self.connect_btn.clicked.connect(self.toggle_capture)
         layout.addWidget(self.connect_btn)
@@ -2413,6 +2425,22 @@ class MainWindow(QMainWindow):
         connection_form.addRow("Channel / port:", self.settings_channel)
         connection_form.addRow("CAN bitrate:", self.settings_bitrate)
         layout.addWidget(connection_group)
+
+        compatibility_group = QGroupBox("Hardware compatibility")
+        compatibility_layout = QVBoxLayout(compatibility_group)
+        compatibility_notice = QLabel(
+            "Full diagnostic functionality is available only with the recommended ESP32 CAN interface. "
+            "Bluetooth ELM327, Wi-Fi, and other third-party adapters are supported on a limited basis "
+            "where their hardware and protocols allow. They may not provide complete CAN traffic, "
+            "full module coverage, or advanced diagnostic functions."
+        )
+        compatibility_notice.setObjectName("hardwareCompatibilityNotice")
+        compatibility_notice.setWordWrap(True)
+        compatibility_layout.addWidget(compatibility_notice)
+        preferred_hardware = QLabel("Preferred interface: ESP32 CAN adapter")
+        preferred_hardware.setObjectName("preferredHardwareLabel")
+        compatibility_layout.addWidget(preferred_hardware)
+        layout.addWidget(compatibility_group)
 
         display_group = QGroupBox("Display and logging")
         display_layout = QVBoxLayout(display_group)
