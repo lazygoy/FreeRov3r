@@ -7,7 +7,6 @@ it never transmits diagnostic requests or replays captured frames.
 import csv
 import json
 import re
-import time
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -215,7 +214,7 @@ class ResearchTab(QWidget):
         intro = QGroupBox("PROTOCOL RESEARCH · DEVELOPMENT ONLY")
         intro_layout = QVBoxLayout(intro)
         self.status_label = QLabel(
-            "Passive observer. No diagnostic requests, ECU writes, coding, actuator commands, or frame replay."
+            "This tab only observes incoming frames. It never transmits or replays; the selected main adapter may have its own active polling behavior."
         )
         self.status_label.setWordWrap(True)
         intro_layout.addWidget(self.status_label)
@@ -223,7 +222,7 @@ class ResearchTab(QWidget):
 
         session_box = QGroupBox("RESEARCH SESSION")
         session_form = QFormLayout(session_box)
-        self.session_name = QLineEdit("LAUNCH operation capture")
+        self.session_name = QLineEdit("LAUNCH Creader Elite V2.0 capture")
         self.operation = QComboBox()
         self.operation.addItems([
             "Vehicle connection / identification",
@@ -354,7 +353,7 @@ class ResearchTab(QWidget):
                 "interface": self.metadata.get("interface"),
             })
             self.record_button.setText("Stop research recording")
-            self.status_label.setText("RECORDING · Captures frames delivered by the main listener. No transmission is performed.")
+            self.status_label.setText("RECORDING · Stores frames delivered by the main listener. This tab does not transmit or replay frames.")
         else:
             self.recording = False
             self.metadata["stopped_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -412,7 +411,8 @@ class ResearchTab(QWidget):
             if protocol == "ISO-TP" and not iso.startswith("ISO-TP"):
                 continue
             if protocol == "UDS classified" and not (
-                "UDS" in uds or uds in UDS_SERVICES.values() or uds.startswith("Negative response")
+                "UDS" in uds or uds in UDS_SERVICES.values()
+                or uds.startswith("Negative response") or uds.startswith("Positive response")
             ):
                 continue
             output.append((record, iso, uds))
@@ -485,7 +485,8 @@ class ResearchTab(QWidget):
         services = Counter()
         for record in dataset:
             _, hint = classify_can_payload(bytes.fromhex(record["data"]))
-            if hint in UDS_SERVICES.values() or hint.startswith("Negative response") or hint.startswith("Possible"):
+            if (hint in UDS_SERVICES.values() or hint.startswith("Negative response")
+                    or hint.startswith("Positive response") or hint.startswith("Possible")):
                 services[hint] += 1
         lines = [
             f"Recorded frames: {len(self.frames):,}",
@@ -609,6 +610,7 @@ class ResearchTab(QWidget):
         return "\n".join(lines)
 
     def copy_analysis_packet(self):
+        self._flush_pending_frames()
         if not self.frames:
             QMessageBox.information(self, "REA analysis packet", "Capture or import frames first.")
             return
