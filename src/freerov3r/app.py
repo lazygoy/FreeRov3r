@@ -354,7 +354,8 @@ class VehicleSetupWizard(QDialog):
         self.year_edit.setPlaceholderText("Model year")
         self.profile_combo = QComboBox()
         self.profile_combo.addItem("Generic OBD-II / CAN", "generic")
-        self.profile_combo.addItem("Land Rover L319 (LR3 / LR4)", "land_rover_l319")
+        self.profile_combo.addItem("Land Rover LR3 / Discovery 3 (L319)", "land_rover_l319_lr3")
+        self.profile_combo.addItem("Land Rover LR4 / Discovery 4 (L319)", "land_rover_l319_lr4")
         vehicle_form.addRow("VIN:", self.vin_edit)
         vehicle_form.addRow("Make:", self.make_edit)
         vehicle_form.addRow("Model:", self.model_edit)
@@ -518,7 +519,7 @@ class VehicleSetupWizard(QDialog):
             return
         result = identify_vehicle(vin)
         self._apply_vehicle_identification(result)
-        if result.get("profile_id") == "land_rover_l319":
+        if result.get("profile_id") in ("land_rover_l319_lr3", "land_rover_l319_lr4"):
             self.vin_status.setText(
                 f'{result["confidence"].upper()} LOCAL MATCH: {result["reason"]} '
                 "Review the suggested vehicle details before continuing."
@@ -3274,7 +3275,7 @@ class MainWindow(QMainWindow):
         profile_id = active.get("profile_id", "generic")
         self.active_vehicle_profile = self.vehicle_profiles.get(profile_id)
         self.sensor_capture.vehicle_context = {**active, "vin": vin}
-        l319_enabled = profile_id == "land_rover_l319"
+        l319_enabled = profile_id == "land_rover_l319_lr4"
         l319_tabs = {"Special Functions", "Topology", "Wiring Diagrams"}
         for index in range(self.tabs.count()):
             tab_name = self.tabs.tabText(index)
