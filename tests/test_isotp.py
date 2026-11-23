@@ -1,6 +1,6 @@
 import pytest
 
-from freerov3r.isotp import reassemble_isotp
+from freerov3r.isotp import pair_uds_transactions, reassemble_isotp
 
 
 def frame(can_id, timestamp, data, *, extended=False, channel="can0"):
@@ -145,3 +145,74 @@ def test_interleaved_messages_are_returned_by_start_timestamp():
     messages = reassemble_isotp(frames)
     assert [item["arbitration_id"] for item in messages] == [0x7E0, 0x7E8]
     assert [item["status"] for item in messages] == ["complete", "complete"]
+
+
+
+def test_pairs_uds_request_and_positive_response_with_latency():
+    messages = [
+        {
+            "arbitration_id": 0x7E0, "extended": False, "channel": "can0",
+            "started_at": 10.0, "payload": "22f190", "status": "complete",
+        },
+        {
+            "arbitration_id": 0x7E8, "extended": False, "channel": "can0",
+            "started_at": 10.025, "payload": "62f1904c5234", "status": "complete",
+        },
+    ]
+    pairs = pair_uds_transactions(messages)
+    assert len(pairs) == 1
+    assert pairs[0]["confidence"] == "probable"
+    assert pairs[0]["response_kind"] == "positive"
+    assert pairs[0]["latency_seconds"] == pytest.approx(0.025)
+    assert pairs[0]["addressing_hint"].endswith("(+0x8)")
+
+
+def test_pairs_uds_negative_response_to_original_service():
+    messages = [
+        {
+            "arbitration_id": 0x7E0, "extended": False, "channel": "can0",
+            "started_at": 2.0, "payload": "2e1234aabb", "status": "complete",
+        },
+        {
+            "arbitration_id": 0x7E8, "extended": False, "channel": "can0",
+            "started_at": 2.1, "payload": "7f2e13", "status": "complete",
+        },
+    ]
+    pairs = pair_uds_transactions(messages)
+    assert len(pairs) == 1
+    assert pairs[0]["response_kind"] == "negative"
+    assert pairs[0]["request_service"] == 0x2E
+
+
+def test_does_not_pair_same_can_id_or_different_channels():
+    messages = [
+        {
+            "arbitration_id": 0x7E0, "extended": False, "channel": "can0",
+            "started_at": 1.0, "payload": "22f190", "status": "complete",
+        },
+        {
+            "arbitration_id": 0x7E0, "extended": False, "channel": "can0",
+            "started_at": 1.1, "payload": "62f190", "status": "complete",
+        },
+        {
+            "arbitration_id": 0x7E8, "extended": False, "channel": "can1",
+            "started_at": 1.2, "payload": "62f190", "status": "complete",
+        },
+    ]
+    pairs = pair_uds_transactions(messages)
+    assert all(pair["confidence"] == "unmatched" for pair in pairs)
+
+
+def test_does_not_pair_response_outside_time_window():
+    messages = [
+        {
+            "arbitration_id": 0x7E0, "extended": False, "channel": "can0",
+            "started_at": 1.0, "payload": "22f190", "status": "complete",
+        },
+        {
+            "arbitration_id": 0x7E8, "extended": False, "channel": "can0",
+            "started_at": 4.0, "payload": "62f190", "status": "complete",
+        },
+    ]
+    pairs = pair_uds_transactions(messages, response_window=1.0)
+    assert all(pair["confidence"] == "unmatched" for pair in pairs)
