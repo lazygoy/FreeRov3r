@@ -402,6 +402,7 @@ class VehicleSetupWizard(QDialog):
         self.detect_interfaces()
         self._show_page(0)
         self.interface_combo.currentIndexChanged.connect(self._update_vin_query_availability)
+        self.channel_edit.editTextChanged.connect(self._update_vin_query_availability)
 
     def detect_interfaces(self):
         current = self.channel_edit.currentText().strip()
@@ -2600,6 +2601,12 @@ class MainWindow(QMainWindow):
             return
         for index in range(self.tabs.count()):
             if self.tabs.tabText(index) == name:
+                if not self.tabs.isTabEnabled(index):
+                    self.show_toast(
+                        "This workspace requires the Land Rover LR3/LR4 vehicle package. Run Vehicle setup first.",
+                        "info",
+                    )
+                    return
                 self.tabs.setCurrentIndex(index)
                 self.stack.setCurrentIndex(1)
                 return
@@ -3180,8 +3187,16 @@ class MainWindow(QMainWindow):
         vehicles = self.settings.get("vehicles", {})
         active = vehicles.get(vin, {}) if vin and vin in vehicles else self.settings.get("active_vehicle", {})
         active = dict(active or {})
-        if vin and not active:
-            active = identify_vehicle(vin)
+        if vin and not active.get("profile_id"):
+            identification = identify_vehicle(vin)
+            active.update({
+                "make": identification.get("make") or active.get("make", ""),
+                "model": identification.get("model") or active.get("model", ""),
+                "model_year": identification.get("model_year") or active.get("model_year"),
+                "profile_id": identification.get("profile_id", "generic"),
+                "variant_id": identification.get("variant_id"),
+                "identification_confidence": identification.get("confidence", "unknown"),
+            })
             vehicles[vin] = active.copy()
         profile_id = active.get("profile_id", "generic")
         self.active_vehicle_profile = self.vehicle_profiles.get(profile_id)
