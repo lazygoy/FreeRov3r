@@ -729,75 +729,391 @@ class ModulesTab(QWidget):
 
 
 class NetworkOverviewTab(QWidget):
-    """Thinkcar-style module status overview; colors reflect scan evidence only."""
-    def __init__(self, network, vin_provider=None, parent=None):
+    """Interactive, evidence-labelled topology view over the current module inventory."""
+
+    STATUS_STYLES = {
+        "faults": ("#ef5350", "#351d22", "ATTENTION"),
+        "clean": ("#35b779", "#17352b", "NO FAULTS"),
+        "unscanned": ("#9aa7b5", "#202a35", "NOT SCANNED"),
+        "offline": ("#87909a", "#24282d", "NO RESPONSE"),
+    }
+
+    def __init__(self, network, vin_provider=None, history_callback=None, parent=None):
         super().__init__(parent)
         self.network = network
         self.vin_provider = vin_provider or (lambda: None)
-        layout = QVBoxLayout(self)
+        self.history_callback = history_callback or (lambda *args, **kwargs: None)
+        self.selected_code = None
+        self.map_buttons = {}
+        self._building = False
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 10, 12, 12)
+        root.setSpacing(10)
+
+        header = QHBoxLayout()
+        title_column = QVBoxLayout()
+        title_column.setSpacing(2)
+        title = QLabel("VEHICLE NETWORK TOPOLOGY")
+        title.setObjectName("sectionTitle")
+        title_column.addWidget(title)
         self.heading = QLabel()
         self.heading.setWordWrap(True)
-        layout.addWidget(self.heading)
-        self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["System / module", "Health", "DTCs", "Last scan"])
-        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        layout.addWidget(self.tree)
-        row = QHBoxLayout()
-        refresh = QPushButton("Refresh module status")
-        refresh.clicked.connect(self.refresh)
-        row.addWidget(refresh)
-        row.addStretch()
-        layout.addLayout(row)
+        self.heading.setObjectName("mutedText")
+        title_column.addWidget(self.heading)
+        header.addLayout(title_column, 1)
+
+        self.scan_all_button = QPushButton("⟳  Scan All Modules")
+        self.scan_all_button.setObjectName("primaryButton")
+        self.scan_all_button.clicked.connect(self.scan_all)
+        header.addWidget(self.scan_all_button)
+        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button.clicked.connect(self.refresh)
+        header.addWidget(self.refresh_button)
+        root.addLayout(header)
+
+        self.summary_row = QHBoxLayout()
+        self.summary_cards = {}
+        for key, label in (
+            ("total", "MODULES"),
+            ("scanned", "SCANNED"),
+            ("faults", "WITH DTCS"),
+            ("unscanned", "NOT SCANNED"),
+        ):
+            card = QFrame()
+            card.setObjectName("topologyMetric")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 8, 12, 8)
+            value = QLabel("0")
+            value.setObjectName("topologyMetricValue")
+            caption = QLabel(label)
+            caption.setObjectName("topologyMetricLabel")
+            card_layout.addWidget(value)
+            card_layout.addWidget(caption)
+            self.summary_cards[key] = value
+            self.summary_row.addWidget(card)
+        root.addLayout(self.summary_row)
+
+        legend = QHBoxLayout()
+        legend.addWidget(QLabel("STATUS:"))
+        for color, label in (
+            ("#35b779", "No faults"),
+            ("#ef5350", "DTCs present"),
+            ("#9aa7b5", "Not scanned"),
+            ("#87909a", "No response"),
+        ):
+            swatch = QLabel("●")
+            swatch.setStyleSheet(f"color:{color};font-size:15px;")
+            legend.addWidget(swatch)
+            text = QLabel(label)
+            text.setObjectName("mutedText")
+            legend.addWidget(text)
+        legend.addStretch(1)
+        self.view_toggle = QPushButton("System List")
+        self.view_toggle.setCheckable(True)
+        self.view_toggle.toggled.connect(self._toggle_view)
+        legend.addWidget(self.view_toggle)
+        root.addLayout(legend)
+
+        content = QHBoxLayout()
+        content.setSpacing(10)
+
+        self.map_scroll = QScrollArea()
+        self.map_scroll.setWidgetResizable(True)
+        self.map_scroll.setFrameShape(QFrame.NoFrame)
+        self.map_scroll.setMinimumWidth(0)
+        self.map_scroll.setObjectName("topologyMapScroll")
+        self.map_body = QWidget()
+        self.map_grid = QGridLayout(self.map_body)
+        self.map_grid.setContentsMargins(8, 8, 8, 8)
+        self.map_grid.setSpacing(10)
+        self.map_scroll.setWidget(self.map_body)
+        content.addWidget(self.map_scroll, 3)
+
+        self.system_list = QTreeWidget()
+        self.system_list.setHeaderLabels(["System / module", "Status", "DTCs", "Last scan"])
+        self.system_list.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.system_list.setMinimumWidth(360)
+        self.system_list.itemSelectionChanged.connect(self._list_selection_changed)
+        self.system_list.itemDoubleClicked.connect(self._open_module_details)
+        self.system_list.hide()
+        content.addWidget(self.system_list, 3)
+
+        detail_frame = QFrame()
+        detail_frame.setObjectName("topologyDetailPanel")
+        detail_layout = QVBoxLayout(detail_frame)
+        detail_layout.setContentsMargins(14, 14, 14, 14)
+        detail_layout.setSpacing(8)
+        detail_title = QLabel("MODULE DETAILS")
+        detail_title.setObjectName("sectionTitle")
+        detail_layout.addWidget(detail_title)
+        self.detail_name = QLabel("Select a module")
+        self.detail_name.setObjectName("topologyDetailName")
+        self.detail_name.setWordWrap(True)
+        detail_layout.addWidget(self.detail_name)
+        self.detail_status = QLabel("No module selected")
+        self.detail_status.setObjectName("mutedText")
+        detail_layout.addWidget(self.detail_status)
+        self.detail_text = QPlainTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setPlaceholderText("Select a module node to inspect scan status and diagnostic trouble codes.")
+        detail_layout.addWidget(self.detail_text, 1)
+        self.scan_selected_button = QPushButton("Scan Selected Module")
+        self.scan_selected_button.clicked.connect(self.scan_selected)
+        self.scan_selected_button.setEnabled(False)
+        detail_layout.addWidget(self.scan_selected_button)
+        content.addWidget(detail_frame, 2)
+        root.addLayout(content, 1)
+
+        self._toggle_view(False)
         self.refresh()
 
     def set_network(self, network):
         self.network = network
+        self.selected_code = None
         self.refresh()
 
-    def refresh(self):
-        vin = self.vin_provider() or "No VIN detected"
-        self.heading.setText(
-            f"<b>Vehicle network overview</b><br>VIN: {vin}<br>"
-            "Green = scanned, no DTCs. Red = one or more DTCs. Gray = not scanned or no response. "
-            "Current module inventory is simulated until live L319 addressing is verified."
+    def _module_status(self, module):
+        if not module.available:
+            return "offline"
+        if module.last_scan is None:
+            return "unscanned"
+        if module.dtcs:
+            return "faults"
+        return "clean"
+
+    def _status_text(self, module):
+        return self.STATUS_STYLES[self._module_status(module)][2]
+
+    def _toggle_view(self, list_mode):
+        self.map_scroll.setVisible(not list_mode)
+        self.system_list.setVisible(list_mode)
+        self.view_toggle.setText("Topology Map" if list_mode else "System List")
+
+    def _clear_map(self):
+        while self.map_grid.count():
+            item = self.map_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.map_buttons.clear()
+
+    def _make_module_node(self, module):
+        status = self._module_status(module)
+        accent, background, label = self.STATUS_STYLES[status]
+        node = QPushButton()
+        node.setObjectName("topologyModuleNode")
+        node.setCheckable(True)
+        node.setMinimumSize(145, 82)
+        node.setMaximumHeight(100)
+        node.setStyleSheet(
+            "QPushButton#topologyModuleNode {"
+            f"background:{background};border:1px solid {accent};"
+            "border-radius:9px;padding:8px;text-align:left;color:#edf2f7;}"
+            "QPushButton#topologyModuleNode:checked {border:2px solid #58a6ff;}"
+            "QPushButton#topologyModuleNode:hover {border:2px solid #a9c9e8;}"
         )
-        self.tree.clear()
+        dtc_count = len(module.dtcs)
+        node.setText(f"{module.code}\n{module.name}\n{label}  ·  {dtc_count} DTC")
+        node.setToolTip(
+            f"{module.name}\nStatus: {label}\nDTC count: {dtc_count}\n"
+            "Inventory is simulated; physical network path and ECU address are not verified."
+        )
+        node.clicked.connect(lambda checked=False, code=module.code: self.select_module(code))
+        self.map_buttons[module.code] = node
+        return node
+
+    def _build_map(self):
+        self._clear_map()
+        groups = {}
+        for module in self.network.modules:
+            groups.setdefault(module.category, []).append(module)
+
+        category_order = ["Powertrain", "Chassis", "Safety", "Body", "Climate",
+                          "Driver Assistance", "Network", "Information", "Infotainment"]
+        ordered = [name for name in category_order if name in groups]
+        ordered.extend(name for name in groups if name not in ordered)
+
+        # Group cards are deliberately not connected by bus lines: the simulator
+        # contains no verified bus membership, gateway routing or ECU addresses.
+        for index, category in enumerate(ordered):
+            modules = groups[category]
+            group_frame = QFrame()
+            group_frame.setObjectName("topologyGroup")
+            group_layout = QVBoxLayout(group_frame)
+            group_layout.setContentsMargins(12, 10, 12, 12)
+            group_layout.setSpacing(8)
+            title_row = QHBoxLayout()
+            group_title = QLabel(category.upper())
+            group_title.setObjectName("topologyGroupTitle")
+            title_row.addWidget(group_title)
+            title_row.addStretch(1)
+            count = QLabel(f"{len(modules)} MODULES")
+            count.setObjectName("mutedText")
+            title_row.addWidget(count)
+            group_layout.addLayout(title_row)
+            nodes = QGridLayout()
+            nodes.setSpacing(8)
+            for node_index, module in enumerate(modules):
+                nodes.addWidget(self._make_module_node(module), node_index // 2, node_index % 2)
+            group_layout.addLayout(nodes)
+            self.map_grid.addWidget(group_frame, index // 2, index % 2)
+
+        disclaimer = QLabel(
+            "SIMULATED INVENTORY  •  Grouping reflects example software categories, "
+            "not confirmed CAN buses, wiring paths or gateway connections."
+        )
+        disclaimer.setWordWrap(True)
+        disclaimer.setObjectName("mutedText")
+        self.map_grid.addWidget(disclaimer, (len(ordered) + 1) // 2, 0, 1, 2)
+        self.map_grid.setRowStretch((len(ordered) + 1) // 2 + 1, 1)
+
+    def _build_system_list(self):
+        self.system_list.clear()
         groups = {}
         for module in self.network.modules:
             group = groups.get(module.category)
             if group is None:
                 group = QTreeWidgetItem([module.category, "", "", ""])
-                self.tree.addTopLevelItem(group)
+                self.system_list.addTopLevelItem(group)
                 groups[module.category] = group
-            if not module.available:
-                status, color = "No response", QColor("#888888")
-            elif module.last_scan is None:
-                status, color = "Not scanned", QColor("#888888")
-            elif module.dtcs:
-                status, color = "Attention", QColor("#ef5350")
-            else:
-                status, color = "No faults", QColor("#43a047")
             item = QTreeWidgetItem([
-                f"{module.code} — {module.name}", status,
-                str(len(module.dtcs)), module.last_scan or "—"
+                f"{module.code} — {module.name}",
+                self._status_text(module),
+                str(len(module.dtcs)),
+                module.last_scan or "—",
             ])
             item.setData(0, Qt.UserRole, module.code)
-            for col in (0, 1):
-                item.setForeground(col, QBrush(color))
             group.addChild(item)
-        for group in groups.values():
-            children = [self.network.get_module(group.child(i).data(0, Qt.UserRole))
-                        for i in range(group.childCount())]
-            if any(m.available and m.last_scan is not None and m.dtcs for m in children):
-                group.setForeground(0, QBrush(QColor("#ef5350")))
-            elif children and all(m.available and m.last_scan is not None and not m.dtcs for m in children):
-                group.setForeground(0, QBrush(QColor("#43a047")))
-            else:
-                group.setForeground(0, QBrush(QColor("#888888")))
-        self.tree.expandAll()
-        self.tree.resizeColumnToContents(1)
-        self.tree.resizeColumnToContents(2)
-        self.tree.resizeColumnToContents(3)
+            accent = self.STATUS_STYLES[self._module_status(module)][0]
+            for col in (0, 1):
+                item.setForeground(col, QBrush(QColor(accent)))
+        self.system_list.expandAll()
+        self.system_list.resizeColumnToContents(1)
+        self.system_list.resizeColumnToContents(2)
+        self.system_list.resizeColumnToContents(3)
+
+    def refresh(self):
+        self._building = True
+        try:
+            modules = list(self.network.modules)
+            scanned = [m for m in modules if m.last_scan is not None]
+            faults = [m for m in modules if m.last_scan is not None and m.dtcs]
+            self.summary_cards["total"].setText(str(len(modules)))
+            self.summary_cards["scanned"].setText(str(len(scanned)))
+            self.summary_cards["faults"].setText(str(len(faults)))
+            self.summary_cards["unscanned"].setText(str(sum(m.last_scan is None for m in modules)))
+            vin = self.vin_provider() or "NO VIN SELECTED"
+            self.heading.setText(
+                f"VIN: {vin}  •  {len(modules)} inventory entries  •  "
+                "SIMULATED DATA / PHYSICAL ECU NETWORK NOT VERIFIED"
+            )
+            self._build_map()
+            self._build_system_list()
+        finally:
+            self._building = False
+
+        if self.selected_code and any(m.code == self.selected_code for m in modules):
+            self.select_module(self.selected_code)
+        elif modules:
+            self.select_module(modules[0].code)
+        else:
+            self._show_empty_selection()
+
+    def _show_empty_selection(self):
+        self.selected_code = None
+        self.detail_name.setText("No modules in inventory")
+        self.detail_status.setText("No scan data")
+        self.detail_text.clear()
+        self.scan_selected_button.setEnabled(False)
+
+    def select_module(self, code):
+        try:
+            module = self.network.get_module(code)
+        except (KeyError, AttributeError):
+            self._show_empty_selection()
+            return
+        self.selected_code = code
+        for key, button in self.map_buttons.items():
+            button.setChecked(key == code)
+        for index in range(self.system_list.topLevelItemCount()):
+            group = self.system_list.topLevelItem(index)
+            for child_index in range(group.childCount()):
+                child = group.child(child_index)
+                if child.data(0, Qt.UserRole) == code:
+                    self.system_list.setCurrentItem(child)
+                    break
+
+        status = self._status_text(module)
+        accent = self.STATUS_STYLES[self._module_status(module)][0]
+        self.detail_name.setText(f"{module.code}  |  {module.name}")
+        self.detail_status.setText(f"{status}  •  {len(module.dtcs)} DTC(S)")
+        self.detail_status.setStyleSheet(f"color:{accent};font-weight:700;")
+        lines = [
+            f"MODULE: {module.code}",
+            f"SYSTEM GROUP: {module.category}",
+            f"STATUS: {status}",
+            f"LAST SCAN: {module.last_scan or 'Never'}",
+            f"AVAILABILITY: {'Responding in simulator' if module.available else 'No response in simulator'}",
+            "",
+            "DIAGNOSTIC TROUBLE CODES",
+        ]
+        if module.dtcs:
+            for dtc in module.dtcs:
+                lines.extend([
+                    f"{dtc.code}  |  {dtc.status}  |  {dtc.severity}",
+                    dtc.description,
+                    "",
+                ])
+        else:
+            lines.append("No DTC entries in the current module fixture.")
+        lines.extend([
+            "",
+            "DATA SOURCE: SIMULATED MODULE FIXTURE",
+            "ECU ADDRESS: NOT VERIFIED",
+            "PHYSICAL BUS / ROUTE: NOT VERIFIED",
+        ])
+        self.detail_text.setPlainText("\n".join(lines))
+        self.scan_selected_button.setEnabled(bool(module.available))
+
+    def _list_selection_changed(self):
+        if self._building:
+            return
+        item = self.system_list.currentItem()
+        code = item.data(0, Qt.UserRole) if item else None
+        if code:
+            self.select_module(code)
+
+    def _open_module_details(self, item, column):
+        code = item.data(0, Qt.UserRole)
+        if code:
+            self.select_module(code)
+
+    def scan_selected(self):
+        if not self.selected_code:
+            return
+        module = self.network.scan_module(self.selected_code)
+        self.history_callback(
+            "topology_module_scan",
+            f"Topology module scan: {module.code}",
+            {"module": module.code, "source": "simulated_module_network",
+             "dtcs": [dtc.code for dtc in module.dtcs]},
+            vin=self.vin_provider(),
+        )
+        self.refresh()
+        self.select_module(module.code)
+
+    def scan_all(self):
+        modules = self.network.scan_all()
+        self.history_callback(
+            "topology_full_scan",
+            "Topology full inventory scan",
+            {"source": "simulated_module_network",
+             "modules_scanned": [module.code for module in modules],
+             "dtcs": {module.code: [dtc.code for dtc in module.dtcs] for module in modules}},
+            vin=self.vin_provider(),
+        )
+        self.refresh()
 
 
 class VehicleHistoryTab(QWidget):
@@ -1374,9 +1690,11 @@ class MainWindow(QMainWindow):
         )
         self.tabs.addTab(self.special_functions_tab, "Special Functions")
         self.network_tab = NetworkOverviewTab(
-            self.module_network, vin_provider=lambda: self.settings.get("current_vin")
+            self.module_network,
+            vin_provider=lambda: self.settings.get("current_vin"),
+            history_callback=self.record_vehicle_event,
         )
-        self.tabs.addTab(self.network_tab, "Network")
+        self.tabs.addTab(self.network_tab, "Topology")
         self.modules_tab.network_overview_refresh = self.network_tab.refresh
         self.solutions_tab = SolutionsTab(
             self.module_network,
@@ -1486,7 +1804,7 @@ class MainWindow(QMainWindow):
                 "OBD-II": "Standard diagnostic parameters and trouble codes",
                 "Modules": "Module-level diagnostic workspace",
                 "Special Functions": "Service resets, calibrations and module-specific routines",
-                "Network": "Vehicle network overview and module status",
+                "Topology": "Interactive ECU map, module health and diagnostic trouble codes",
                 "Solutions": "Review diagnostic evidence and analysis notes",
                 "Vehicle History": "Previous captures and vehicle-specific events",
                 "Settings": "Connection, display and logging configuration",
