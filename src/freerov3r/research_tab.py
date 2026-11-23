@@ -12,7 +12,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
@@ -187,7 +187,12 @@ class ResearchTab(QWidget):
         self.metadata = {}
         self.recording = False
         self.live_enabled = True
-        self._last_rendered = 0
+        self._pending_records = []
+
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.setInterval(250)
+        self.refresh_timer.timeout.connect(self._flush_pending_frames)
+        self.refresh_timer.start()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 12, 14, 14)
@@ -343,19 +348,17 @@ class ResearchTab(QWidget):
             self.status_label.setText("Recording stopped. Save the session or copy its REA analysis packet.")
 
     def observe_frame(self, frame):
-        if self.live_enabled:
-            self.frames.append(_frame_record(frame))
-            if len(self.frames) > 100000:
-                self.frames = self.frames[-100000:]
-            self.refresh_table()
-        elif self.recording:
-            # Keep recording even when live display is hidden.
-            self.frames.append(_frame_record(frame))
-        if self.recording:
-            # When live display is disabled, append above; otherwise it was appended already.
-            if not self.live_enabled:
-                pass
-            self.count_label.setText(f"{len(self.frames):,} total · recording")
+        if self.live_enabled or self.recording:
+            self._pending_records.append(_frame_record(frame))
+
+    def _flush_pending_frames(self):
+        if not self._pending_records:
+            return
+        self.frames.extend(self._pending_records)
+        self._pending_records.clear()
+        if len(self.frames) > 100000:
+            self.frames = self.frames[-100000:]
+        self.refresh_table()
 
     def _filtered_records(self):
         id_text = self.id_filter.text().strip().lower().replace("0x", "")
@@ -512,6 +515,7 @@ class ResearchTab(QWidget):
         self.status_label.setText(f"Comparison reference loaded: {Path(path).name} ({len(records):,} frames)")
 
     def save_session(self):
+        self._flush_pending_frames()
         if not self.frames:
             QMessageBox.information(self, "Save research session", "There are no frames to save.")
             return
@@ -536,6 +540,7 @@ class ResearchTab(QWidget):
         self.status_label.setText(f"Saved {len(self.frames):,} frames to {Path(path).name}")
 
     def build_analysis_packet(self):
+        self._flush_pending_frames()
         lines = [
             "# FreeRov3r protocol research packet",
             "",
@@ -583,6 +588,7 @@ class ResearchTab(QWidget):
         if answer != QMessageBox.Yes:
             return
         self.frames.clear()
+        self._pending_records.clear()
         self.reference_frames.clear()
         self.bookmarks.clear()
         self.metadata = {}
