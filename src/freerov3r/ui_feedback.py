@@ -81,7 +81,9 @@ class QuickDrawer(QDockWidget):
         entries = [
             ("⌂   Home", "Home"), ("⌁   CAN Capture", "Capture"), ("◉   Sensor Monitor", "Sensors"),
             ("▥   Sensor Graph", "Graph"), ("◫   OBD-II", "OBD-II"),
-            ("▦   Module Diagnostics", "Modules"), ("⌘   Network Overview", "Network"),
+            ("▦   Module Diagnostics", "Modules"), ("✦   Special Functions", "Special Functions"),
+            ("⌘   Vehicle Topology", "Topology"),
+            ("▤   Wiring Diagrams", "Wiring Diagrams"),
             ("✦   Diagnostic Solutions", "Solutions"), ("◷   Vehicle History", "Vehicle History"),
             ("⚙   Settings", "Settings"),
         ]
@@ -101,14 +103,6 @@ class QuickDrawer(QDockWidget):
         note.setObjectName("drawerNote")
         note.setWordWrap(True)
         layout.addStretch(1)
-        support_button = QPushButton("☕  Buy Me a Coffee")
-        support_button.setObjectName("drawerSupportButton")
-        support_button.setCursor(Qt.PointingHandCursor)
-        support_button.setToolTip("Support FreeRov3r development")
-        support_button.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://www.buymeacoffee.com/lazygoy"))
-        )
-        layout.addWidget(support_button)
         layout.addWidget(note)
         scroll.setWidget(body)
         self.setWidget(scroll)

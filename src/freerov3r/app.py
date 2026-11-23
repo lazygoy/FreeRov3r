@@ -25,15 +25,31 @@ except ImportError:
     HAS_CHARTS = False
 
 from .hardware.serial_ports import list_serial_ports
+from .hardware.interface_discovery import discover_interfaces
+from .hardware.elm327_serial_adapter import Elm327SerialAdapter, query_vin
+from .hardware.elm327_obd_adapter import Elm327ObdAdapter
+from .diagnostics.vehicle_identification import identify_vehicle, validate_vin, decode_vin_online
+from .vehicle_profiles.registry import VehicleProfileRegistry
 from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
-from .hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
+from .hardware.simulated_vehicle import SimulatedVehicleAdapter
+from .diagnostics.obd2 import OBD_PIDS, decode_mode01
 from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .sensors.scaling import normalize_values
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
+from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
+from .diagnostics.l319_wiring import NETWORKS as L319_WIRING_NETWORKS, SOURCE_URL as L319_WIRING_SOURCE_URL, DEFAULT_ENGINE as L319_DEFAULT_ENGINE
+
+try:
+    from PySide6.QtPdf import QPdfDocument
+    from PySide6.QtPdfWidgets import QPdfView
+    HAS_PDF_VIEWER = True
+except ImportError:
+    QPdfDocument = QPdfView = None
+    HAS_PDF_VIEWER = False
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -54,24 +70,6 @@ DEFAULT_SETTINGS = {
     "graph_refresh_ms": 1000,
     "show_startup_splash": True,
 }
-
-# Common OBD-II PIDs (Mode 01)
-OBD_PIDS = [
-    ("0C", "Engine RPM", "rpm"),
-    ("0D", "Vehicle Speed", "km/h"),
-    ("05", "Engine Coolant Temp", "°C"),
-    ("0F", "Intake Air Temp", "°C"),
-    ("11", "Throttle Position", "%"),
-    ("04", "Calculated Engine Load", "%"),
-    ("0B", "Intake Manifold Pressure", "kPa"),
-    ("10", "MAF Air Flow Rate", "g/s"),
-    ("1F", "Run Time Since Engine Start", "s"),
-    ("21", "Distance Traveled with MIL On", "km"),
-    ("2F", "Fuel Tank Level", "%"),
-    ("42", "Control Module Voltage", "V"),
-    ("46", "Ambient Air Temp", "°C"),
-    ("5C", "Engine Oil Temp", "°C"),
-]
 
 # Placeholder L319 modules (do not treat addresses as verified)
 L319_MODULES = [
@@ -221,6 +219,439 @@ class Receiver(QThread):
     def stop(self):
         self.running = False
         self.wait(2000)
+
+
+class VinQueryWorker(QThread):
+    completed = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, port, parent=None):
+        super().__init__(parent)
+        self.port = port
+
+    def run(self):
+        try:
+            self.completed.emit(query_vin(self.port))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class VinDecodeWorker(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, vin, parent=None):
+        super().__init__(parent)
+        self.vin = vin
+
+    def run(self):
+        try:
+            self.completed.emit(decode_vin_online(self.vin))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class VehicleSetupWizard(QDialog):
+    """Optional connection and vehicle setup wizard."""
+
+    def __init__(self, parent=None, current_settings=None):
+        super().__init__(parent)
+        self.setWindowTitle("FreeRov3r | Vehicle Setup")
+        self.setMinimumSize(760, 540)
+        self.setModal(True)
+        self.result_data = None
+        self._vin_worker = None
+        self._decode_worker = None
+        self._decoded = None
+        self.setObjectName("startupSplash")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 22, 24, 20)
+        root.setSpacing(12)
+        eyebrow = QLabel("FREEROV3R CONFIGURATION")
+        eyebrow.setObjectName("splashEyebrow")
+        root.addWidget(eyebrow)
+        self.page_title = QLabel("Connect an interface")
+        self.page_title.setObjectName("splashTitle")
+        root.addWidget(self.page_title)
+        self.page_description = QLabel(
+            "Detect USB serial and paired Bluetooth COM interfaces, or choose one manually. "
+            "Wi-Fi discovery is not implemented yet. Detection does not transmit to the vehicle."
+        )
+        self.page_description.setWordWrap(True)
+        self.page_description.setObjectName("splashSubtitle")
+        root.addWidget(self.page_description)
+
+        self.pages = QStackedWidget()
+        root.addWidget(self.pages, 1)
+
+        # Page 1: connection selection
+        connection_page = QWidget()
+        connection_layout = QVBoxLayout(connection_page)
+        connection_form = QFormLayout()
+        self.interface_combo = QComboBox()
+        self._interfaces = [
+            ("virtual", "Virtual CAN (no hardware)", "freerov3r"),
+            ("simulator", "Simulated vehicle (demo)", "L319-DEMO"),
+            ("esp32", "Recommended ESP32 CAN interface", "COM3"),
+            ("elm327", "ELM327 raw CAN monitor", ""),
+            ("elm327_obd", "ELM327 active OBD-II polling", ""),
+            ("socketcan", "SocketCAN", "can0"),
+            ("slcan", "SLCAN", "COM3"),
+        ]
+        for kind, label, channel in self._interfaces:
+            self.interface_combo.addItem(label, (kind, channel))
+        self.channel_edit = QComboBox()
+        self.channel_edit.setEditable(True)
+        self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
+        self.channel_edit.setPlaceholderText("Select detected port or enter channel")
+        connection_form.addRow("Interface:", self.interface_combo)
+        connection_form.addRow("Port / channel:", self.channel_edit)
+        connection_layout.addLayout(connection_form)
+        detect_row = QHBoxLayout()
+        detect_button = QPushButton("Detect interfaces")
+        detect_button.clicked.connect(self.detect_interfaces)
+        detect_row.addWidget(detect_button)
+        detect_row.addStretch()
+        connection_layout.addLayout(detect_row)
+        self.interface_status = QLabel(
+            "ESP32 is the recommended raw-CAN interface, but its current firmware is receive-only. "
+            "Bluetooth/serial ELM327 supports either passive CAN monitoring or read-only Mode 01 polling. "
+            "Wi-Fi adapter support is not implemented yet."
+        )
+        self.interface_status.setWordWrap(True)
+        self.interface_status.setObjectName("mutedText")
+        connection_layout.addWidget(self.interface_status)
+        connection_layout.addStretch()
+        self.pages.addWidget(connection_page)
+
+        # Page 2: VIN and manual vehicle details
+        vehicle_page = QWidget()
+        vehicle_layout = QVBoxLayout(vehicle_page)
+        vehicle_form = QFormLayout()
+        self.vin_edit = QLineEdit()
+        self.vin_edit.setMaxLength(17)
+        self.vin_edit.setPlaceholderText("17-character VIN")
+        self.make_edit = QLineEdit()
+        self.make_edit.setPlaceholderText("Manufacturer")
+        self.model_edit = QLineEdit()
+        self.model_edit.setPlaceholderText("Model / series")
+        self.year_edit = QLineEdit()
+        self.year_edit.setPlaceholderText("Model year")
+        self.profile_combo = QComboBox()
+        self.profile_combo.addItem("Generic OBD-II / CAN", "generic")
+        self.profile_combo.addItem("Land Rover LR3 / Discovery 3 (L319)", "land_rover_l319_lr3")
+        self.profile_combo.addItem("Land Rover LR4 / Discovery 4 (L319)", "land_rover_l319_lr4")
+        vehicle_form.addRow("VIN:", self.vin_edit)
+        vehicle_form.addRow("Make:", self.make_edit)
+        vehicle_form.addRow("Model:", self.model_edit)
+        vehicle_form.addRow("Model year:", self.year_edit)
+        vehicle_form.addRow("Capability package:", self.profile_combo)
+        vehicle_layout.addLayout(vehicle_form)
+        vin_actions = QHBoxLayout()
+        self.read_vin_button = QPushButton("Read VIN from ELM327")
+        self.read_vin_button.clicked.connect(self.read_vin)
+        vin_actions.addWidget(self.read_vin_button)
+        self.decode_vin_button = QPushButton("Identify from VIN")
+        self.decode_vin_button.clicked.connect(self.decode_vin)
+        vin_actions.addWidget(self.decode_vin_button)
+        vehicle_layout.addLayout(vin_actions)
+        self.vin_status = QLabel(
+            "The VIN is read using the standard OBD-II Mode 09 PID 02 request when "
+            "an ELM327 adapter is selected. Other adapters may require transmit-capable "
+            "firmware or a manual VIN."
+        )
+        self.vin_status.setWordWrap(True)
+        self.vin_status.setObjectName("mutedText")
+        vehicle_layout.addWidget(self.vin_status)
+        vehicle_layout.addStretch()
+        self.pages.addWidget(vehicle_page)
+
+        # Page 3: review
+        review_page = QWidget()
+        review_layout = QVBoxLayout(review_page)
+        self.review_text = QPlainTextEdit()
+        self.review_text.setReadOnly(True)
+        review_layout.addWidget(self.review_text)
+        self.pages.addWidget(review_page)
+
+        footer = QHBoxLayout()
+        self.back_button = QPushButton("Back")
+        self.back_button.clicked.connect(self.go_back)
+        self.next_button = QPushButton("Next")
+        self.next_button.setObjectName("splashContinue")
+        self.next_button.clicked.connect(self.go_next)
+        self.skip_button = QPushButton("Skip to full workspace")
+        self.skip_button.clicked.connect(self.reject)
+        self.finish_button = QPushButton("Finish setup")
+        self.finish_button.setObjectName("splashContinue")
+        self.finish_button.clicked.connect(self.finish_setup)
+        footer.addWidget(self.back_button)
+        footer.addStretch()
+        footer.addWidget(self.skip_button)
+        footer.addWidget(self.next_button)
+        footer.addWidget(self.finish_button)
+        root.addLayout(footer)
+
+        settings = current_settings or {}
+        saved_interface = settings.get("interface")
+        saved_channel = settings.get("channel", "")
+        for index in range(self.interface_combo.count()):
+            data = self.interface_combo.itemData(index)
+            if data and data[0] == saved_interface:
+                self.interface_combo.setCurrentIndex(index)
+                break
+        self.channel_edit.setEditText(str(saved_channel or ""))
+        self.detect_interfaces()
+        self._show_page(0)
+        self.interface_combo.currentIndexChanged.connect(self._update_vin_query_availability)
+        self.channel_edit.editTextChanged.connect(self._update_vin_query_availability)
+
+    def detect_interfaces(self):
+        current = self.channel_edit.currentText().strip()
+        ports = discover_interfaces()
+        self.channel_edit.clear()
+        for port in ports:
+            self.channel_edit.addItem(port["device"], port["device"])
+            index = self.channel_edit.count() - 1
+            self.channel_edit.setItemData(
+                index,
+                f'{port["label"]} | {port["description"]} | '
+                f'VID:PID {port["vid"] or "----"}:{port["pid"] or "----"}',
+                Qt.ToolTipRole,
+            )
+        if current:
+            self.channel_edit.setEditText(current)
+        elif len(ports) == 1:
+            self.channel_edit.setCurrentIndex(0)
+        elif not ports:
+            self.channel_edit.setEditText("")
+        recognized = [p for p in ports if p["kind"] in ("esp32", "elm327", "slcan")]
+        if len(recognized) == 1:
+            candidate = recognized[0]
+            for index in range(self.interface_combo.count()):
+                data = self.interface_combo.itemData(index)
+                if data and data[0] == candidate["kind"]:
+                    self.interface_combo.setCurrentIndex(index)
+                    self.channel_edit.setEditText(candidate["device"])
+                    break
+        self.interface_status.setText(
+            ("Detected: " + "; ".join(f'{p["device"]} — {p["label"]}' for p in ports))
+            if ports else
+            "No serial adapters detected. You can still enter a channel manually or continue without hardware."
+        )
+        self._update_vin_query_availability()
+
+    def _update_vin_query_availability(self):
+        data = self.interface_combo.currentData()
+        is_elm = bool(data and data[0] in ("elm327", "elm327_obd"))
+        self.read_vin_button.setEnabled(is_elm and bool(self.channel_edit.currentText().strip()))
+        if is_elm:
+            self.read_vin_button.setToolTip("Send the read-only OBD-II Mode 09 PID 02 VIN request.")
+        else:
+            self.read_vin_button.setToolTip(
+                "Active VIN querying is currently implemented for ELM327 serial adapters. "
+                "ESP32 firmware is presently receive-only."
+            )
+
+    def read_vin(self):
+        data = self.interface_combo.currentData()
+        port = self.channel_edit.currentText().strip()
+        if not data or data[0] != "elm327" or not port:
+            return
+        self.read_vin_button.setEnabled(False)
+        self.decode_vin_button.setEnabled(False)
+        self.vin_edit.setEnabled(False)
+        self.interface_combo.setEnabled(False)
+        self.channel_edit.setEnabled(False)
+        self.next_button.setEnabled(False)
+        self.back_button.setEnabled(False)
+        self.skip_button.setEnabled(False)
+        self.vin_status.setText("Querying VIN with OBD-II Mode 09 PID 02…")
+        self._vin_worker = VinQueryWorker(port, self)
+        self._vin_worker.completed.connect(self._vin_query_completed)
+        self._vin_worker.failed.connect(self._vin_query_failed)
+        self._vin_worker.finished.connect(self._vin_query_finished)
+        self._vin_worker.start()
+
+    def _vin_query_completed(self, vin):
+        self.vin_edit.setText(vin)
+        self.decode_vin()
+        self.vin_status.setText("VIN read successfully from the vehicle. " + self.vin_status.text())
+
+    def _vin_query_failed(self, message):
+        self.vin_status.setText(f"VIN query failed: {message}")
+
+    def _vin_query_finished(self):
+        if self._decode_worker and self._decode_worker.isRunning():
+            return
+        self.decode_vin_button.setEnabled(True)
+        self.vin_edit.setEnabled(True)
+        self.interface_combo.setEnabled(True)
+        self.channel_edit.setEnabled(True)
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(self.pages.currentIndex() > 0)
+        self.skip_button.setEnabled(True)
+        self._update_vin_query_availability()
+
+    def _apply_vehicle_identification(self, result):
+        self._decoded = result
+        if result.get("make"):
+            self.make_edit.setText(result["make"])
+        if result.get("model"):
+            self.model_edit.setText(result["model"])
+        if result.get("model_year"):
+            self.year_edit.setText(str(result["model_year"]))
+        profile_index = self.profile_combo.findData(result.get("profile_id", "generic"))
+        if profile_index >= 0:
+            self.profile_combo.setCurrentIndex(profile_index)
+
+    def decode_vin(self):
+        vin = validate_vin(self.vin_edit.text())
+        if not vin:
+            self.vin_status.setText("Enter a valid 17-character VIN before identifying the vehicle.")
+            return
+        result = identify_vehicle(vin)
+        self._apply_vehicle_identification(result)
+        if result.get("profile_id") in ("land_rover_l319_lr3", "land_rover_l319_lr4"):
+            self.vin_status.setText(
+                f'{result["confidence"].upper()} LOCAL MATCH: {result["reason"]} '
+                "Review the suggested vehicle details before continuing."
+            )
+            return
+        self.vin_status.setText(
+            "No installed manufacturer-specific package matches this VIN. "
+            "Checking NHTSA vPIC for manufacturer-reported make, model and year…"
+        )
+        self.read_vin_button.setEnabled(False)
+        self.decode_vin_button.setEnabled(False)
+        self.vin_edit.setEnabled(False)
+        self.interface_combo.setEnabled(False)
+        self.channel_edit.setEnabled(False)
+        self.next_button.setEnabled(False)
+        self.back_button.setEnabled(False)
+        self.skip_button.setEnabled(False)
+        self._decode_worker = VinDecodeWorker(vin, self)
+        self._decode_worker.completed.connect(self._vin_decode_completed)
+        self._decode_worker.failed.connect(self._vin_decode_failed)
+        self._decode_worker.finished.connect(self._vin_decode_finished)
+        self._decode_worker.start()
+
+    def _vin_decode_completed(self, result):
+        self._apply_vehicle_identification(result)
+        details = [
+            f'{result.get("make") or "Unknown make"} {result.get("model") or "Unknown model"}',
+            str(result.get("model_year") or "Year unavailable"),
+        ]
+        if result.get("engine_model"):
+            details.append(result["engine_model"])
+        self.vin_status.setText(
+            "NHTSA vPIC result: " + " | ".join(details)
+            + ". Generic OBD-II/CAN package selected; manufacturer-specific support is not inferred."
+        )
+
+    def _vin_decode_failed(self, message):
+        self.vin_status.setText(
+            "Online VIN decoding unavailable. The VIN remains saved as an unidentified "
+            "vehicle; enter make, model and year manually if needed. " + message
+        )
+
+    def _vin_decode_finished(self):
+        self.decode_vin_button.setEnabled(True)
+        self.vin_edit.setEnabled(True)
+        self.interface_combo.setEnabled(True)
+        self.channel_edit.setEnabled(True)
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(self.pages.currentIndex() > 0)
+        self.skip_button.setEnabled(True)
+        self._update_vin_query_availability()
+
+    def _show_page(self, index):
+        self.pages.setCurrentIndex(index)
+        titles = ["Connect an interface", "Identify your vehicle", "Review configuration"]
+        descriptions = [
+            "Detect a supported adapter or choose one manually. Detection inventories local interfaces; it does not transmit to the vehicle.",
+            "Read the VIN with a supported adapter, enter it manually, or provide vehicle details yourself.",
+            "Check the selected connection and vehicle profile before applying setup.",
+        ]
+        self.page_title.setText(titles[index])
+        self.page_description.setText(descriptions[index])
+        self.back_button.setEnabled(index > 0)
+        self.next_button.setVisible(index < 2)
+        self.finish_button.setVisible(index == 2)
+
+    def go_next(self):
+        page = self.pages.currentIndex()
+        if page == 0:
+            self._show_page(1)
+        elif page == 1:
+            self._build_review()
+            self._show_page(2)
+
+    def go_back(self):
+        self._show_page(max(0, self.pages.currentIndex() - 1))
+
+    def _build_review(self):
+        interface = self.interface_combo.currentData()
+        channel = self.channel_edit.currentText().strip()
+        profile_id = self.profile_combo.currentData() or "generic"
+        vin = validate_vin(self.vin_edit.text())
+        year_text = self.year_edit.text().strip()
+        try:
+            year = int(year_text) if year_text else None
+        except ValueError:
+            year = None
+        self.result_data = {
+            "interface": interface[0] if interface else "virtual",
+            "channel": channel or (interface[1] if interface else "freerov3r"),
+            "bitrate": 500000,
+            "vin": vin,
+            "make": self.make_edit.text().strip(),
+            "model": self.model_edit.text().strip(),
+            "model_year": year,
+            "profile_id": profile_id,
+            "identification": self._decoded or {},
+        }
+        rows = [
+            "CONNECTION",
+            f'Interface: {interface[1] if interface else "Virtual CAN"}',
+            f'Port / channel: {self.result_data["channel"] or "Not selected"}',
+            "",
+            "VEHICLE",
+            f'VIN: {vin or "Not provided"}',
+            f'Make: {self.result_data["make"] or "Not specified"}',
+            f'Model: {self.result_data["model"] or "Not specified"}',
+            f'Model year: {year or "Not specified"}',
+            f'Capability package: {self.profile_combo.currentText()}',
+            "",
+            "Only the generic OBD-II/CAN features are enabled for unidentified vehicles. "
+            "The L319 package is selected only when chosen or matched to an LR3/LR4 VIN.",
+        ]
+        self.review_text.setPlainText("\n".join(rows))
+
+    def finish_setup(self):
+        self._build_review()
+        profile_id = self.result_data["profile_id"]
+        year = self.result_data["model_year"]
+        valid_years = {
+            "land_rover_l319_lr3": range(2005, 2010),
+            "land_rover_l319_lr4": range(2010, 2017),
+        }
+        if year is not None and profile_id in valid_years and year not in valid_years[profile_id]:
+            QMessageBox.warning(
+                self,
+                "Vehicle profile does not match model year",
+                "The selected LR3/LR4 package does not match the entered model year. "
+                "Correct the year or select the generic OBD-II/CAN package.",
+            )
+            return
+        self.accept()
+
+    def reject(self):
+        for worker in (self._vin_worker, self._decode_worker):
+            if worker and worker.isRunning():
+                worker.wait(8000)
+        super().reject()
 
 
 class SensorGraphTab(QWidget):
@@ -495,42 +926,69 @@ class OBDTab(QWidget):
 
         note = QLabel(
             "<b>OBD-II</b><br>"
-            "Transmit/request support is disabled by default for safety. "
+            "Read-only Mode 01 polling is available when using the dedicated ELM327 OBD-II "
+            "connection. Other interfaces remain passive unless their transmit support is "
+            "implemented and explicitly enabled. No ECU write commands are sent. "
             "The simulator streams clearly labeled synthetic Mode 01 values; real vehicles "
-            "only populate this table when matching response frames are observed."
+            "also populate this table when matching response frames are observed."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        self.table = QTableWidget(len(OBD_PIDS), 4)
+        self.table = QTableWidget(len(OBD_PIDS), 5)
         self.pid_rows = {pid: row for row, (pid, _, _) in enumerate(OBD_PIDS)}
-        self.table.setHorizontalHeaderLabels(["PID", "Description", "Unit", "Value"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.setHorizontalHeaderLabels(["Poll", "PID", "Description", "Unit", "Value"])
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         for row, (pid, desc, unit) in enumerate(OBD_PIDS):
-            self.table.setItem(row, 0, QTableWidgetItem(pid))
-            self.table.setItem(row, 1, QTableWidgetItem(desc))
-            self.table.setItem(row, 2, QTableWidgetItem(unit))
-            self.table.setItem(row, 3, QTableWidgetItem("—"))
+            poll_item = QTableWidgetItem()
+            poll_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+            poll_item.setCheckState(Qt.Checked)
+            self.table.setItem(row, 0, poll_item)
+            self.table.setItem(row, 1, QTableWidgetItem(pid))
+            self.table.setItem(row, 2, QTableWidgetItem(desc))
+            self.table.setItem(row, 3, QTableWidgetItem(unit))
+            self.table.setItem(row, 4, QTableWidgetItem("—"))
+        self.table.setColumnWidth(0, 48)
+        self.table.setColumnWidth(1, 58)
+        self.table.setColumnWidth(3, 70)
         layout.addWidget(self.table)
 
+        poll_row = QHBoxLayout()
+        poll_row.addWidget(QLabel("Request interval:"))
+        self.poll_interval_ms = QSpinBox()
+        self.poll_interval_ms.setRange(50, 2000)
+        self.poll_interval_ms.setValue(200)
+        self.poll_interval_ms.setSuffix(" ms / PID")
+        self.poll_interval_ms.setToolTip("Delay between sequential Mode 01 PID requests on an active ELM327 connection.")
+        poll_row.addWidget(self.poll_interval_ms)
+        poll_row.addStretch()
+        layout.addLayout(poll_row)
+
         btn_row = QHBoxLayout()
-        self.request_btn = QPushButton("Request Selected PIDs (disabled)")
+        self.request_btn = QPushButton("Active polling is selected by the ELM327 OBD-II connection")
         self.request_btn.setEnabled(False)
-        self.request_btn.setToolTip("Transmit is disabled by SafetyPolicy")
+        self.request_btn.setToolTip("Polling starts only when the dedicated ELM327 OBD-II adapter is selected.")
         btn_row.addWidget(self.request_btn)
         clear_btn = QPushButton("Clear Values")
         clear_btn.clicked.connect(self.clear_values)
         btn_row.addWidget(clear_btn)
         layout.addLayout(btn_row)
 
+    def selected_pids(self):
+        return [
+            int(self.table.item(row, 1).text(), 16)
+            for row in range(self.table.rowCount())
+            if self.table.item(row, 0).checkState() == Qt.Checked
+        ]
+
     def update_value(self, pid, value):
         row = self.pid_rows.get(f"{pid:02X}")
         if row is not None:
-            self.table.item(row, 3).setText(f"{value:.2f}".rstrip("0").rstrip("."))
+            self.table.item(row, 4).setText(f"{value:.2f}".rstrip("0").rstrip("."))
 
     def clear_values(self):
         for row in range(self.table.rowCount()):
-            self.table.item(row, 3).setText("—")
+            self.table.item(row, 4).setText("—")
 
 
 class ModulesTab(QWidget):
@@ -553,6 +1011,13 @@ class ModulesTab(QWidget):
         self.scan_all_btn = QPushButton("Scan All Modules")
         self.scan_all_btn.clicked.connect(self.scan_all)
         actions.addWidget(self.scan_all_btn)
+        self.health_report_btn = QPushButton("Generate Health Report")
+        self.health_report_btn.setObjectName("primaryButton")
+        self.health_report_btn.setToolTip(
+            "Scan the complete module inventory and create a concise vehicle health summary."
+        )
+        self.health_report_btn.clicked.connect(self.generate_health_report)
+        actions.addWidget(self.health_report_btn)
         self.clear_module_btn = QPushButton("Clear Selected Module")
         self.clear_module_btn.clicked.connect(self.clear_module)
         actions.addWidget(self.clear_module_btn)
@@ -583,6 +1048,20 @@ class ModulesTab(QWidget):
         self.result_log.setReadOnly(True)
         self.result_log.setMaximumBlockCount(1000)
         right.addWidget(self.result_log, 1)
+        right.addWidget(QLabel("VEHICLE HEALTH REPORT"))
+        self.health_report = QPlainTextEdit()
+        self.health_report.setReadOnly(True)
+        self.health_report.setMinimumHeight(150)
+        self.health_report.setPlaceholderText(
+            "Run Generate Health Report for a module-by-module summary."
+        )
+        right.addWidget(self.health_report, 1)
+        report_export_row = QHBoxLayout()
+        self.export_health_report_btn = QPushButton("Export Health Report")
+        self.export_health_report_btn.clicked.connect(self.export_health_report)
+        report_export_row.addWidget(self.export_health_report_btn)
+        report_export_row.addStretch()
+        right.addLayout(report_export_row)
         split.addLayout(right, 2)
         layout.addLayout(split)
         self.set_simulation_enabled(False)
@@ -680,6 +1159,146 @@ class ModulesTab(QWidget):
         }, vin=vin)
         self.refresh_tree()
 
+    def generate_health_report(self):
+        """Run the available complete inventory check and render an evidence-labelled report."""
+        vin = self.vin_provider()
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        if not self.simulation_enabled:
+            report = [
+                "FREEROV3R VEHICLE HEALTH REPORT",
+                f"Generated: {timestamp}",
+                f"Vehicle VIN: {vin or 'Not selected'}",
+                "",
+                "RESULT: LIVE MODULE SCAN NOT AVAILABLE",
+                "",
+                "No physical vehicle modules were interrogated. The current live hardware "
+                "connection supports passive CAN capture only; live ECU addressing and "
+                "module diagnostic requests are not implemented in this build.",
+                "",
+                "The module inventory shown in this workspace is a development fixture. "
+                "It must not be interpreted as the installed modules or actual condition "
+                "of the vehicle.",
+                "",
+                "NEXT STEP",
+                "Select 'Simulated vehicle (synthetic OBD-II)' in Capture and start listening "
+                "to generate a clearly labelled demonstration report. For a real vehicle "
+                "report, verified model-specific ECU addressing and read-only diagnostic "
+                "services must be implemented first.",
+                "",
+                "DATA INTEGRITY: No real ECU results were created or inferred.",
+            ]
+            self.health_report.setPlainText("\n".join(report))
+            self.result_log.appendPlainText(
+                "HEALTH REPORT: blocked. Live module interrogation is not implemented; no ECU was queried."
+            )
+            return
+
+        if not vin:
+            self.health_report.setPlainText(
+                "FREEROV3R VEHICLE HEALTH REPORT\n"
+                f"Generated: {timestamp}\n"
+                "RESULT: NOT RUN\n\n"
+                "Select a vehicle and save its 17-character VIN in the Sensors tab, "
+                "then run the report again. No module scan was performed."
+            )
+            return
+
+        modules = self.network.scan_all()
+        dtc_entries = [
+            (module, dtc) for module in modules for dtc in module.dtcs
+        ]
+        affected = [module for module in modules if module.dtcs]
+        severity_counts = {}
+        for module, dtc in dtc_entries:
+            severity = (dtc.severity or "Unclassified").strip()
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+        lines = [
+            "FREEROV3R VEHICLE HEALTH REPORT",
+            f"Generated: {timestamp}",
+            f"Vehicle VIN: {vin}",
+            "DATA SOURCE: SYNTHETIC MODULE SIMULATOR",
+            "IMPORTANT: This is a demonstration report, not a scan of a physical vehicle.",
+            "",
+            "EXECUTIVE SUMMARY",
+            f"Module inventory scanned: {len(modules)}",
+            f"Modules responding in simulator: {sum(1 for module in modules if module.available)}",
+            f"Modules with DTC entries: {len(affected)}",
+            f"Total DTC entries: {len(dtc_entries)}",
+        ]
+        if severity_counts:
+            lines.append("DTC severity breakdown:")
+            lines.extend(
+                f"  • {severity}: {count}"
+                for severity, count in sorted(severity_counts.items())
+            )
+        else:
+            lines.append("DTC severity breakdown: No DTC entries.")
+        lines.extend(["", "MODULE FINDINGS"])
+        for module in modules:
+            status = "FAULTS RECORDED" if module.dtcs else "NO DTC ENTRIES"
+            if not module.available:
+                status = "NO SIMULATOR RESPONSE"
+            lines.append(f"{module.code} — {module.name} [{module.category}]")
+            lines.append(f"  Status: {status}")
+            if module.dtcs:
+                for dtc in module.dtcs:
+                    lines.append(
+                        f"  • {dtc.code} | {dtc.status} | {dtc.severity}: {dtc.description}"
+                    )
+            else:
+                lines.append("  • No DTC entries in simulator fixture.")
+        lines.extend([
+            "",
+            "ASSESSMENT",
+            (
+                f"{len(affected)} module(s) contain example DTC entries. "
+                "Review each listed code against verified service information."
+                if affected else
+                "No DTC entries are present in this simulator fixture."
+            ),
+            "",
+            "LIMITATIONS",
+            "All module names, response states and DTC entries above are synthetic test data. "
+            "They do not establish actual vehicle fitment, ECU communication, fault status, "
+            "roadworthiness or repair requirements. No commands were sent to a physical ECU.",
+        ])
+        report_text = "\n".join(lines)
+        self.health_report.setPlainText(report_text)
+        self.result_log.appendPlainText(
+            f"HEALTH REPORT: {len(modules)} simulated modules checked; "
+            f"{len(affected)} with DTC entries; {len(dtc_entries)} total DTC(s)."
+        )
+        self.history_callback(
+            "module_health_report",
+            "Module health report generated (simulator)",
+            {
+                "source": "synthetic_module_simulator",
+                "modules_scanned": len(modules),
+                "modules_with_dtcs": len(affected),
+                "dtc_count": len(dtc_entries),
+                "severity_counts": severity_counts,
+                "report": report_text,
+            },
+            vin=vin,
+        )
+        self.refresh_tree()
+
+    def export_health_report(self):
+        report = self.health_report.toPlainText().strip()
+        if not report:
+            QMessageBox.information(
+                self, "No health report", "Generate a health report before exporting."
+            )
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export vehicle health report", "vehicle_health_report.txt",
+            "Text report (*.txt);;Markdown (*.md)"
+        )
+        if path:
+            Path(path).write_text(report + "\n", encoding="utf-8")
+            self.result_log.appendPlainText(f"Health report exported: {path}")
+
     def clear_selected_code(self):
         code = self._selected_code()
         row = self.dtc_table.currentRow()
@@ -728,75 +1347,613 @@ class ModulesTab(QWidget):
 
 
 class NetworkOverviewTab(QWidget):
-    """Thinkcar-style module status overview; colors reflect scan evidence only."""
-    def __init__(self, network, vin_provider=None, parent=None):
+    """Interactive, evidence-labelled topology view over the current module inventory."""
+
+    STATUS_STYLES = {
+        "faults": ("#ef5350", "#351d22", "ATTENTION"),
+        "clean": ("#35b779", "#17352b", "NO FAULTS"),
+        "unscanned": ("#9aa7b5", "#202a35", "NOT SCANNED"),
+        "offline": ("#87909a", "#24282d", "NO RESPONSE"),
+    }
+
+    def __init__(self, network, vin_provider=None, history_callback=None, parent=None):
         super().__init__(parent)
         self.network = network
         self.vin_provider = vin_provider or (lambda: None)
-        layout = QVBoxLayout(self)
+        self.history_callback = history_callback or (lambda *args, **kwargs: None)
+        self.selected_code = None
+        self.map_buttons = {}
+        self._building = False
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 10, 12, 12)
+        root.setSpacing(10)
+
+        header = QHBoxLayout()
+        title_column = QVBoxLayout()
+        title_column.setSpacing(2)
+        title = QLabel("VEHICLE NETWORK TOPOLOGY")
+        title.setObjectName("sectionTitle")
+        title_column.addWidget(title)
         self.heading = QLabel()
         self.heading.setWordWrap(True)
-        layout.addWidget(self.heading)
-        self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["System / module", "Health", "DTCs", "Last scan"])
-        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        layout.addWidget(self.tree)
-        row = QHBoxLayout()
-        refresh = QPushButton("Refresh module status")
-        refresh.clicked.connect(self.refresh)
-        row.addWidget(refresh)
-        row.addStretch()
-        layout.addLayout(row)
+        self.heading.setObjectName("mutedText")
+        title_column.addWidget(self.heading)
+        header.addLayout(title_column, 1)
+
+        self.scan_all_button = QPushButton("⟳  Scan All Modules")
+        self.scan_all_button.setObjectName("primaryButton")
+        self.scan_all_button.clicked.connect(self.scan_all)
+        header.addWidget(self.scan_all_button)
+        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button.clicked.connect(self.refresh)
+        header.addWidget(self.refresh_button)
+        root.addLayout(header)
+
+        self.summary_row = QHBoxLayout()
+        self.summary_cards = {}
+        for key, label in (
+            ("total", "MODULES"),
+            ("scanned", "SCANNED"),
+            ("faults", "WITH DTCS"),
+            ("unscanned", "NOT SCANNED"),
+        ):
+            card = QFrame()
+            card.setObjectName("topologyMetric")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 8, 12, 8)
+            value = QLabel("0")
+            value.setObjectName("topologyMetricValue")
+            caption = QLabel(label)
+            caption.setObjectName("topologyMetricLabel")
+            card_layout.addWidget(value)
+            card_layout.addWidget(caption)
+            self.summary_cards[key] = value
+            self.summary_row.addWidget(card)
+        root.addLayout(self.summary_row)
+
+        legend = QHBoxLayout()
+        legend.addWidget(QLabel("STATUS:"))
+        for color, label in (
+            ("#35b779", "No faults"),
+            ("#ef5350", "DTCs present"),
+            ("#9aa7b5", "Not scanned"),
+            ("#87909a", "No response"),
+        ):
+            swatch = QLabel("●")
+            swatch.setStyleSheet(f"color:{color};font-size:15px;")
+            legend.addWidget(swatch)
+            text = QLabel(label)
+            text.setObjectName("mutedText")
+            legend.addWidget(text)
+        legend.addStretch(1)
+        self.view_toggle = QPushButton("System List")
+        self.view_toggle.setCheckable(True)
+        self.view_toggle.toggled.connect(self._toggle_view)
+        legend.addWidget(self.view_toggle)
+        root.addLayout(legend)
+
+        content = QHBoxLayout()
+        content.setSpacing(10)
+
+        self.map_scroll = QScrollArea()
+        self.map_scroll.setWidgetResizable(True)
+        self.map_scroll.setFrameShape(QFrame.NoFrame)
+        self.map_scroll.setMinimumWidth(0)
+        self.map_scroll.setObjectName("topologyMapScroll")
+        self.map_body = QWidget()
+        self.map_grid = QGridLayout(self.map_body)
+        self.map_grid.setContentsMargins(8, 8, 8, 8)
+        self.map_grid.setSpacing(10)
+        self.map_tree = QTreeWidget()
+        self.map_tree.setObjectName("thinkcarTopologyTree")
+        self.map_tree.setHeaderLabels(["VEHICLE NETWORK / MODULE", "SCAN STATUS", "DTCs"])
+        self.map_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.map_tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.map_tree.header().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.map_tree.setAlternatingRowColors(False)
+        self.map_tree.setUniformRowHeights(True)
+        self.map_tree.itemSelectionChanged.connect(self._map_selection_changed)
+        self.map_grid.addWidget(self.map_tree, 0, 0)
+        self.map_scroll.setWidget(self.map_body)
+        content.addWidget(self.map_scroll, 3)
+
+        self.system_list = QTreeWidget()
+        self.system_list.setHeaderLabels(["System / module", "Status", "DTCs", "Last scan"])
+        self.system_list.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.system_list.setMinimumWidth(360)
+        self.system_list.itemSelectionChanged.connect(self._list_selection_changed)
+        self.system_list.itemDoubleClicked.connect(self._open_module_details)
+        self.system_list.hide()
+        content.addWidget(self.system_list, 3)
+
+        detail_frame = QFrame()
+        detail_frame.setObjectName("topologyDetailPanel")
+        detail_layout = QVBoxLayout(detail_frame)
+        detail_layout.setContentsMargins(14, 14, 14, 14)
+        detail_layout.setSpacing(8)
+        detail_title = QLabel("MODULE DETAILS")
+        detail_title.setObjectName("sectionTitle")
+        detail_layout.addWidget(detail_title)
+        self.detail_name = QLabel("Select a module")
+        self.detail_name.setObjectName("topologyDetailName")
+        self.detail_name.setWordWrap(True)
+        detail_layout.addWidget(self.detail_name)
+        self.detail_status = QLabel("No module selected")
+        self.detail_status.setObjectName("mutedText")
+        detail_layout.addWidget(self.detail_status)
+        self.detail_text = QPlainTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setPlaceholderText("Select a module node to inspect scan status and diagnostic trouble codes.")
+        detail_layout.addWidget(self.detail_text, 1)
+        self.scan_selected_button = QPushButton("Scan Selected Module")
+        self.scan_selected_button.clicked.connect(self.scan_selected)
+        self.scan_selected_button.setEnabled(False)
+        detail_layout.addWidget(self.scan_selected_button)
+        content.addWidget(detail_frame, 2)
+        root.addLayout(content, 1)
+
+        self._toggle_view(False)
         self.refresh()
 
     def set_network(self, network):
         self.network = network
+        self.selected_code = None
         self.refresh()
 
-    def refresh(self):
-        vin = self.vin_provider() or "No VIN detected"
-        self.heading.setText(
-            f"<b>Vehicle network overview</b><br>VIN: {vin}<br>"
-            "Green = scanned, no DTCs. Red = one or more DTCs. Gray = not scanned or no response. "
-            "Current module inventory is simulated until live L319 addressing is verified."
+    def _module_status(self, module):
+        if not module.available:
+            return "offline"
+        if module.last_scan is None:
+            return "unscanned"
+        if module.dtcs:
+            return "faults"
+        return "clean"
+
+    def _status_text(self, module):
+        return self.STATUS_STYLES[self._module_status(module)][2]
+
+    def _toggle_view(self, list_mode):
+        self.map_scroll.setVisible(not list_mode)
+        self.system_list.setVisible(list_mode)
+        self.view_toggle.setText("Topology Map" if list_mode else "System List")
+
+    def _clear_map(self):
+        self.map_tree.clear()
+        self.map_buttons.clear()
+
+    def _make_module_node(self, module):
+        status = self._module_status(module)
+        accent, background, label = self.STATUS_STYLES[status]
+        node = QPushButton()
+        node.setObjectName("topologyModuleNode")
+        node.setCheckable(True)
+        node.setMinimumSize(145, 82)
+        node.setMaximumHeight(100)
+        node.setStyleSheet(
+            "QPushButton#topologyModuleNode {"
+            f"background:{background};border:1px solid {accent};"
+            "border-radius:9px;padding:8px;text-align:left;color:#edf2f7;}"
+            "QPushButton#topologyModuleNode:checked {border:2px solid #58a6ff;}"
+            "QPushButton#topologyModuleNode:hover {border:2px solid #a9c9e8;}"
         )
-        self.tree.clear()
+        dtc_count = len(module.dtcs)
+        node.setText(f"{module.code}\n{module.name}\n{label}  ·  {dtc_count} DTC")
+        node.setToolTip(
+            f"{module.name}\nStatus: {label}\nDTC count: {dtc_count}\n"
+            "Inventory is simulated; physical network path and ECU address are not verified."
+        )
+        node.clicked.connect(lambda checked=False, code=module.code: self.select_module(code))
+        self.map_buttons[module.code] = node
+        return node
+
+    def _build_map(self):
+        """Build a Thinkcar-style expandable vehicle/network/module tree.
+
+        Network membership comes from the transcribed 2010 L319 factory
+        reference. Scan state is overlaid only where a simulator fixture can
+        be matched; unmatched factory entries remain reference-only.
+        """
+        self._clear_map()
+        root = QTreeWidgetItem([
+            f"2010 DISCOVERY 4  •  {L319_DEFAULT_ENGINE}",
+            "FACTORY REFERENCE",
+            "—",
+        ])
+        root.setExpanded(True)
+        root.setForeground(0, QBrush(QColor("#58a6ff")))
+        self.map_tree.addTopLevelItem(root)
+
+        # Explicit aliases only where the simulator fixture represents the
+        # same functional module. No guessed mapping for optional equipment.
+        fixture_aliases = {
+            "ABS/DSC": "ABS",
+            "AIR-SUS": "RLM",
+            "SAS": "SASM",
+            "IC-HS": "IC",
+            "IC-MS": "IC",
+        }
+        for network_key in ("HS-CAN", "MS-CAN", "MOST"):
+            info = L319_WIRING_NETWORKS.get(network_key, {})
+            branch = QTreeWidgetItem([
+                f"▰  {info.get('title', network_key)}",
+                "WIRING REFERENCE",
+                "—",
+            ])
+            branch.setExpanded(True)
+            branch.setForeground(0, QBrush(QColor("#58a6ff")))
+            branch.setToolTip(0, f"{info.get('description', '')}\n{info.get('pages', '')}")
+            root.addChild(branch)
+
+            for code, component, name, connector, notes in info.get("modules", []):
+                fixture_code = fixture_aliases.get(code, code)
+                try:
+                    module = self.network.get_module(fixture_code)
+                except (KeyError, AttributeError):
+                    module = None
+
+                if module is None:
+                    status = "REFERENCE ONLY"
+                    dtc_count = "—"
+                    accent = "#8995a3"
+                else:
+                    status = self._status_text(module)
+                    dtc_count = str(len(module.dtcs))
+                    accent = self.STATUS_STYLES[self._module_status(module)][0]
+
+                item = QTreeWidgetItem([
+                    f"{code}  ·  {name}  [{component}]",
+                    status,
+                    dtc_count,
+                ])
+                item.setData(0, Qt.UserRole, {
+                    "fixture_code": fixture_code if module is not None else None,
+                    "code": code,
+                    "component": component,
+                    "name": name,
+                    "connector": connector,
+                    "notes": notes,
+                    "network": network_key,
+                })
+                item.setForeground(0, QBrush(QColor(accent)))
+                item.setForeground(1, QBrush(QColor(accent)))
+                item.setToolTip(
+                    0,
+                    f"{info.get('title', network_key)}\nFactory component: {component}\n"
+                    f"Connector: {connector}\n{notes}"
+                )
+                branch.addChild(item)
+
+        self.map_tree.expandAll()
+        self.map_tree.resizeColumnToContents(1)
+        self.map_tree.resizeColumnToContents(2)
+
+    def _map_selection_changed(self):
+        item = self.map_tree.currentItem()
+        data = item.data(0, Qt.UserRole) if item else None
+        if not isinstance(data, dict):
+            return
+        fixture_code = data.get("fixture_code")
+        if fixture_code:
+            self.select_module(fixture_code)
+            return
+
+        network_key = data.get("network")
+        info = L319_WIRING_NETWORKS.get(network_key, {})
+        self.selected_code = None
+        self.detail_name.setText(f"{data.get('code')}  |  {data.get('name')}")
+        self.detail_status.setText("FACTORY REFERENCE ONLY  •  NOT IN SIMULATOR INVENTORY")
+        self.detail_status.setStyleSheet("color:#8995a3;font-weight:700;")
+        self.detail_text.setPlainText(
+            f"FACTORY COMPONENT: {data.get('component')}\n"
+            f"NETWORK: {info.get('title', network_key)}\n"
+            f"REFERENCE: {info.get('pages', '')}\n\n"
+            f"CONNECTOR / PIN REFERENCES\n{data.get('connector', '')}\n\n"
+            f"NOTES\n{data.get('notes', '')}\n\n"
+            f"NETWORK CONDUCTORS\n{info.get('pair', '')}\n\n"
+            f"DIAGNOSTIC SOCKET\n{info.get('dlc', '')}\n\n"
+            "DATA SOURCE: TRANSCRIBED 2010 L319 FACTORY WIRING REFERENCE.\n"
+            "LIVE ECU PRESENCE AND SCAN STATUS HAVE NOT BEEN VERIFIED."
+        )
+        self.scan_selected_button.setEnabled(False)
+
+    def _build_system_list(self):
+        self.system_list.clear()
         groups = {}
         for module in self.network.modules:
             group = groups.get(module.category)
             if group is None:
                 group = QTreeWidgetItem([module.category, "", "", ""])
-                self.tree.addTopLevelItem(group)
+                self.system_list.addTopLevelItem(group)
                 groups[module.category] = group
-            if not module.available:
-                status, color = "No response", QColor("#888888")
-            elif module.last_scan is None:
-                status, color = "Not scanned", QColor("#888888")
-            elif module.dtcs:
-                status, color = "Attention", QColor("#ef5350")
-            else:
-                status, color = "No faults", QColor("#43a047")
             item = QTreeWidgetItem([
-                f"{module.code} — {module.name}", status,
-                str(len(module.dtcs)), module.last_scan or "—"
+                f"{module.code} — {module.name}",
+                self._status_text(module),
+                str(len(module.dtcs)),
+                module.last_scan or "—",
             ])
             item.setData(0, Qt.UserRole, module.code)
-            for col in (0, 1):
-                item.setForeground(col, QBrush(color))
             group.addChild(item)
-        for group in groups.values():
-            children = [self.network.get_module(group.child(i).data(0, Qt.UserRole))
-                        for i in range(group.childCount())]
-            if any(m.available and m.last_scan is not None and m.dtcs for m in children):
-                group.setForeground(0, QBrush(QColor("#ef5350")))
-            elif children and all(m.available and m.last_scan is not None and not m.dtcs for m in children):
-                group.setForeground(0, QBrush(QColor("#43a047")))
-            else:
-                group.setForeground(0, QBrush(QColor("#888888")))
-        self.tree.expandAll()
-        self.tree.resizeColumnToContents(1)
-        self.tree.resizeColumnToContents(2)
-        self.tree.resizeColumnToContents(3)
+            accent = self.STATUS_STYLES[self._module_status(module)][0]
+            for col in (0, 1):
+                item.setForeground(col, QBrush(QColor(accent)))
+        self.system_list.expandAll()
+        self.system_list.resizeColumnToContents(1)
+        self.system_list.resizeColumnToContents(2)
+        self.system_list.resizeColumnToContents(3)
+
+    def refresh(self):
+        self._building = True
+        try:
+            modules = list(self.network.modules)
+            scanned = [m for m in modules if m.last_scan is not None]
+            faults = [m for m in modules if m.last_scan is not None and m.dtcs]
+            self.summary_cards["total"].setText(str(len(modules)))
+            self.summary_cards["scanned"].setText(str(len(scanned)))
+            self.summary_cards["faults"].setText(str(len(faults)))
+            self.summary_cards["unscanned"].setText(str(sum(m.last_scan is None for m in modules)))
+            vin = self.vin_provider() or "NO VIN SELECTED"
+            self.heading.setText(
+                f"VIN: {vin}  •  {len(modules)} inventory entries  •  "
+                "SIMULATED DATA / PHYSICAL ECU NETWORK NOT VERIFIED"
+            )
+            self._build_map()
+            self._build_system_list()
+        finally:
+            self._building = False
+
+        if self.selected_code and any(m.code == self.selected_code for m in modules):
+            self.select_module(self.selected_code)
+        elif modules:
+            self.select_module(modules[0].code)
+        else:
+            self._show_empty_selection()
+
+    def _show_empty_selection(self):
+        self.selected_code = None
+        self.detail_name.setText("No modules in inventory")
+        self.detail_status.setText("No scan data")
+        self.detail_text.clear()
+        self.scan_selected_button.setEnabled(False)
+
+    def select_module(self, code):
+        try:
+            module = self.network.get_module(code)
+        except (KeyError, AttributeError):
+            self._show_empty_selection()
+            return
+        self.selected_code = code
+        for key, button in self.map_buttons.items():
+            button.setChecked(key == code)
+        for index in range(self.system_list.topLevelItemCount()):
+            group = self.system_list.topLevelItem(index)
+            for child_index in range(group.childCount()):
+                child = group.child(child_index)
+                if child.data(0, Qt.UserRole) == code:
+                    self.system_list.setCurrentItem(child)
+                    break
+
+        status = self._status_text(module)
+        accent = self.STATUS_STYLES[self._module_status(module)][0]
+        self.detail_name.setText(f"{module.code}  |  {module.name}")
+        self.detail_status.setText(f"{status}  •  {len(module.dtcs)} DTC(S)")
+        self.detail_status.setStyleSheet(f"color:{accent};font-weight:700;")
+        lines = [
+            f"MODULE: {module.code}",
+            f"SYSTEM GROUP: {module.category}",
+            f"STATUS: {status}",
+            f"LAST SCAN: {module.last_scan or 'Never'}",
+            f"AVAILABILITY: {'Responding in simulator' if module.available else 'No response in simulator'}",
+            "",
+            "DIAGNOSTIC TROUBLE CODES",
+        ]
+        if module.dtcs:
+            for dtc in module.dtcs:
+                lines.extend([
+                    f"{dtc.code}  |  {dtc.status}  |  {dtc.severity}",
+                    dtc.description,
+                    "",
+                ])
+        else:
+            lines.append("No DTC entries in the current module fixture.")
+        lines.extend([
+            "",
+            "DATA SOURCE: SIMULATED MODULE FIXTURE",
+            "ECU ADDRESS: NOT VERIFIED",
+            "PHYSICAL BUS / ROUTE: NOT VERIFIED",
+        ])
+        self.detail_text.setPlainText("\n".join(lines))
+        self.scan_selected_button.setEnabled(bool(module.available))
+
+    def _list_selection_changed(self):
+        if self._building:
+            return
+        item = self.system_list.currentItem()
+        code = item.data(0, Qt.UserRole) if item else None
+        if code:
+            self.select_module(code)
+
+    def _open_module_details(self, item, column):
+        code = item.data(0, Qt.UserRole)
+        if code:
+            self.select_module(code)
+
+    def scan_selected(self):
+        if not self.selected_code:
+            return
+        module = self.network.scan_module(self.selected_code)
+        self.history_callback(
+            "topology_module_scan",
+            f"Topology module scan: {module.code}",
+            {"module": module.code, "source": "simulated_module_network",
+             "dtcs": [dtc.code for dtc in module.dtcs]},
+            vin=self.vin_provider(),
+        )
+        self.refresh()
+        self.select_module(module.code)
+
+    def scan_all(self):
+        modules = self.network.scan_all()
+        self.history_callback(
+            "topology_full_scan",
+            "Topology full inventory scan",
+            {"source": "simulated_module_network",
+             "modules_scanned": [module.code for module in modules],
+             "dtcs": {module.code: [dtc.code for dtc in module.dtcs] for module in modules}},
+            vin=self.vin_provider(),
+        )
+        self.refresh()
+
+
+
+class WiringDiagramsTab(QWidget):
+    """Factory-reference L319 network explorer and optional local PDF viewer."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pdf_document = None
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 10, 12, 12)
+        root.setSpacing(10)
+
+        heading = QLabel("LAND ROVER DISCOVERY 4 / LR4  •  FACTORY WIRING REFERENCE")
+        heading.setObjectName("sectionTitle")
+        root.addWidget(heading)
+        intro = QLabel(
+            f"Default configuration: {L319_DEFAULT_ENGINE}  •  2010 model-year LHD reference. "
+            "Factory network data is separate from simulated scan results and is not proof "
+            "that a particular vehicle is equipped with every listed module."
+        )
+        intro.setWordWrap(True)
+        intro.setObjectName("mutedText")
+        root.addWidget(intro)
+
+        self.pages = QTabWidget()
+        root.addWidget(self.pages, 1)
+
+        network_page = QWidget()
+        network_layout = QVBoxLayout(network_page)
+        network_layout.setContentsMargins(4, 6, 4, 4)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("NETWORK:"))
+        self.network_select = QComboBox()
+        for key, info in L319_WIRING_NETWORKS.items():
+            self.network_select.addItem(info["title"], key)
+        self.network_select.currentIndexChanged.connect(self.refresh_network)
+        top.addWidget(self.network_select, 1)
+        network_layout.addLayout(top)
+
+        self.network_summary = QLabel()
+        self.network_summary.setWordWrap(True)
+        self.network_summary.setObjectName("mutedText")
+        network_layout.addWidget(self.network_summary)
+
+        split = QHBoxLayout()
+        self.module_tree = QTreeWidget()
+        self.module_tree.setHeaderLabels(["Module", "Factory ID"])
+        self.module_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.module_tree.setMinimumWidth(300)
+        self.module_tree.itemSelectionChanged.connect(self.show_module)
+        split.addWidget(self.module_tree, 2)
+
+        detail_column = QVBoxLayout()
+        detail_title = QLabel("WIRING / CONNECTOR DETAILS")
+        detail_title.setObjectName("sectionTitle")
+        detail_column.addWidget(detail_title)
+        self.module_detail = QPlainTextEdit()
+        self.module_detail.setReadOnly(True)
+        self.module_detail.setPlaceholderText("Select a factory-listed module.")
+        detail_column.addWidget(self.module_detail, 1)
+        split.addLayout(detail_column, 3)
+        network_layout.addLayout(split, 1)
+        self.pages.addTab(network_page, "Network Reference")
+
+        pdf_page = QWidget()
+        pdf_layout = QVBoxLayout(pdf_page)
+        pdf_controls = QHBoxLayout()
+        load_pdf = QPushButton("Load Local Wiring PDF")
+        load_pdf.clicked.connect(self.load_local_pdf)
+        pdf_controls.addWidget(load_pdf)
+        open_source = QPushButton("Open Online Reference")
+        open_source.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(L319_WIRING_SOURCE_URL)))
+        pdf_controls.addWidget(open_source)
+        pdf_controls.addStretch(1)
+        pdf_layout.addLayout(pdf_controls)
+        if HAS_PDF_VIEWER:
+            self.pdf_view = QPdfView()
+            self.pdf_document = QPdfDocument(self)
+            self.pdf_view.setDocument(self.pdf_document)
+            try:
+                self.pdf_view.setZoomMode(QPdfView.ZoomMode.FitToWidth)
+                self.pdf_view.setPageMode(QPdfView.PageMode.MultiPage)
+            except AttributeError:
+                pass
+            pdf_layout.addWidget(self.pdf_view, 1)
+            pdf_note = QLabel("Load a PDF copy you are entitled to use. Scroll through pages; the network reference identifies the relevant factory page numbers.")
+        else:
+            self.pdf_view = None
+            pdf_note = QLabel(
+                "This build does not have the optional Qt PDF viewer installed. "
+                "Load Local Wiring PDF will open your selected file in the system PDF reader. "
+                "The factory network references remain available in the Network Reference tab."
+            )
+        pdf_note.setWordWrap(True)
+        pdf_note.setObjectName("mutedText")
+        pdf_layout.addWidget(pdf_note)
+        self.pages.addTab(pdf_page, "Factory Diagram Viewer")
+
+        self.refresh_network()
+
+    def refresh_network(self, *_):
+        key = self.network_select.currentData()
+        info = L319_WIRING_NETWORKS.get(key)
+        self.module_tree.clear()
+        self.module_detail.clear()
+        if not info:
+            return
+        self.network_summary.setText(
+            f"{info['description']}\n{info['pages']}\n{info['pair']}\n"
+            f"Diagnostic socket: {info['dlc']}"
+        )
+        for code, component, name, connector, notes in info["modules"]:
+            item = QTreeWidgetItem([f"{code}  •  {name}", component])
+            item.setData(0, Qt.UserRole, (code, component, name, connector, notes, key))
+            self.module_tree.addTopLevelItem(item)
+        if self.module_tree.topLevelItemCount():
+            self.module_tree.setCurrentItem(self.module_tree.topLevelItem(0))
+
+    def show_module(self):
+        item = self.module_tree.currentItem()
+        data = item.data(0, Qt.UserRole) if item else None
+        if not data:
+            self.module_detail.clear()
+            return
+        code, component, name, connector, notes, key = data
+        info = L319_WIRING_NETWORKS[key]
+        self.module_detail.setPlainText(
+            f"MODULE: {name}\nSHORT NAME: {code}\nFACTORY COMPONENT ID: {component}\n"
+            f"NETWORK: {info['title']}\nREFERENCE: {info['pages']}\n\n"
+            f"CONNECTOR / PIN REFERENCES\n{connector}\n\n"
+            f"NOTES\n{notes}\n\n"
+            f"NETWORK CONDUCTORS\n{info['pair']}\n\n"
+            f"DIAGNOSTIC SOCKET\n{info['dlc']}\n\n"
+            "DATA STATUS: TRANSCRIBED FACTORY REFERENCE. NOT LIVE VEHICLE DETECTION. "
+            "Confirm model year, VIN, market, equipment and connector view before probing."
+        )
+
+    def load_local_pdf(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Land Rover wiring diagram PDF", "", "PDF files (*.pdf)"
+        )
+        if not path:
+            return
+        if HAS_PDF_VIEWER:
+            status = self.pdf_document.load(path)
+            if status != QPdfDocument.Status.Ready:
+                QMessageBox.warning(self, "PDF load failed", f"Qt could not load this PDF. Status: {status}")
+                return
+            self.pages.setCurrentIndex(1)
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
 
 class VehicleHistoryTab(QWidget):
@@ -1033,10 +2190,224 @@ class SolutionsTab(QWidget):
         QMessageBox.information(self, "Saved", f"Solution saved locally for {vin} / {code}.")
 
 
+class SpecialFunctionsTab(QWidget):
+    """Service-routine catalog with guarded preflight and VIN-linked audit history."""
+    ROUTINES = [
+        ("Service & Maintenance", "Instrument cluster / service system", "Service interval reset",
+         "Reset the oil-service or scheduled-maintenance reminder after the required maintenance has been completed.",
+         "Correct service procedure completed; vehicle configuration and reset method verified."),
+        ("Service & Maintenance", "Battery / body electrical system", "Battery registration or adaptation",
+         "Register a replacement battery where the vehicle requires battery monitoring adaptation.",
+         "Battery specification and monitoring-system support verified for the exact vehicle."),
+        ("Service & Maintenance", "Brake system", "Brake pad replacement service mode",
+         "Retract or release the electronic parking-brake mechanism for rear brake service, where supported.",
+         "Vehicle safely secured; correct axle and actuator procedure confirmed."),
+        ("Air Suspension", "Air suspension control module", "Ride-height calibration",
+         "Calibrate commanded suspension heights against measured reference points.",
+         "Level measuring surface, correct tire pressures, ride-height measurements and vehicle-specific values."),
+        ("Air Suspension", "Air suspension control module", "Compressor activation test",
+         "Run a controlled compressor and valve-block functional test.",
+         "Leak check, pressure limits and compressor thermal limits verified."),
+        ("Air Suspension", "Air suspension control module", "Suspension mode / transport-mode control",
+         "Inspect or change supported suspension operating modes for service or transport.",
+         "Exact mode support and safe vehicle state verified."),
+        ("Brakes & ABS", "ABS / stability control module", "ABS hydraulic unit bleeding",
+         "Guide a supported automated bleed procedure for the ABS hydraulic unit after brake-system work.",
+         "Correct pressure bleeder setup, fluid specification and manufacturer bleed sequence."),
+        ("Brakes & ABS", "ABS / stability control module", "Brake pressure sensor calibration",
+         "Calibrate supported brake-pressure sensing after relevant component replacement.",
+         "No active hydraulic faults; sensor and calibration conditions verified."),
+        ("Parking Brake", "Electronic parking-brake module", "Parking brake service mode",
+         "Move supported parking-brake actuators into a service position for brake work.",
+         "Vehicle secured against movement; actuator and service procedure verified."),
+        ("Parking Brake", "Electronic parking-brake module", "Parking brake actuator calibration",
+         "Run the supported actuator initialization or calibration after service.",
+         "Mechanical installation checked and vehicle-specific calibration method verified."),
+        ("Engine & Emissions", "Engine control module", "DPF regeneration",
+         "Request a supported diesel particulate-filter regeneration when diagnostic conditions permit.",
+         "Oil level, coolant temperature, fuel level, DPF loading and fire-safety conditions checked."),
+        ("Engine & Emissions", "Engine control module", "Throttle adaptation",
+         "Run a supported throttle-body or throttle-position adaptation after relevant repairs.",
+         "No unresolved engine faults; exact engine and throttle procedure verified."),
+        ("Engine & Emissions", "Engine control module", "EGR adaptation / relearn",
+         "Run a supported EGR initialization or learned-value procedure after component service.",
+         "Correct engine variant and required temperature / ignition conditions verified."),
+        ("Transmission & Driveline", "Transmission control module", "Transmission adaptive values reset",
+         "Reset supported learned transmission values when the repair procedure specifically calls for it.",
+         "Repair completed; correct transmission variant and post-reset drive cycle known."),
+        ("Transmission & Driveline", "Transfer case control module", "Transfer case calibration",
+         "Run supported transfer-case calibration or initialization after relevant repairs.",
+         "Driveline configuration and exact calibration prerequisites verified."),
+        ("Steering & Chassis", "Steering / ABS modules", "Steering-angle sensor calibration",
+         "Calibrate the steering-angle reference after alignment or steering-system work.",
+         "Wheels straight, alignment verified and vehicle on a suitable level surface."),
+        ("Body & Electrical", "Body control module", "Window regulator initialization",
+         "Relearn supported one-touch window limits after battery disconnection or regulator replacement.",
+         "Correct window and anti-trap initialization procedure verified."),
+        ("Body & Electrical", "Lighting control module", "Headlamp leveling calibration",
+         "Calibrate supported automatic headlamp leveling after sensor or suspension work.",
+         "Vehicle load and ride height set to the specified calibration condition."),
+    ]
+
+    def __init__(self, vin_provider=None, history_callback=None, parent=None):
+        super().__init__(parent)
+        self.vin_provider = vin_provider or (lambda: None)
+        self.history_callback = history_callback or (lambda *args, **kwargs: None)
+        self.routine_manager = ServiceRoutineManager()
+        self.current_routine = None
+
+        layout = QVBoxLayout(self)
+        intro = QLabel(
+            "<b>Service routines and module-specific procedures</b><br>"
+            "Candidate procedures for the Discovery 4 / LR4 (L319) project. "
+            "Compatibility and live command support are not yet verified. "
+            "Preflight checks are read-only and do not transmit ECU commands."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("SYSTEM:"))
+        self.category_filter = QComboBox()
+        self.category_filter.addItem("All systems")
+        for category in sorted({item[0] for item in self.ROUTINES}):
+            self.category_filter.addItem(category)
+        self.category_filter.currentTextChanged.connect(self.refresh)
+        filter_row.addWidget(self.category_filter, 1)
+        self.vehicle_label = QLabel("NO VEHICLE SELECTED")
+        filter_row.addWidget(self.vehicle_label)
+        layout.addLayout(filter_row)
+
+        split = QHBoxLayout()
+        self.routine_tree = QTreeWidget()
+        self.routine_tree.setHeaderLabels(["Routine", "Module / system", "Status"])
+        self.routine_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.routine_tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.routine_tree.itemSelectionChanged.connect(self.show_selected)
+        split.addWidget(self.routine_tree, 3)
+
+        details_panel = QVBoxLayout()
+        details_panel.addWidget(QLabel("ROUTINE DETAILS"))
+        self.details = QPlainTextEdit()
+        self.details.setReadOnly(True)
+        self.details.setPlaceholderText("Select a routine to inspect its purpose and prerequisites.")
+        details_panel.addWidget(self.details, 1)
+
+        self.preflight_button = QPushButton("Run Readiness Check")
+        self.preflight_button.setEnabled(False)
+        self.preflight_button.setToolTip("Checks available vehicle context and reports missing implementation requirements. Sends no ECU commands.")
+        self.preflight_button.clicked.connect(self.run_preflight)
+        details_panel.addWidget(self.preflight_button)
+
+        self.execution_note = QLabel(
+            "LIVE EXECUTION LOCKED  •  NO ECU COMMANDS SENT"
+        )
+        self.execution_note.setWordWrap(True)
+        details_panel.addWidget(self.execution_note)
+        split.addLayout(details_panel, 2)
+        layout.addLayout(split, 1)
+        self.refresh()
+
+    @staticmethod
+    def _routine_id(category, name):
+        return f"{category.strip().lower()}::{name.strip().lower()}"
+
+    def _selected_routine(self):
+        item = self.routine_tree.currentItem()
+        data = item.data(0, Qt.UserRole) if item else None
+        if not data:
+            return None
+        category, module, name, description, prerequisites = data
+        return ServiceRoutine(
+            routine_id=self._routine_id(category, name),
+            category=category,
+            target_module=module,
+            name=name,
+            description=description,
+            prerequisites=prerequisites,
+        )
+
+    def refresh(self, *_):
+        vin = self.vin_provider()
+        self.vehicle_label.setText(vin or "NO VEHICLE SELECTED")
+        selected_category = self.category_filter.currentText()
+        self.routine_tree.clear()
+        groups = {}
+        for category, module, name, description, prerequisites in self.ROUTINES:
+            if selected_category != "All systems" and category != selected_category:
+                continue
+            group = groups.get(category)
+            if group is None:
+                group = QTreeWidgetItem([category, "", ""])
+                self.routine_tree.addTopLevelItem(group)
+                groups[category] = group
+            item = QTreeWidgetItem([name, module, "CATALOG ONLY"])
+            item.setData(0, Qt.UserRole, (category, module, name, description, prerequisites))
+            group.addChild(item)
+        self.routine_tree.expandAll()
+        if self.routine_tree.topLevelItemCount():
+            first = self.routine_tree.topLevelItem(0)
+            if first.childCount():
+                self.routine_tree.setCurrentItem(first.child(0))
+        else:
+            self.current_routine = None
+            self.details.clear()
+            self.preflight_button.setEnabled(False)
+
+    def show_selected(self):
+        routine = self._selected_routine()
+        self.current_routine = routine
+        if routine is None:
+            self.details.clear()
+            self.preflight_button.setEnabled(False)
+            return
+        vin = self.vin_provider() or "Not selected"
+        self.preflight_button.setEnabled(True)
+        self.details.setPlainText(
+            f"ROUTINE: {routine.name}\n"
+            f"SYSTEM: {routine.category}\n"
+            f"TARGET MODULE: {routine.target_module}\n"
+            f"CURRENT VIN: {vin}\n"
+            "SUPPORT STATUS: CATALOG ONLY\n\n"
+            f"PURPOSE\n{routine.description}\n\n"
+            f"PREREQUISITES TO VERIFY\n{routine.prerequisites}\n\n"
+            "READINESS REQUIREMENTS\n"
+            "• Exact vehicle and module compatibility verified\n"
+            "• Module addressing and diagnostic protocol verified\n"
+            "• Security-access requirements documented, if applicable\n"
+            "• Manufacturer procedure and safety conditions verified\n"
+            "• A reviewed routine executor implemented\n\n"
+            "The readiness check below reports missing requirements. It does not send commands."
+        )
+        self.execution_note.setText("LIVE EXECUTION LOCKED  •  NO ECU COMMANDS SENT")
+
+    def run_preflight(self):
+        routine = self.current_routine or self._selected_routine()
+        if routine is None:
+            return
+        vin = self.vin_provider()
+        result = self.routine_manager.preflight(routine, vin=vin)
+        status = "READY" if result.ready else "BLOCKED"
+        self.execution_note.setText(
+            f"{status}  •  READ-ONLY CHECK  •  NO ECU COMMANDS SENT"
+        )
+        blockers = "\n".join(f"• {item}" for item in result.blockers) or "No blockers reported."
+        self.details.appendPlainText(
+            f"\n\nREADINESS RESULT: {status}\n{blockers}"
+        )
+        self.history_callback(
+            "service_routine_preflight",
+            f"Preflight {status.lower()}: {routine.name}",
+            result.to_dict(),
+            vin=vin,
+        )
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = load_settings()
+        self.vehicle_profiles = VehicleProfileRegistry()
         installed_fonts = {family.casefold(): family for family in QFontDatabase.families()}
         self.body_font_family = next(
             (installed_fonts[name.casefold()] for name in ("Inter", "Segoe UI Variable", "Segoe UI")
@@ -1095,13 +2466,12 @@ class MainWindow(QMainWindow):
         wlayout.setSpacing(18)
         wlayout.setContentsMargins(48, 40, 48, 40)
 
-        welcome_brand = QLabel()
-        welcome_brand.setObjectName("welcomeBrand")
-        brand_pixmap = QPixmap(str(ASSET_DIR / "brand_splash.svg"))
-        if not brand_pixmap.isNull():
-            welcome_brand.setPixmap(brand_pixmap.scaled(600, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            welcome_brand.setAlignment(Qt.AlignCenter)
-            wlayout.addWidget(welcome_brand)
+        # Reuse the exact photographic banner shown by the startup splash.
+        self.welcome_banner = ResponsiveBanner()
+        self.welcome_banner.set_source_pixmap(
+            QPixmap(str(ASSET_DIR / "brand_banner.jpg"))
+        )
+        wlayout.addWidget(self.welcome_banner)
 
         title = QLabel("What would you like to do?")
         title_font = QFont(self.heading_font_family, 25, QFont.Bold)
@@ -1110,7 +2480,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignCenter)
         wlayout.addWidget(title)
 
-        subtitle = QLabel("Choose a task to get started. You can switch later.")
+        subtitle = QLabel("Generic OBD-II/CAN tools are vehicle-independent. Manufacturer-specific workspaces activate only for a matching vehicle profile.")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setObjectName("welcomeSubtitle")
         wlayout.addWidget(subtitle)
@@ -1124,6 +2494,8 @@ class MainWindow(QMainWindow):
             ("Graph sensor data", self.show_graph_mode),
             ("Read vehicle information", self.show_vehicle_info_mode),
             ("Vehicle modules (CAN)", self.show_modules_mode),
+            ("Run Module Health Report", self.open_health_report),
+            ("Vehicle setup wizard", self.run_setup_wizard),
         ]
         for index, (text, slot) in enumerate(tasks):
             btn = QPushButton(text)
@@ -1154,10 +2526,19 @@ class MainWindow(QMainWindow):
             history_callback=self.record_vehicle_event,
         )
         self.tabs.addTab(self.modules_tab, "Modules")
-        self.network_tab = NetworkOverviewTab(
-            self.module_network, vin_provider=lambda: self.settings.get("current_vin")
+        self.special_functions_tab = SpecialFunctionsTab(
+            vin_provider=lambda: self.settings.get("current_vin"),
+            history_callback=self.record_vehicle_event,
         )
-        self.tabs.addTab(self.network_tab, "Network")
+        self.tabs.addTab(self.special_functions_tab, "Special Functions")
+        self.network_tab = NetworkOverviewTab(
+            self.module_network,
+            vin_provider=lambda: self.settings.get("current_vin"),
+            history_callback=self.record_vehicle_event,
+        )
+        self.tabs.addTab(self.network_tab, "Topology")
+        self.wiring_tab = WiringDiagramsTab()
+        self.tabs.addTab(self.wiring_tab, "Wiring Diagrams")
         self.modules_tab.network_overview_refresh = self.network_tab.refresh
         self.solutions_tab = SolutionsTab(
             self.module_network,
@@ -1266,7 +2647,9 @@ class MainWindow(QMainWindow):
                 "Graph": "Compare sensor trends and operating ranges",
                 "OBD-II": "Standard diagnostic parameters and trouble codes",
                 "Modules": "Module-level diagnostic workspace",
-                "Network": "Vehicle network overview and module status",
+                "Special Functions": "Service resets, calibrations and module-specific routines",
+                "Topology": "Interactive ECU module map, scan status and DTC overview",
+                "Wiring Diagrams": "Factory-documented L319 HS-CAN, MS-CAN and MOST wiring reference",
                 "Solutions": "Review diagnostic evidence and analysis notes",
                 "Vehicle History": "Previous captures and vehicle-specific events",
                 "Settings": "Connection, display and logging configuration",
@@ -1280,6 +2663,53 @@ class MainWindow(QMainWindow):
         if hasattr(self, "quick_drawer"):
             self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
 
+    def open_health_report(self):
+        """Open module diagnostics and immediately run the health-report workflow."""
+        self._navigate_to_tab("Modules")
+        self.modules_tab.generate_health_report()
+
+    def run_setup_wizard(self):
+        """Guide interface selection and vehicle-profile setup."""
+        wizard = VehicleSetupWizard(self, self.settings)
+        if wizard.exec() != QDialog.Accepted or not wizard.result_data:
+            return
+        data = wizard.result_data
+        self.settings.update({
+            "interface": data["interface"], "channel": data["channel"],
+            "bitrate": data["bitrate"],
+        })
+        for combo in (self.backend, self.settings_backend):
+            for index in range(combo.count()):
+                item_data = combo.itemData(index)
+                if item_data and item_data[0] == data["interface"]:
+                    combo.setCurrentIndex(index)
+                    break
+        self.channel_edit.setCurrentText(data["channel"])
+        self.settings_channel.setText(data["channel"])
+        self.bitrate.setCurrentText(str(data["bitrate"]))
+        self.settings_bitrate.setCurrentText(str(data["bitrate"]))
+        vehicle = {
+            "make": data["make"], "model": data["model"],
+            "model_year": data["model_year"], "profile_id": data["profile_id"],
+            "identification_confidence": data["identification"].get("confidence", "manual"),
+            "variant_id": data["identification"].get("variant_id"), "nickname": "",
+        }
+        vin = data["vin"]
+        if vin:
+            existing = self.settings.setdefault("vehicles", {}).get(vin, {})
+            existing.update(vehicle)
+            self.settings["vehicles"][vin] = existing
+            self.settings["current_vin"] = vin
+            self.settings["active_vehicle"] = existing.copy()
+        else:
+            self.settings["current_vin"] = None
+            self.settings["active_vehicle"] = vehicle
+        self._refresh_vehicle_list()
+        self._update_vehicle_context()
+        self.save_current_settings()
+        self._navigate_to_tab("Capture")
+        self.show_toast("Vehicle setup applied", "success")
+
     def _navigate_to_tab(self, name):
         if name == "Home":
             self.stack.setCurrentIndex(0)
@@ -1288,6 +2718,12 @@ class MainWindow(QMainWindow):
             return
         for index in range(self.tabs.count()):
             if self.tabs.tabText(index) == name:
+                if not self.tabs.isTabEnabled(index):
+                    self.show_toast(
+                        "This workspace currently requires the LR4 2010–2016 support package. LR3-specific factory definitions are not yet available.",
+                        "info",
+                    )
+                    return
                 self.tabs.setCurrentIndex(index)
                 self.stack.setCurrentIndex(1)
                 return
@@ -1301,8 +2737,13 @@ class MainWindow(QMainWindow):
             return
         vin = self.settings.get("current_vin")
         vehicles = self.settings.get("vehicles", {})
-        nickname = vehicles.get(vin, {}).get("nickname", "") if vin else ""
-        vehicle_text = f"{nickname}  |  {vin}" if nickname and vin else (vin or "NO VEHICLE SELECTED")
+        active = vehicles.get(vin, {}) if vin else self.settings.get("active_vehicle", {})
+        nickname = active.get("nickname", "")
+        model = active.get("model") or active.get("make", "")
+        vehicle_text = (
+            f"{nickname or model}  |  {vin}" if vin and (nickname or model)
+            else (vin or model or "NO VEHICLE SELECTED")
+        )
         self.header_vehicle.setText(vehicle_text)
         running = bool(self.receiver and self.receiver.isRunning())
         if running:
@@ -1340,7 +2781,7 @@ class MainWindow(QMainWindow):
         dialog.setObjectName("startupSplash")
         dialog.setWindowTitle("Welcome to FreeRov3r")
         dialog.setWindowModality(Qt.ApplicationModal)
-        dialog.setMinimumSize(1000, 560)
+        dialog.setMinimumSize(1100, 660)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(30, 26, 30, 24)
         layout.setSpacing(14)
@@ -1388,8 +2829,10 @@ class MainWindow(QMainWindow):
              "Start demo", self._start_simulator_demo),
             ("Explore sample modules", "Browse example module categories and sample faults. These are test fixtures, not a real scan.",
              "View sample modules", lambda: self._navigate_to_tab("Modules")),
-            ("Open the full workspace", "Go straight to the complete set of diagnostic, graphing and history tools.",
+            ("Open the full workspace", "Go straight to the complete set of generic diagnostic, graphing and history tools.",
              "Open workspace", lambda: self._navigate_to_tab("Capture")),
+             ("Vehicle setup wizard", "Detect an interface, read or enter a VIN, identify the vehicle and select its capability package.",
+              "Start setup", self.run_setup_wizard),
         ]
         for index, (heading, description, action_text, action) in enumerate(choices):
             card = QFrame()
@@ -1411,7 +2854,7 @@ class MainWindow(QMainWindow):
                 lambda checked=False, callback=action: (dialog.accept(), callback())
             )
             card_layout.addWidget(action_button)
-            grid.addWidget(card, index // 2, index % 2)
+            grid.addWidget(card, index // 3, index % 3)
         layout.addLayout(grid, 1)
         footer = QHBoxLayout()
         self.splash_skip_checkbox = QCheckBox("Don't show this welcome screen at startup")
@@ -1452,6 +2895,8 @@ class MainWindow(QMainWindow):
         self.backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
+        self.backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
+        self.backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.backend.addItem("SLCAN", ("slcan", "COM3"))
         controls.addWidget(QLabel("Connection:"))
@@ -1466,8 +2911,10 @@ class MainWindow(QMainWindow):
         )
         controls.addWidget(self.channel_edit)
 
-        refresh_ports_btn = QPushButton("Refresh ports")
-        refresh_ports_btn.setToolTip("Detect serial devices currently connected to Windows.")
+        refresh_ports_btn = QPushButton("Detect interfaces")
+        refresh_ports_btn.setToolTip(
+            "List USB and paired Bluetooth serial adapters without opening or probing them."
+        )
         refresh_ports_btn.clicked.connect(self.refresh_serial_ports)
         controls.addWidget(refresh_ports_btn)
 
@@ -1476,6 +2923,18 @@ class MainWindow(QMainWindow):
         controls.addWidget(QLabel("Bitrate:"))
         controls.addWidget(self.bitrate)
         layout.addLayout(controls)
+
+        hardware_notice = QLabel(
+            "ⓘ  Full diagnostic functionality requires the recommended ESP32 CAN interface. "
+            "ELM327 Bluetooth/Wi-Fi and other adapters may provide limited access and may not "
+            "support complete CAN monitoring, all vehicle modules, or advanced diagnostic functions."
+        )
+        hardware_notice.setObjectName("hardwareCompatibilityNotice")
+        hardware_notice.setWordWrap(True)
+        hardware_notice.setToolTip(
+            "The ESP32 CAN interface is the recommended hardware for full FreeRov3r functionality."
+        )
+        layout.addWidget(hardware_notice)
 
         self.connect_btn = QPushButton("Start listening")
         self.connect_btn.clicked.connect(self.toggle_capture)
@@ -1527,9 +2986,9 @@ class MainWindow(QMainWindow):
         self.refresh_serial_ports()
 
     def refresh_serial_ports(self):
-        """Refresh the editable channel selector with detected serial devices."""
+        """Inventory serial interfaces and select only a single clear candidate."""
         current = self.channel_edit.currentText().strip()
-        ports = list_serial_ports()
+        ports = discover_interfaces()
         self.channel_edit.blockSignals(True)
         self.channel_edit.clear()
         for port in ports:
@@ -1537,8 +2996,8 @@ class MainWindow(QMainWindow):
             index = self.channel_edit.count() - 1
             self.channel_edit.setItemData(
                 index,
-                f'{port["description"]} | VID:PID '
-                f'{port["vid"] or "----"}:{port["pid"] or "----"}',
+                f'{port["label"]} | {port["description"]} | '
+                f'VID:PID {port["vid"] or "----"}:{port["pid"] or "----"}',
                 Qt.ToolTipRole,
             )
         if current:
@@ -1549,12 +3008,27 @@ class MainWindow(QMainWindow):
             self.channel_edit.setEditText("")
             self.channel_edit.setPlaceholderText("No serial ports found; enter channel manually")
         self.channel_edit.blockSignals(False)
+
+        # Only auto-select when exactly one recognized adapter candidate exists.
+        recognized = [port for port in ports if port["kind"] in ("esp32", "elm327", "slcan")]
+        if len(recognized) == 1:
+            candidate = recognized[0]
+            for index in range(self.backend.count()):
+                data = self.backend.itemData(index)
+                if data and data[0] == candidate["kind"]:
+                    self.backend.setCurrentIndex(index)
+                    self.channel_edit.setCurrentText(candidate["device"])
+                    break
+
         if ports:
-            self.status.setText(
-                "Detected serial ports: " + ", ".join(port["device"] for port in ports)
+            summary = ", ".join(
+                f'{port["device"]}: {port["label"]}' for port in ports
             )
+            self.status.setText("Interface inventory: " + summary)
         else:
-            self.status.setText("No serial ports detected. Manual CAN channel entry remains available.")
+            self.status.setText(
+                "No USB/Bluetooth serial interfaces found. CAN channels can still be entered manually."
+            )
 
     def _build_sensors_tab(self):
         tab = QWidget()
@@ -1611,6 +3085,8 @@ class MainWindow(QMainWindow):
         self.settings_backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.settings_backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.settings_backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
+        self.settings_backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
+        self.settings_backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.settings_backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.settings_backend.addItem("SLCAN", ("slcan", "COM3"))
         self.settings_channel = QLineEdit()
@@ -1621,6 +3097,22 @@ class MainWindow(QMainWindow):
         connection_form.addRow("Channel / port:", self.settings_channel)
         connection_form.addRow("CAN bitrate:", self.settings_bitrate)
         layout.addWidget(connection_group)
+
+        compatibility_group = QGroupBox("Hardware compatibility")
+        compatibility_layout = QVBoxLayout(compatibility_group)
+        compatibility_notice = QLabel(
+            "Full diagnostic functionality is available only with the recommended ESP32 CAN interface. "
+            "Bluetooth ELM327, Wi-Fi, and other third-party adapters are supported on a limited basis "
+            "where their hardware and protocols allow. They may not provide complete CAN traffic, "
+            "full module coverage, or advanced diagnostic functions."
+        )
+        compatibility_notice.setObjectName("hardwareCompatibilityNotice")
+        compatibility_notice.setWordWrap(True)
+        compatibility_layout.addWidget(compatibility_notice)
+        preferred_hardware = QLabel("Preferred interface: ESP32 CAN adapter")
+        preferred_hardware.setObjectName("preferredHardwareLabel")
+        compatibility_layout.addWidget(preferred_hardware)
+        layout.addWidget(compatibility_group)
 
         display_group = QGroupBox("Display and logging")
         display_layout = QVBoxLayout(display_group)
@@ -1756,7 +3248,9 @@ class MainWindow(QMainWindow):
         vehicles = self.settings.get("vehicles", {})
         for vin, info in sorted(vehicles.items()):
             nick = info.get("nickname", "")
-            self.vehicle_list.addItem(f"{vin}  —  {nick}" if nick else vin)
+            model = info.get("model", "")
+            label = nick or model
+            self.vehicle_list.addItem(f"{vin}  —  {label}" if label else vin)
         current = self.settings.get("current_vin")
         if current and current in vehicles:
             nick = vehicles[current].get("nickname", "")
@@ -1767,11 +3261,23 @@ class MainWindow(QMainWindow):
     def add_or_update_vehicle(self):
         vin = self.vin_edit.text().strip().upper()
         nickname = self.nickname_edit.text().strip()
-        if len(vin) != 17:
-            QMessageBox.warning(self, "Invalid VIN", "VIN must be 17 characters.")
+        if not validate_vin(vin):
+            QMessageBox.warning(self, "Invalid VIN", "Enter a valid 17-character VIN (letters I, O and Q are not used).")
             return
-        self.settings.setdefault("vehicles", {})[vin] = {"nickname": nickname}
+        identification = identify_vehicle(vin)
+        vehicle = self.settings.setdefault("vehicles", {}).get(vin, {}).copy()
+        vehicle.update({
+            "nickname": nickname,
+            "make": identification.get("make") or vehicle.get("make", ""),
+            "model": identification.get("model") or vehicle.get("model", ""),
+            "model_year": identification.get("model_year") or vehicle.get("model_year"),
+            "profile_id": identification.get("profile_id", "generic"),
+            "variant_id": identification.get("variant_id"),
+            "identification_confidence": identification.get("confidence", "unknown"),
+        })
+        self.settings["vehicles"][vin] = vehicle
         self.settings["current_vin"] = vin
+        self.settings["active_vehicle"] = vehicle.copy()
         self._refresh_vehicle_list()
         self._update_vehicle_context()
         self.save_current_settings()
@@ -1784,6 +3290,7 @@ class MainWindow(QMainWindow):
             return
         vin = item.text().split("  —  ")[0]
         self.settings["current_vin"] = vin
+        self.settings["active_vehicle"] = self.settings.get("vehicles", {}).get(vin, {}).copy()
         self._refresh_vehicle_list()
         self._update_vehicle_context()
         self.save_current_settings()
@@ -1797,10 +3304,33 @@ class MainWindow(QMainWindow):
     def _update_vehicle_context(self):
         vin = self.settings.get("current_vin")
         vehicles = self.settings.get("vehicles", {})
-        ctx = {}
-        if vin and vin in vehicles:
-            ctx = {"vin": vin, "nickname": vehicles[vin].get("nickname", "")}
-        self.sensor_capture.vehicle_context = ctx
+        active = vehicles.get(vin, {}) if vin and vin in vehicles else self.settings.get("active_vehicle", {})
+        active = dict(active or {})
+        if vin and not active.get("profile_id"):
+            identification = identify_vehicle(vin)
+            active.update({
+                "make": identification.get("make") or active.get("make", ""),
+                "model": identification.get("model") or active.get("model", ""),
+                "model_year": identification.get("model_year") or active.get("model_year"),
+                "profile_id": identification.get("profile_id", "generic"),
+                "variant_id": identification.get("variant_id"),
+                "identification_confidence": identification.get("confidence", "unknown"),
+            })
+            vehicles[vin] = active.copy()
+        profile_id = active.get("profile_id", "generic")
+        self.active_vehicle_profile = self.vehicle_profiles.get(profile_id)
+        self.sensor_capture.vehicle_context = {**active, "vin": vin}
+        l319_enabled = profile_id == "land_rover_l319_lr4"
+        l319_tabs = {"Special Functions", "Topology", "Wiring Diagrams"}
+        for index in range(self.tabs.count()):
+            tab_name = self.tabs.tabText(index)
+            if tab_name in l319_tabs:
+                self.tabs.setTabEnabled(index, l319_enabled)
+                self.tabs.setTabToolTip(
+                    index,
+                    "" if l319_enabled else
+                    "Currently implemented factory network and wiring workspaces require the LR4 2010–2016 profile. LR3-specific factory definitions are not yet available."
+                )
 
         if vin and hasattr(self, "modules_tab"):
             network = self.module_networks.setdefault(vin, SimulatedModuleNetwork())
@@ -1812,6 +3342,8 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "graph_tab"):
             self.graph_tab.set_vehicle_vin(vin)
+        if hasattr(self, "special_functions_tab"):
+            self.special_functions_tab.refresh()
         self._refresh_workspace_header()
 
 
@@ -1824,7 +3356,18 @@ class MainWindow(QMainWindow):
             self.log.appendPlainText(
                 f"VIN mismatch: selected {previous}, scan data reports {vin}. Using scan-reported VIN."
             )
-        self.settings.setdefault("vehicles", {}).setdefault(vin, {"nickname": ""})
+        identification = identify_vehicle(vin)
+        vehicle = self.settings.setdefault("vehicles", {}).get(vin, {})
+        vehicle.update({
+            "make": identification.get("make") or vehicle.get("make", ""),
+            "model": identification.get("model") or vehicle.get("model", ""),
+            "model_year": identification.get("model_year") or vehicle.get("model_year"),
+            "profile_id": identification.get("profile_id", "generic"),
+            "variant_id": identification.get("variant_id"),
+            "identification_confidence": identification.get("confidence", "unknown"),
+        })
+        self.settings["vehicles"][vin] = vehicle
+        self.settings["active_vehicle"] = vehicle.copy()
         self.settings["current_vin"] = vin
         if self.receiver and self.receiver.isRunning():
             self.capture_vin = vin
@@ -1886,10 +3429,22 @@ class MainWindow(QMainWindow):
         channel = self.channel_edit.currentText().strip() or data[1]
         bitrate = int(self.bitrate.currentText())
 
+        if interface == "elm327_obd" and not self.obd_tab.selected_pids():
+            self.show_toast("Select at least one OBD-II PID to poll", "warning")
+            return
+
         if interface == "simulator":
             adapter = SimulatedVehicleAdapter(channel=channel or "L319-DEMO")
         elif interface == "esp32":
             adapter = Esp32SerialAdapter(port=channel)
+        elif interface == "elm327":
+            adapter = Elm327SerialAdapter(port=channel)
+        elif interface == "elm327_obd":
+            adapter = Elm327ObdAdapter(
+                port=channel,
+                pids=self.obd_tab.selected_pids(),
+                request_interval=self.obd_tab.poll_interval_ms.value() / 1000.0,
+            )
         else:
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
