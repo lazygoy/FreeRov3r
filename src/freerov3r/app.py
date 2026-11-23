@@ -628,6 +628,20 @@ class VehicleSetupWizard(QDialog):
 
     def finish_setup(self):
         self._build_review()
+        profile_id = self.result_data["profile_id"]
+        year = self.result_data["model_year"]
+        valid_years = {
+            "land_rover_l319_lr3": range(2005, 2010),
+            "land_rover_l319_lr4": range(2010, 2017),
+        }
+        if year is not None and profile_id in valid_years and year not in valid_years[profile_id]:
+            QMessageBox.warning(
+                self,
+                "Vehicle profile does not match model year",
+                "The selected LR3/LR4 package does not match the entered model year. "
+                "Correct the year or select the generic OBD-II/CAN package.",
+            )
+            return
         self.accept()
 
     def reject(self):
@@ -2436,7 +2450,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignCenter)
         wlayout.addWidget(title)
 
-        subtitle = QLabel("Choose a task to get started. You can switch later.")
+        subtitle = QLabel("Generic OBD-II/CAN tools are vehicle-independent. Manufacturer-specific workspaces activate only for a matching vehicle profile.")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setObjectName("welcomeSubtitle")
         wlayout.addWidget(subtitle)
