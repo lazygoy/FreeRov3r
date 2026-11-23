@@ -23,7 +23,10 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Session metadata: operation, notes, VIN and selected interface.
 - Import of FreeRov3r JSON, JSONL, CSV and common candump text files.
 - CAN ID, payload and protocol-hint filters.
-- Basic ISO-TP PCI and UDS service hints.
+- ISO-TP Single Frame decoding and passive First Frame / Consecutive Frame reassembly.
+- Sequence-number validation, transfer timeouts, incomplete-transfer reporting and extended-length First Frame support.
+- UDS service-name hints for reassembled request, positive-response and negative-response payloads.
+- A Research-tab action to inspect reassembled messages, plus ISO-TP results in the REA analysis packet.
 - Frame bookmarks and annotations.
 - Capture comparison by CAN identifier traffic counts.
 - JSON session save and Markdown handoff packet for REA / ChatGPT.
@@ -33,12 +36,14 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - The Research tab itself never transmits CAN frames, sends diagnostic requests, or replays captured traffic.
 - The selected adapter still determines whether the overall application is passive. The \`elm327_obd\` backend actively polls standard OBD-II Mode 01 PIDs; use the receive-only ESP32 interface or another known passive adapter when observing LAUNCH scanner traffic.
 - A CAN ID alone does not establish ECU identity or request/response direction.
-- UDS labels are heuristics based on ISO-TP single-frame payloads. Multi-frame UDS messages are not yet reassembled or interpreted.
+- ISO-TP reassembly currently assumes normal addressing and separates transfers by CAN ID, CAN ID format and capture channel. Extended/mixed addressing modes and automatic request/response pairing are not implemented.
+- Flow Control frames are recognized as transport metadata but are never answered or generated. A passive capture may therefore show an incomplete transfer if the observed sender waits for Flow Control that the capture interface does not provide.
+- UDS service names are protocol hints only. They do not prove ECU identity, request/response direction, or the meaning of a data identifier or routine.
 - No coding, programming, security access, actuator control, or ECU write support is implemented by this workspace.
 
 ## Not yet implemented
 
-- Multi-frame ISO-TP reassembly and transaction grouping.
+- Extended/mixed ISO-TP addressing and transaction grouping.
 - Automatic request/response pairing and ECU address mapping.
 - Multi-network capture and bus selection.
 - Timing-aligned operation markers and capture comparison by sequence.
