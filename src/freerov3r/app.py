@@ -366,9 +366,9 @@ class VehicleSetupWizard(QDialog):
         self.read_vin_button = QPushButton("Read VIN from ELM327")
         self.read_vin_button.clicked.connect(self.read_vin)
         vin_actions.addWidget(self.read_vin_button)
-        decode_button = QPushButton("Identify from VIN")
-        decode_button.clicked.connect(self.decode_vin)
-        vin_actions.addWidget(decode_button)
+        self.decode_vin_button = QPushButton("Identify from VIN")
+        self.decode_vin_button.clicked.connect(self.decode_vin)
+        vin_actions.addWidget(self.decode_vin_button)
         vehicle_layout.addLayout(vin_actions)
         self.vin_status = QLabel(
             "The VIN is read using the standard OBD-II Mode 09 PID 02 request when "
@@ -474,6 +474,10 @@ class VehicleSetupWizard(QDialog):
         if not data or data[0] != "elm327" or not port:
             return
         self.read_vin_button.setEnabled(False)
+        self.decode_vin_button.setEnabled(False)
+        self.vin_edit.setEnabled(False)
+        self.interface_combo.setEnabled(False)
+        self.channel_edit.setEnabled(False)
         self.next_button.setEnabled(False)
         self.back_button.setEnabled(False)
         self.skip_button.setEnabled(False)
@@ -495,6 +499,10 @@ class VehicleSetupWizard(QDialog):
     def _vin_query_finished(self):
         if self._decode_worker and self._decode_worker.isRunning():
             return
+        self.decode_vin_button.setEnabled(True)
+        self.vin_edit.setEnabled(True)
+        self.interface_combo.setEnabled(True)
+        self.channel_edit.setEnabled(True)
         self.next_button.setEnabled(True)
         self.back_button.setEnabled(self.pages.currentIndex() > 0)
         self.skip_button.setEnabled(True)
@@ -530,6 +538,10 @@ class VehicleSetupWizard(QDialog):
             "Checking NHTSA vPIC for manufacturer-reported make, model and year…"
         )
         self.read_vin_button.setEnabled(False)
+        self.decode_vin_button.setEnabled(False)
+        self.vin_edit.setEnabled(False)
+        self.interface_combo.setEnabled(False)
+        self.channel_edit.setEnabled(False)
         self.next_button.setEnabled(False)
         self.back_button.setEnabled(False)
         self.skip_button.setEnabled(False)
@@ -559,6 +571,10 @@ class VehicleSetupWizard(QDialog):
         )
 
     def _vin_decode_finished(self):
+        self.decode_vin_button.setEnabled(True)
+        self.vin_edit.setEnabled(True)
+        self.interface_combo.setEnabled(True)
+        self.channel_edit.setEnabled(True)
         self.next_button.setEnabled(True)
         self.back_button.setEnabled(self.pages.currentIndex() > 0)
         self.skip_button.setEnabled(True)
