@@ -85,6 +85,7 @@ class QuickDrawer(QDockWidget):
             ("⌘   Vehicle Topology", "Topology"),
             ("▤   Wiring Diagrams", "Wiring Diagrams"),
             ("✦   Diagnostic Solutions", "Solutions"), ("◷   Vehicle History", "Vehicle History"),
+            ("⌕   Protocol Research", "Research"),
             ("⚙   Settings", "Settings"),
         ]
         for label, target in entries:

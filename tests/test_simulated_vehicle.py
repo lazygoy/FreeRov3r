@@ -18,7 +18,7 @@ def test_simulator_emits_decodable_obd_frames():
     adapter.open()
     try:
         decoded = []
-        for _ in range(12):
+        for _ in range(len(adapter._pids)):
             frame = adapter.receive(timeout=0.01)
             assert frame is not None
             assert frame.arbitration_id == 0x7E8
