@@ -473,6 +473,9 @@ class VehicleSetupWizard(QDialog):
         if not data or data[0] != "elm327" or not port:
             return
         self.read_vin_button.setEnabled(False)
+        self.next_button.setEnabled(False)
+        self.back_button.setEnabled(False)
+        self.skip_button.setEnabled(False)
         self.vin_status.setText("Querying VIN with OBD-II Mode 09 PID 02…")
         self._vin_worker = VinQueryWorker(port, self)
         self._vin_worker.completed.connect(self._vin_query_completed)
@@ -489,6 +492,11 @@ class VehicleSetupWizard(QDialog):
         self.vin_status.setText(f"VIN query failed: {message}")
 
     def _vin_query_finished(self):
+        if self._decode_worker and self._decode_worker.isRunning():
+            return
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(self.pages.currentIndex() > 0)
+        self.skip_button.setEnabled(True)
         self._update_vin_query_availability()
 
     def _apply_vehicle_identification(self, result):
@@ -521,6 +529,9 @@ class VehicleSetupWizard(QDialog):
             "Checking NHTSA vPIC for manufacturer-reported make, model and year…"
         )
         self.read_vin_button.setEnabled(False)
+        self.next_button.setEnabled(False)
+        self.back_button.setEnabled(False)
+        self.skip_button.setEnabled(False)
         self._decode_worker = VinDecodeWorker(vin, self)
         self._decode_worker.completed.connect(self._vin_decode_completed)
         self._decode_worker.failed.connect(self._vin_decode_failed)
@@ -547,6 +558,9 @@ class VehicleSetupWizard(QDialog):
         )
 
     def _vin_decode_finished(self):
+        self.next_button.setEnabled(True)
+        self.back_button.setEnabled(self.pages.currentIndex() > 0)
+        self.skip_button.setEnabled(True)
         self._update_vin_query_availability()
 
     def _show_page(self, index):
@@ -615,6 +629,12 @@ class VehicleSetupWizard(QDialog):
     def finish_setup(self):
         self._build_review()
         self.accept()
+
+    def reject(self):
+        for worker in (self._vin_worker, self._decode_worker):
+            if worker and worker.isRunning():
+                worker.wait(5000)
+        super().reject()
 
 
 class SensorGraphTab(QWidget):
