@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from freerov3r.isotp import reassemble_isotp
+from freerov3r.isotp import pair_uds_transactions, reassemble_isotp
 
 
 UDS_SERVICES = {
@@ -363,11 +363,14 @@ class ResearchTab(QWidget):
         footer = QHBoxLayout()
         self.isotp_button = QPushButton("Reassemble ISO-TP")
         self.isotp_button.clicked.connect(self.analyze_isotp)
+        self.pair_button = QPushButton("Pair UDS transactions")
+        self.pair_button.clicked.connect(self.analyze_uds_pairs)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
         self.clear_button.clicked.connect(self.clear_data)
         footer.addWidget(self.isotp_button)
+        footer.addWidget(self.pair_button)
         footer.addWidget(self.packet_button)
         footer.addWidget(self.clear_button)
         footer.addStretch(1)
@@ -693,6 +696,64 @@ class ResearchTab(QWidget):
             f"{len(incomplete):,} incomplete or malformed"
         )
 
+    def analyze_uds_pairs(self):
+        """Show probable UDS request/response pairs from passive capture data."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(self, "UDS transaction pairing", "Capture or import CAN frames first.")
+            return
+
+        messages = reassemble_isotp(dataset)
+        pairs = pair_uds_transactions(messages)
+        matched = [pair for pair in pairs if pair["confidence"] == "probable"]
+        unmatched = [pair for pair in pairs if pair["confidence"] != "probable"]
+        lines = [
+            f"Complete ISO-TP messages: {sum(item['status'] == 'complete' for item in messages):,}",
+            f"Probable request/response pairs: {len(matched):,}",
+            f"Unmatched messages: {len(unmatched):,}",
+            "",
+            "Pairing is heuristic. CAN IDs and direction are not proof of ECU identity.",
+            "",
+        ]
+        for pair in pairs[-500:]:
+            request = pair.get("request")
+            response = pair.get("response")
+            if request and response:
+                lines.append(
+                    f'PAIRED  {request["started_at"]:.6f} → {response["started_at"]:.6f}  '
+                    f'0x{request["arbitration_id"]:X} → 0x{response["arbitration_id"]:X}  '
+                    f'{request["payload"].upper()} → {response["payload"].upper()}  '
+                    f'{pair["latency_seconds"] * 1000:.2f} ms  '
+                    f'{pair["response_kind"].upper()}  {pair["addressing_hint"]}'
+                )
+            else:
+                message = pair.get("message") or request or response
+                if message:
+                    lines.append(
+                        f'UNMATCHED  {message["started_at"]:.6f}  '
+                        f'0x{message["arbitration_id"]:X}  {message["payload"].upper()}'
+                    )
+        dialog = QDialog(self)
+        dialog.setWindowTitle("UDS request / response analysis")
+        dialog.resize(1000, 620)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(
+            f"{len(matched):,} probable pairs · {len(unmatched):,} unmatched messages"
+        )
+        layout.addWidget(summary)
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\n".join(lines))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"UDS pairing complete: {len(matched):,} probable pairs, {len(unmatched):,} unmatched"
+        )
+
     def build_analysis_packet(self):
         self._flush_pending_frames()
         lines = [
@@ -737,6 +798,25 @@ class ResearchTab(QWidget):
                 f'{classify_uds_payload(bytes.fromhex(item["payload"]))} | '
                 f'{item["frame_count"]} | {item["detail"]} |'
             )
+        transactions = pair_uds_transactions(messages)
+        lines += [
+            "",
+            "## Probable UDS request / response pairs",
+            "Associations are heuristic, not proof of ECU identity or direction.",
+            "| Request time | Request CAN ID | Request payload | Response time | Response CAN ID | Response payload | Latency ms | Type | Addressing hint |",
+            "|---:|---:|---|---:|---:|---|---:|---|---|",
+        ]
+        for pair in transactions[:20000]:
+            request = pair.get("request")
+            response = pair.get("response")
+            if request and response:
+                lines.append(
+                    f'| {request["started_at"]:.6f} | 0x{request["arbitration_id"]:X} | '
+                    f'{request["payload"].upper()} | {response["started_at"]:.6f} | '
+                    f'0x{response["arbitration_id"]:X} | {response["payload"].upper()} | '
+                    f'{pair["latency_seconds"] * 1000:.3f} | {pair["response_kind"]} | '
+                    f'{pair["addressing_hint"]} |'
+                )
         lines += ["", "## Operation markers"]
         lines.extend(
             f'- {m["elapsed_seconds"]:.3f}s | {m["operation"]} | {m["note"]}'
