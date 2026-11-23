@@ -3282,6 +3282,7 @@ class MainWindow(QMainWindow):
         self.settings["vehicles"][vin] = vehicle
         self.settings["current_vin"] = vin
         self.settings["active_vehicle"] = vehicle.copy()
+        self.research_tab.set_context(vin, self.active_interface)
         self._refresh_vehicle_list()
         self._update_vehicle_context()
         self.save_current_settings()
