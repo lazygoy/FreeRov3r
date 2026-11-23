@@ -172,12 +172,12 @@ def query_vin(port, baudrate=38400, timeout=2.5):
     try:
         connection.reset_input_buffer()
         for command in ("ATZ", "ATE0", "ATL0", "ATS1", "ATH1", "ATSP0", "ATCAF1"):
-            connection.write((command + "\\r").encode("ascii"))
+            connection.write((command + "\r").encode("ascii"))
             connection.flush()
             time.sleep(0.2 if command == "ATZ" else 0.08)
             connection.read_until(b">")
         connection.reset_input_buffer()
-        connection.write(b"0902\\r")
+        connection.write(b"0902\r")
         connection.flush()
         deadline = time.monotonic() + float(timeout)
         response = bytearray()
