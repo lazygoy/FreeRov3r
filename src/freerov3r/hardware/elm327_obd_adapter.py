@@ -22,7 +22,9 @@ class Elm327ObdAdapter(CanAdapter):
     def __init__(self, port, baudrate=38400, pids=None, request_interval=0.20, timeout=0.35):
         self.port = str(port)
         self.baudrate = int(baudrate)
-        self.pids = tuple(dict.fromkeys(int(pid) for pid in (pids or DEFAULT_PIDS)))
+        self.pids = tuple(dict.fromkeys(int(pid) for pid in (DEFAULT_PIDS if pids is None else pids)))
+        if not self.pids:
+            raise ValueError("Select at least one OBD-II PID to poll.")
         invalid = [pid for pid in self.pids if pid not in PID_DEFINITIONS]
         if invalid:
             raise ValueError(f"Unsupported Mode 01 PID(s): {invalid}")
