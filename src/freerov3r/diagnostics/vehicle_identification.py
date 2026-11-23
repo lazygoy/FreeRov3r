@@ -3,7 +3,10 @@
 Only the North American L319 model-year windows are classified automatically.
 Unknown or ambiguous VINs remain on the generic OBD-II/CAN profile.
 """
+import json
 import re
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 VIN_RE = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 YEAR_CODES = {
@@ -68,4 +71,52 @@ def identify_vehicle(vin):
         "model": None, "model_year": year, "profile_id": "generic",
         "confidence": "unknown",
         "reason": "VIN syntax is valid, but no installed vehicle profile matches this VIN pattern.",
+    }
+
+
+def decode_vin_online(vin, timeout=6):
+    """Query the public NHTSA vPIC decoder for manufacturer-reported VIN data."""
+    valid = validate_vin(vin)
+    if not valid:
+        raise ValueError("A valid 17-character VIN is required.")
+    url = (
+        "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/"
+        + quote(valid) + "?format=json"
+    )
+    request = Request(url, headers={"User-Agent": "FreeRov3r/0.1"})
+    with urlopen(request, timeout=float(timeout)) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    results = payload.get("Results") or []
+    if not results:
+        raise RuntimeError("NHTSA vPIC returned no VIN decode results.")
+    row = results[0]
+
+    def value(key):
+        text = str(row.get(key) or "").strip()
+        return text if text and text.upper() not in {"NOT APPLICABLE", "0", "NULL"} else ""
+
+    year_text = value("ModelYear")
+    try:
+        year = int(year_text) if year_text else None
+    except ValueError:
+        year = None
+    make = value("Make")
+    model = value("Model")
+    if not make and not model:
+        raise RuntimeError(value("ErrorText") or "NHTSA vPIC could not identify this VIN.")
+    return {
+        "vin": valid,
+        "valid": True,
+        "make": make,
+        "model": model,
+        "model_year": year,
+        "vehicle_type": value("VehicleType"),
+        "body_class": value("BodyClass"),
+        "engine_model": value("EngineModel"),
+        "displacement_l": value("DisplacementL"),
+        "fuel_type": value("FuelTypePrimary"),
+        "drive_type": value("DriveType"),
+        "profile_id": "generic",
+        "confidence": "manufacturer_database",
+        "source": "NHTSA vPIC",
     }
