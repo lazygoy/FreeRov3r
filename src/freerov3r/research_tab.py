@@ -7,6 +7,7 @@ it never transmits diagnostic requests or replays captured frames.
 import csv
 import json
 import re
+import time
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -196,7 +197,9 @@ class ResearchTab(QWidget):
         self.live_preview = []
         self.reference_frames = []
         self.bookmarks = {}
+        self.markers = []
         self.metadata = {}
+        self._recording_started_monotonic = None
         self.recording = False
         self.live_enabled = True
         self._pending_records = []
@@ -253,6 +256,9 @@ class ResearchTab(QWidget):
         self.record_button = QPushButton("Start research recording")
         self.record_button.clicked.connect(self.toggle_recording)
         controls.addWidget(self.record_button)
+        self.marker_button = QPushButton("Mark scanner action")
+        self.marker_button.clicked.connect(self.mark_action)
+        controls.addWidget(self.marker_button)
         self.import_button = QPushButton("Import capture")
         self.import_button.clicked.connect(self.import_capture)
         controls.addWidget(self.import_button)
@@ -348,6 +354,8 @@ class ResearchTab(QWidget):
     def toggle_recording(self):
         if not self.recording:
             self.recording = True
+            self.markers.clear()
+            self._recording_started_monotonic = time.monotonic()
             self.metadata.update({
                 "session_name": self.session_name.text().strip() or "Unnamed research session",
                 "operation": self.operation.currentText(),
@@ -363,6 +371,25 @@ class ResearchTab(QWidget):
             self.metadata["stopped_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
             self.record_button.setText("Start research recording")
             self.status_label.setText("Recording stopped. Save the session or copy its REA analysis packet.")
+
+
+    def mark_action(self):
+        if not self.recording or self._recording_started_monotonic is None:
+            QMessageBox.information(
+                self, "Operation marker", "Start research recording before marking a scanner action."
+            )
+            return
+        marker = {
+            "elapsed_seconds": round(time.monotonic() - self._recording_started_monotonic, 3),
+            "timestamp": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "operation": self.operation.currentText(),
+            "note": self.notes.text().strip(),
+        }
+        self.markers.append(marker)
+        self.status_label.setText(
+            f'Marker {len(self.markers)} added at {marker["elapsed_seconds"]:.3f}s: {marker["operation"]}'
+        )
+        self._update_summary()
 
     def observe_frame(self, frame):
         record = _frame_record(frame)
@@ -575,6 +602,7 @@ class ResearchTab(QWidget):
             },
             "frames": self.frames,
             "bookmarks": self.bookmarks,
+            "markers": self.markers,
         }
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         self.status_label.setText(f"Saved {len(self.frames):,} frames to {Path(path).name}")
@@ -607,6 +635,11 @@ class ResearchTab(QWidget):
                 f'| {record["timestamp"]:.6f} | 0x{record["arbitration_id"]:X} | '
                 f'{"EXT" if record["extended"] else "STD"} | {record["data"].upper()} | {iso} | {uds} |'
             )
+        lines += ["", "## Operation markers"]
+        lines.extend(
+            f'- {m["elapsed_seconds"]:.3f}s | {m["operation"]} | {m["note"]}'
+            for m in self.markers
+        )
         lines += ["", "## Bookmarks"]
         lines.extend(f"- {key}: {note}" for key, note in self.bookmarks.items())
         if self.reference_frames:
@@ -636,7 +669,9 @@ class ResearchTab(QWidget):
         self._pending_preview.clear()
         self.reference_frames.clear()
         self.bookmarks.clear()
+        self.markers.clear()
         self.metadata = {}
+        self._recording_started_monotonic = None
         self.refresh_table()
         self.frame_detail.clear()
         self.status_label.setText("Research working set cleared. Saved capture files are unchanged.")
