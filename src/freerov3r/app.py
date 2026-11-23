@@ -2032,6 +2032,8 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, "graph_tab"):
             self.graph_tab.set_vehicle_vin(vin)
+        if hasattr(self, "special_functions_tab"):
+            self.special_functions_tab.refresh()
         self._refresh_workspace_header()
 
 
