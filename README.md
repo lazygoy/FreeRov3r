@@ -137,3 +137,6 @@ primer in the [Open Vehicles documentation](https://docs.openvehicles.com/en/lat
 is a useful reference for message and signal syntax. DBC files describe
 passive decoding; they do not define diagnostic requests or authorize CAN
 transmission. Imported files remain local and are not automatically uploaded. FreeRov3r records each imported file's SHA-256, original filename, import timestamp, and unverified status in a local metadata sidecar, and restores the last-used DBC at startup. Use **Compare DBCs** to compare two definitions by message ID/format, payload length, signal position, bit length, byte order, signedness, scaling, offset, and units. This comparison identifies structural differences only; it does not rank a definition as correct.
+
+
+See [DBC research sources and evidence notes](docs/dbc-research-sources.md) for candidate repositories, L319-specific leads, and the evidence grading checklist used before promoting any definition into a verified vehicle profile.
