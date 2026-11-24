@@ -89,3 +89,42 @@ def test_adapter_diagnostics_report_no_frame_age_before_first_frame():
     assert diagnostics["frames_received"] == 0
     assert diagnostics["last_frame_age_seconds"] is None
     assert diagnostics["status_lines"] == 0
+
+
+
+def test_adapter_diagnostics_distinguish_connected_silent_and_receiving():
+    import time
+    from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
+
+    adapter = Esp32SerialAdapter(port="COM9")
+    adapter.connection = FakeSerial([])
+    assert adapter.diagnostics["receiver_state"] == "connected/silent"
+
+    adapter.last_frame_monotonic = time.monotonic()
+    assert adapter.diagnostics["receiver_state"] == "receiving"
+
+    adapter.last_frame_monotonic = time.monotonic() - 3.0
+    assert adapter.diagnostics["receiver_state"] == "connected/silent"
+
+
+def test_adapter_diagnostics_report_disconnected_and_error_states():
+    from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
+
+    adapter = Esp32SerialAdapter(port="COM9")
+    assert adapter.diagnostics["receiver_state"] == "disconnected"
+
+    adapter.last_error = "Port access denied"
+    assert adapter.diagnostics["receiver_state"] == "disconnected/error"
+
+    adapter.connection = FakeSerial([])
+    adapter.firmware_error_count = 1
+    assert adapter.diagnostics["receiver_state"] == "connected/error"
+
+
+def test_adapter_alert_does_not_mark_receiver_as_fatal_error():
+    from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
+
+    adapter = Esp32SerialAdapter(port="COM9")
+    adapter.connection = FakeSerial([b"#ALERT,RX_QUEUE_HIGH_WATER\\n"])
+    adapter.receive()
+    assert adapter.diagnostics["receiver_state"] == "connected/silent"
