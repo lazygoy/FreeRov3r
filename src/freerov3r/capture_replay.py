@@ -62,6 +62,7 @@ def load_capture(path):
         samples = []
     return {
         "path": str(path),
+        "vin": path.parent.parent.name if path.parent.name == "captures" else None,
         "interface": data.get("interface", "unknown"),
         "started_at": data.get("started_at"),
         "duration_seconds": float(data.get("duration_seconds", 0.0) or 0.0),
@@ -205,7 +206,7 @@ def build_replay_timeline(capture, can_id="", frame_format="Any", payload_contai
     ):
         timeline.append({
             "kind": "frame", "timestamp": float(frame.get("timestamp", 0.0)),
-            "source_index": source_index, "frame": frame,
+            "source_index": source_index, "frame": frame, "vin": capture.get("vin"),
         })
     for source_index, sample in enumerate(samples):
         try:
@@ -220,7 +221,7 @@ def build_replay_timeline(capture, can_id="", frame_format="Any", payload_contai
         normalized["value"] = value
         timeline.append({
             "kind": "sensor", "timestamp": timestamp,
-            "source_index": source_index, "sample": normalized,
+            "source_index": source_index, "sample": normalized, "vin": capture.get("vin"),
         })
     # Frames precede sensor samples at identical timestamps; stable source order is kept.
     timeline.sort(key=lambda event: (
