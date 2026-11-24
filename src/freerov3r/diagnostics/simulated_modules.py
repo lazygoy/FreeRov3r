@@ -94,5 +94,81 @@ class SimulatedModuleNetwork:
     def clear_all(self) -> int:
         return sum(self.clear_module(module.code) for module in self.modules)
 
+    def to_dict(self) -> dict:
+        """Return the mutable simulator state in a versioned JSON-safe format."""
+        return {
+            "schema_version": 1,
+            "modules": [
+                {
+                    "code": module.code,
+                    "last_scan": module.last_scan,
+                    "dtcs": [
+                        {
+                            "code": dtc.code,
+                            "description": dtc.description,
+                            "status": dtc.status,
+                            "severity": dtc.severity,
+                        }
+                        for dtc in module.dtcs
+                    ],
+                }
+                for module in self.modules
+            ],
+        }
+
+    def load_state(self, path) -> bool:
+        """Load saved DTC state for this VIN; retain defaults on invalid files."""
+        import json
+        from pathlib import Path
+
+        state_path = Path(path)
+        try:
+            data = json.loads(state_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("schema_version") != 1:
+                return False
+            saved_modules = data.get("modules")
+            if not isinstance(saved_modules, list):
+                return False
+            saved_by_code = {
+                item.get("code"): item for item in saved_modules
+                if isinstance(item, dict) and isinstance(item.get("code"), str)
+            }
+            for module in self.modules:
+                saved = saved_by_code.get(module.code)
+                if saved is None:
+                    continue
+                dtcs = saved.get("dtcs", [])
+                if not isinstance(dtcs, list):
+                    return False
+                restored = []
+                for item in dtcs:
+                    if not isinstance(item, dict) or not item.get("code"):
+                        return False
+                    restored.append(SimulatedDTC(
+                        code=str(item["code"]),
+                        description=str(item.get("description", "")),
+                        status=str(item.get("status", "Stored")),
+                        severity=str(item.get("severity", "Information")),
+                    ))
+                module.dtcs = restored
+                module.last_scan = saved.get("last_scan")
+            return True
+        except (OSError, ValueError, TypeError):
+            return False
+
+    def save_state(self, path) -> None:
+        """Atomically save mutable simulator state to a VIN-scoped JSON file."""
+        import json
+        from pathlib import Path
+
+        state_path = Path(path)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = state_path.with_suffix(state_path.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(self.to_dict(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary.replace(state_path)
+
     def get_module(self, code: str) -> SimulatedModule:
         return self._by_code[code]
