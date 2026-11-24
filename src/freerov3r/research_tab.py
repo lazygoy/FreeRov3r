@@ -662,7 +662,7 @@ class ResearchTab(QWidget):
                 "Decoded signal statistics (last 20,000 observed frames):",
             ]
             lines.extend(
-                f"  {name}: n={stats['count']} min={stats['min']:.5g} mean={stats['mean']:.5g} max={stats['max']:.5g}"
+                f"  {name}: n={stats['count']} min={stats['min']:.5g} mean={stats['mean']:.5g} max={stats['max']:.5g} {stats.get('unit', '')}"
                 for name, stats in sorted(coverage["signals"].items())
             )
             if not coverage["matched_frames"]:
@@ -794,7 +794,7 @@ class ResearchTab(QWidget):
                 "- Provenance: user-imported DBC; applicability to the selected vehicle is not assumed.",
             ]
             lines.extend(
-                f"- {name}: n={stats['count']}, min={stats['min']:.6g}, mean={stats['mean']:.6g}, max={stats['max']:.6g}"
+                f"- {name}: n={stats['count']}, min={stats['min']:.6g}, mean={stats['mean']:.6g}, max={stats['max']:.6g} {stats.get('unit', '')}"
                 for name, stats in sorted(coverage["signals"].items())
             )
         if self.reference_frames:
