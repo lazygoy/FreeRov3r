@@ -740,6 +740,29 @@ class ResearchTab(QWidget):
                 f"{current_ids[(can_id, extended)] - reference_ids[(can_id, extended)]:+}"
                 for can_id, extended in changed[:12]
             )
+            if self.dbc_library.database is not None:
+                decoded_comparison = self.dbc_library.compare_captures(
+                    dataset, self.reference_frames
+                )
+                lines += [
+                    "",
+                    "Decoded DBC signal comparison (working minus reference mean):",
+                    f"  Working matched: {decoded_comparison['working']['matched_frames']:,} / "
+                    f"{decoded_comparison['working']['frame_count']:,}",
+                    f"  Reference matched: {decoded_comparison['reference']['matched_frames']:,} / "
+                    f"{decoded_comparison['reference']['frame_count']:,}",
+                ]
+                for item in decoded_comparison["signal_differences"][:20]:
+                    if item["mean_delta"] is None:
+                        lines.append(f"  {item['signal']}: {item['status']}")
+                    else:
+                        unit = item["working"].get("unit", "")
+                        lines.append(
+                            f"  {item['signal']}: {item['mean_delta']:+.6g} {unit} "
+                            f"(working n={item['working']['count']}, "
+                            f"reference n={item['reference']['count']})"
+                        )
+                lines.append("  Descriptive only: differences do not establish meaning or causation.")
         self.summary.setPlainText("\n".join(lines))
 
     def import_capture(self):
