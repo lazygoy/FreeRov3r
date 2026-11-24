@@ -59,3 +59,10 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - LAUNCH-specific protocol decoding.
 
 Keep raw captures unchanged. Derived interpretations should remain separate and be marked as confirmed, probable, or unknown.
+
+
+## Vehicle-specific DID definition framework
+
+The research code includes an opt-in, in-memory DID definition registry. Definitions are keyed by exact vehicle label and 16-bit DID, and must include source title/reference plus an explicit confidence label (`confirmed`, `probable` or `unverified`). Field layouts support byte offsets, lengths, unsigned/signed integers, raw hexadecimal, ASCII, byte order, scale, bias and units. Decoding requires a matching positive `0x62` response and exact vehicle/DID match; unknown definitions remain raw. Truncated fields are reported rather than padded or guessed.
+
+The registry does not ship with assumed LR4 DID meanings. DBC signal definitions are CAN-frame layouts and must not be reused as UDS DID layouts without independent evidence. A source citation and confidence label are metadata, not proof that a definition is correct.
