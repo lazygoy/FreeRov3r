@@ -9,6 +9,8 @@ class FakeSignal:
     def __init__(self, name, unit=""):
         self.name = name
         self.unit = unit
+        self.minimum = 0
+        self.maximum = 6000 if name == "EngineSpeed" else 120
 
 
 class FakeMessage:
@@ -20,7 +22,8 @@ class FakeMessage:
 
     def decode(self, payload, **kwargs):
         assert len(payload) == 2
-        return {"EngineSpeed": 1500.0, "CoolantTemp": 88.5}
+        speed = 1500.0 if payload[0] == 1 else 7000.0
+        return {"EngineSpeed": speed, "CoolantTemp": 88.5}
 
 
 class FakeDatabase:
@@ -87,6 +90,10 @@ def test_dbc_coverage_reports_numeric_signal_statistics(tmp_path, monkeypatch):
     assert coverage["signals"]["EngineSpeed"]["unit"] == "rpm"
     assert coverage["signals"]["CoolantTemp"]["max"] == 88.5
     assert coverage["signals"]["CoolantTemp"]["unit"] == "degC"
+    message_audit = coverage["messages"]["0x123 STD EngineData"]
+    assert message_audit["frame_count"] == 2
+    assert message_audit["signals"]["EngineSpeed"]["out_of_range_count"] == 1
+    assert message_audit["signals"]["EngineSpeed"]["distinct_values"] == 2
 
 
 def test_dbc_library_rejects_non_dbc_paths(tmp_path):
