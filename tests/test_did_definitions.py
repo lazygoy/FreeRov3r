@@ -102,3 +102,39 @@ def test_json_registry_load(tmp_path):
     path.write_text(json.dumps({"definitions": [definition()]}), encoding="utf-8")
     registry = DIDDefinitionRegistry.from_json(path)
     assert registry.get("F190", vehicle="Land Rover L319 5.0 petrol")["name"] == "Example identity record"
+
+
+def test_capture_decoder_only_decodes_paired_single_did_positive_reads():
+    from freerov3r.did_definitions import decode_uds_did_transactions
+
+    registry = DIDDefinitionRegistry([definition()])
+    pairs = [
+        {
+            "confidence": "probable",
+            "request_service": 0x22,
+            "response_kind": "positive",
+            "request": {"payload": "22f190", "arbitration_id": 0x7E0},
+            "response": {"payload": "62f1901234ff9c", "arbitration_id": 0x7E8},
+        },
+        {
+            "confidence": "probable",
+            "request_service": 0x22,
+            "response_kind": "positive",
+            "request": {"payload": "22f190f187", "arbitration_id": 0x7E0},
+            "response": {"payload": "62f1901234f187", "arbitration_id": 0x7E8},
+        },
+        {
+            "confidence": "probable",
+            "request_service": 0x22,
+            "response_kind": "negative",
+            "request": {"payload": "22f190", "arbitration_id": 0x7E0},
+            "response": {"payload": "7f2231", "arbitration_id": 0x7E8},
+        },
+    ]
+    result = decode_uds_did_transactions(
+        pairs, registry, vehicle="Land Rover L319 5.0 petrol"
+    )
+    assert len(result) == 1
+    assert result[0]["did"] == 0xF190
+    assert result[0]["decoded"]["fields"][0]["value"] == "1234"
+    assert result[0]["response_payload"] == "62f1901234ff9c"
