@@ -29,7 +29,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Conservative request/response pairing using UDS service semantics, CAN-ID separation, channel, frame format and a configurable time window.
 - Response latency measurements and a cautious hint for the common 11-bit request/response CAN-ID +0x8 pattern.
 - A Research-tab transaction analysis view and paired-transaction export for REA.
-- Candidate CAN responder-address aggregation by request/response ID pair, channel and frame format, including pair counts, observed services, positive/negative response counts and average latency.
+- Candidate CAN responder-address aggregation by request/response ID pair, channel and frame format, including pair counts, observed services, positive/negative response counts and average latency.\n- Cross-capture validation that independently decodes and pairs two captures, then reports which candidate ID relationships recur in both, with per-capture counts and service evidence.
 - A Research-tab action to inspect reassembled messages, plus ISO-TP results in the REA analysis packet.
 - Frame bookmarks and annotations.
 - Capture comparison by CAN identifier traffic counts.
@@ -49,7 +49,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 ## Not yet implemented
 
 - Extended/mixed ISO-TP addressing and more advanced transaction grouping.
-- Cross-capture ECU address mapping and validation against independently verified vehicle-specific evidence.
+- Validation against independently verified vehicle-specific evidence, such as trusted wiring documentation or a known module-specific operation. Cross-capture repeatability alone still does not establish ECU identity.
 - Multi-network capture and bus selection.
 - Timing-aligned operation markers and capture comparison by sequence.
 - LAUNCH-specific protocol decoding.
