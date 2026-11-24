@@ -1531,13 +1531,17 @@ class ResearchTab(QWidget):
             }, indent=2),
             "",
             f"## Capture ({len(self.frames)} frames)",
-            "| Timestamp | CAN ID | Format | Payload | ISO-TP | UDS hint |",
-            "|---:|---:|---|---|---|---|",
+            "| Timestamp | Elapsed seconds | CAN ID | Format | Payload | ISO-TP | UDS hint |",
+            "|---:|---:|---:|---|---|---|---|",
         ]
         for record in self.frames[:20000]:
             iso, uds = classify_can_payload(bytes.fromhex(record["data"]))
+            elapsed = (
+                f'{record["elapsed_seconds"]:.6f}'
+                if record.get("elapsed_seconds") is not None else ""
+            )
             lines.append(
-                f'| {record["timestamp"]:.6f} | 0x{record["arbitration_id"]:X} | '
+                f'| {record["timestamp"]:.6f} | {elapsed} | 0x{record["arbitration_id"]:X} | '
                 f'{"EXT" if record["extended"] else "STD"} | {record["data"].upper()} | {iso} | {uds} |'
             )
         messages = reassemble_isotp(self.frames)
@@ -1614,6 +1618,53 @@ class ResearchTab(QWidget):
                     f'{change["before_count"]} → {change["after_count"]} '
                     f'(delta {change["delta"]:+})'
                 )
+        if self.sequence_captures:
+            sequence_result = compare_operation_sequences(self.sequence_captures)
+            lines += [
+                "",
+                "## Multi-capture operation sequence comparison",
+                f"Reference capture: {sequence_result['sequence_reference']}",
+            ]
+            for comparison in sequence_result["sequence_comparisons"]:
+                lines.append(
+                    f"- {comparison['capture_name']}: "
+                    f"{'matches reference order' if comparison['matches_reference'] else 'operation order differs'}"
+                )
+                for change in comparison["changes"]:
+                    before = " -> ".join(change["reference_operations"]) or "(nothing)"
+                    after = " -> ".join(change["capture_operations"]) or "(nothing)"
+                    lines.append(
+                        f"  - {change['change_type']}: reference [{before}] "
+                        f"versus capture [{after}]"
+                    )
+
+            uds_operations = summarize_operation_uds_transactions(
+                self.sequence_captures
+            )
+            lines += [
+                "",
+                "## UDS transactions grouped by marked operation",
+                "Only complete probable pairs are included. CAN IDs do not establish physical ECU identity.",
+            ]
+            for operation in uds_operations:
+                lines.append(
+                    f"### {operation['operation']} "
+                    f"({operation['capture_count']} capture(s) contained this operation)"
+                )
+                for transaction in operation["transactions"]:
+                    lines.append(
+                        f"- 0x{transaction['request_id']:X} -> "
+                        f"0x{transaction['response_id']:X}; "
+                        f"SID 0x{transaction['service']:02X}; "
+                        f"{transaction['response_kind']}; "
+                        f"request {transaction['request_payload'].upper()}; "
+                        f"response {transaction['response_payload'].upper()}; "
+                        f"seen in {transaction['capture_count']} capture(s); "
+                        f"median latency {transaction['median_latency_seconds'] * 1000:.2f} ms"
+                    )
+                if not operation["transactions"]:
+                    lines.append("- No complete probable UDS transaction observed.")
+
         lines += ["", "## Bookmarks"]
         lines.extend(f"- {key}: {note}" for key, note in self.bookmarks.items())
         if self.reference_frames:
