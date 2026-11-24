@@ -2263,6 +2263,24 @@ class ResearchTab(QWidget):
 
         lines += ["", "## Bookmarks"]
         lines.extend(f"- {key}: {note}" for key, note in self.bookmarks.items())
+        if self.dbc_library.database is not None:
+            coverage = self.dbc_library.decode_coverage(self.frames)
+            lines += [
+                "",
+                "## DBC decode coverage",
+                f"- Definition: {self.dbc_library.path.name}",
+                f"- Messages / signals: {self.dbc_library.message_count} / {self.dbc_library.signal_count}",
+                f"- Source file: {self.dbc_library.metadata.get('source_file', 'unknown')}",
+                f"- Source origin: {self.dbc_library.metadata.get('source_origin', 'not recorded')}",
+                f"- Verification: {self.dbc_library.metadata.get('verification_status', 'unverified')}",
+                f"- SHA-256: {self.dbc_library.metadata.get('sha256', 'unknown')}",
+                f"- Matched / unmatched frames: {coverage['matched_frames']} / {coverage['unmatched_frames']}",
+                "- Provenance: user-imported DBC; applicability to the selected vehicle is not assumed.",
+            ]
+            lines.extend(
+                f"- {name}: n={stats['count']}, min={stats['min']:.6g}, mean={stats['mean']:.6g}, max={stats['max']:.6g} {stats.get('unit', '')}"
+                for name, stats in sorted(coverage["signals"].items())
+            )
         if self.reference_frames:
             lines += ["", f"Comparison capture contains {len(self.reference_frames)} frames."]
         return "\n".join(lines)
