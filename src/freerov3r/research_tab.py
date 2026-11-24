@@ -512,6 +512,97 @@ def summarize_operation_uds_transactions(captures, *, after_seconds=5.0,
     return results
 
 
+
+def summarize_operation_uds_identifiers(operation_summaries):
+    """Aggregate observed UDS DIDs and routine IDs without guessing their meaning.
+
+    DID requests can contain multiple two-byte identifiers. Positive DID
+    responses are only decoded for their first identifier because subsequent
+    record boundaries depend on ECU-specific data lengths.
+    """
+    aggregates = {}
+    for operation in operation_summaries or []:
+        operation_name = str(operation.get("operation") or "Unspecified")
+        for transaction in operation.get("transactions") or []:
+            try:
+                service = int(transaction["service"])
+                request = bytes.fromhex(transaction.get("request_payload", ""))
+                response = bytes.fromhex(transaction.get("response_payload", ""))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not request or request[0] != service:
+                continue
+
+            identifiers = []
+            if service == 0x22:
+                tail = request[1:]
+                for offset in range(0, len(tail) - 1, 2):
+                    did = int.from_bytes(tail[offset:offset + 2], "big")
+                    identifiers.append({
+                        "kind": "DID",
+                        "identifier": did,
+                        "label": f"DID 0x{did:04X}",
+                        "subfunction": None,
+                        "routine_control_type": None,
+                    })
+            elif service == 0x31 and len(request) >= 4:
+                raw_subfunction = request[1]
+                routine_id = int.from_bytes(request[2:4], "big")
+                control_type = raw_subfunction & 0x7F
+                identifiers.append({
+                    "kind": "Routine ID",
+                    "identifier": routine_id,
+                    "label": f"Routine 0x{routine_id:04X}",
+                    "subfunction": raw_subfunction,
+                    "routine_control_type": control_type,
+                })
+            else:
+                continue
+
+            capture_names = set(transaction.get("capture_names") or [])
+            response_kind = str(transaction.get("response_kind") or "unknown")
+            for identifier in identifiers:
+                key = (
+                    operation_name, identifier["kind"], identifier["identifier"],
+                    identifier["subfunction"],
+                )
+                item = aggregates.setdefault(key, {
+                    "operation": operation_name,
+                    **identifier,
+                    "capture_names": set(),
+                    "positive_count": 0,
+                    "negative_count": 0,
+                    "unknown_count": 0,
+                    "request_count": 0,
+                    "response_examples": set(),
+                })
+                item["capture_names"].update(capture_names)
+                item["request_count"] += int(transaction.get("count", 1))
+                if response_kind == "positive":
+                    item["positive_count"] += int(transaction.get("count", 1))
+                elif response_kind == "negative":
+                    item["negative_count"] += int(transaction.get("count", 1))
+                else:
+                    item["unknown_count"] += int(transaction.get("count", 1))
+                if response:
+                    item["response_examples"].add(response.hex())
+
+    results = []
+    for item in aggregates.values():
+        item["capture_names"] = sorted(item["capture_names"])
+        item["capture_count"] = len(item["capture_names"])
+        item["response_examples"] = sorted(item["response_examples"])
+        item["repeatability"] = (
+            "Seen in multiple captures" if item["capture_count"] >= 2
+            else "Seen in one capture only"
+        )
+        results.append(item)
+    results.sort(key=lambda item: (
+        item["operation"].casefold(), item["kind"], item["identifier"],
+        item["subfunction"] if item["subfunction"] is not None else -1,
+    ))
+    return results
+
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
@@ -1162,6 +1253,32 @@ class ResearchTab(QWidget):
                     f"median latency={transaction['median_latency_seconds'] * 1000:.1f} ms | "
                     f"{transaction['repeatability']}"
                 )
+        identifiers = summarize_operation_uds_identifiers(uds_operations)
+        lines += [
+            "",
+            "OBSERVED UDS IDENTIFIERS",
+            "DIDs and routine IDs are raw observed identifiers; meanings are not inferred.",
+        ]
+        if not identifiers:
+            lines.append("No decodable ReadDataByIdentifier or RoutineControl identifiers observed.")
+        for item in identifiers:
+            detail = (
+                f"routineControlType=0x{item['routine_control_type']:02X} "
+                f"(raw subfunction 0x{item['subfunction']:02X})"
+                if item["kind"] == "Routine ID" else "read request"
+            )
+            lines.append(
+                f"  {item['operation']} | {item['label']} | {detail} | "
+                f"captures={item['capture_count']} | requests={item['request_count']} | "
+                f"positive={item['positive_count']} negative={item['negative_count']} "
+                f"other={item['unknown_count']} | {item['repeatability']}"
+            )
+            if item["response_examples"]:
+                lines.append(
+                    "    response examples: " + ", ".join(
+                        value.upper() for value in item["response_examples"][:5]
+                    )
+                )
         dialog = QDialog(self)
         dialog.setWindowTitle("Multi-capture operation-sequence comparison")
         dialog.resize(1100, 720)
@@ -1665,6 +1782,21 @@ class ResearchTab(QWidget):
                 if not operation["transactions"]:
                     lines.append("- No complete probable UDS transaction observed.")
 
+            identifier_summaries = summarize_operation_uds_identifiers(uds_operations)
+            lines += [
+                "",
+                "## Observed UDS data and routine identifiers",
+                "Raw identifiers only; no vehicle-specific meaning is assigned.",
+            ]
+            for item in identifier_summaries:
+                lines.append(
+                    f"- {item['operation']}: {item['label']}; "
+                    f"requests={item['request_count']}; "
+                    f"captures={item['capture_count']}; "
+                    f"positive={item['positive_count']}; "
+                    f"negative={item['negative_count']}; "
+                    f"other={item['unknown_count']}"
+                )
         lines += ["", "## Bookmarks"]
         lines.extend(f"- {key}: {note}" for key, note in self.bookmarks.items())
         if self.reference_frames:
