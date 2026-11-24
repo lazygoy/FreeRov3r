@@ -1,7 +1,7 @@
 """Serial line adapter for the FreeRov3r ESP32 Classical-CAN firmware.
 
-Current line format: S-or-E,arbitration_id_hex,DLC,HEXDATA
-Examples: S,00000123,2,0102 and E,18DAF110,8,032201F190000000
+Current line format: S-or-E,arbitration_id_hex,DLC,HEXDATA[,DEVICE_TIME_US]
+Examples: S,00000123,2,0102,123456789 and E,18DAF110,8,032201F190000000,123456790
 
 The legacy three-field format remains accepted for older firmware. This
 adapter only receives frames; it never sends serial commands or CAN traffic.
@@ -23,9 +23,14 @@ def parse_can_line(raw, channel=None):
             return None
 
         parts = text.split(",")
-        if len(parts) == 4 and parts[0].upper() in {"S", "E"}:
+        device_timestamp_us = None
+        if len(parts) in (4, 5) and parts[0].upper() in {"S", "E"}:
             is_extended = parts[0].upper() == "E"
-            id_text, dlc_text, data_text = parts[1:]
+            id_text, dlc_text, data_text = parts[1:4]
+            if len(parts) == 5:
+                device_timestamp_us = int(parts[4], 10)
+                if device_timestamp_us < 0:
+                    return None
         elif len(parts) == 3:
             # Backward compatibility with the original prototype protocol.
             id_text, dlc_text, data_text = parts
@@ -49,6 +54,7 @@ def parse_can_line(raw, channel=None):
             is_extended_id=is_extended,
             channel=channel,
             timestamp=time.monotonic(),
+            device_timestamp_us=device_timestamp_us,
         )
     except (UnicodeDecodeError, ValueError, TypeError):
         return None
