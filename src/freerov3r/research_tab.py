@@ -5,6 +5,7 @@ It records and analyzes traffic already delivered by the selected CAN adapter;
 it never transmits diagnostic requests or replays captured frames.
 """
 import csv
+import difflib
 import json
 import re
 import time
@@ -327,8 +328,38 @@ def compare_operation_sequences(captures, *, before_seconds=2.0, after_seconds=5
         })
 
     operations.sort(key=lambda item: item["operation"].casefold())
+
+    sequence_comparisons = []
+    if capture_sequences:
+        reference = capture_sequences[0]
+        reference_ops = reference["operations"]
+        for capture in capture_sequences[1:]:
+            candidate_ops = capture["operations"]
+            changes = []
+            matcher = difflib.SequenceMatcher(
+                a=reference_ops, b=candidate_ops, autojunk=False
+            )
+            for tag, ref_start, ref_end, cur_start, cur_end in matcher.get_opcodes():
+                if tag == "equal":
+                    continue
+                changes.append({
+                    "change_type": tag,
+                    "reference_index": ref_start,
+                    "capture_index": cur_start,
+                    "reference_operations": reference_ops[ref_start:ref_end],
+                    "capture_operations": candidate_ops[cur_start:cur_end],
+                })
+            sequence_comparisons.append({
+                "reference_name": reference["name"],
+                "capture_name": capture["name"],
+                "matches_reference": not changes,
+                "changes": changes,
+            })
+
     return {
         "capture_sequences": capture_sequences,
+        "sequence_reference": capture_sequences[0]["name"] if capture_sequences else None,
+        "sequence_comparisons": sequence_comparisons,
         "operations": operations,
         "capture_count": len(capture_sequences),
         "before_seconds": before_seconds,
@@ -909,6 +940,26 @@ class ResearchTab(QWidget):
         for capture in result["capture_sequences"]:
             sequence = " -> ".join(capture["operations"]) or "(no valid markers)"
             lines.append(f"  {capture['name']}: {sequence}")
+        lines += ["", "SEQUENCE ALIGNMENT"]
+        lines.append(
+            f"Reference order: {result['sequence_reference'] or '(none)'}"
+        )
+        if not result["sequence_comparisons"]:
+            lines.append("Only one capture is available; no cross-capture order comparison.")
+        for comparison in result["sequence_comparisons"]:
+            lines.append(f"  {comparison['capture_name']}:")
+            if comparison["matches_reference"]:
+                lines.append("    Matches reference operation order.")
+            else:
+                for change in comparison["changes"]:
+                    before = " -> ".join(change["reference_operations"]) or "(nothing)"
+                    after = " -> ".join(change["capture_operations"]) or "(nothing)"
+                    lines.append(
+                        f"    {change['change_type'].upper()} at reference step "
+                        f"{change['reference_index'] + 1}, capture step "
+                        f"{change['capture_index'] + 1}: reference [{before}] "
+                        f"versus capture [{after}]"
+                    )
         lines += ["", "OPERATION COMPARISON"]
         for operation in result["operations"]:
             lines.append(
