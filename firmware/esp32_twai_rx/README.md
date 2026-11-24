@@ -58,12 +58,19 @@ received frames. This is the intended mode for observing another scanner's
 traffic without participating in vehicle communication.
 
 The firmware reports startup metadata and bus/queue alerts as comment lines
-beginning with `#`. CAN data frames use:
+beginning with `#`. Protocol v2 CAN data frames append the ESP32-local receive
+timestamp in microseconds since that board booted:
 
 ```text
-S,00000123,2,0102
-E,18DAF110,8,032201F190000000
+S,00000123,2,0102,123456789
+E,18DAF110,8,032201F190000000,123456790
 ```
+
+FreeRov3r also records a host monotonic timestamp when each serial frame is
+received. The ESP32 timestamp helps measure per-board delivery delay, but the
+two boards' clocks are independent and must not be compared as if synchronized.
+Use the host monotonic timestamps for the shared capture timeline. Older
+four-field and legacy three-field frame formats remain accepted by FreeRov3r.
 
 The explicit S/E flag preserves standard-versus-extended frame format even
 when an extended identifier has a numeric value below 0x800.
