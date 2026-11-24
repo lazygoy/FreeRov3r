@@ -155,3 +155,75 @@ def compare_captures(left, right):
         "payloads": payloads,
         "sensors": sensors,
     }
+
+
+def filter_capture_frames(frames, can_id="", frame_format="Any", payload_contains=""):
+    """Return (source_index, frame) pairs matching display-only replay filters."""
+    query = str(can_id or "").strip()
+    wanted_id = None
+    if query:
+        try:
+            wanted_id = int(query, 16 if query.lower().startswith("0x") else 10)
+        except ValueError as exc:
+            raise ValueError("CAN ID filter must be decimal or 0x-prefixed hexadecimal.") from exc
+        if wanted_id < 0 or wanted_id > 0x1FFFFFFF:
+            raise ValueError("CAN ID filter is outside the valid CAN identifier range.")
+
+    fmt = str(frame_format or "Any").strip().lower()
+    if fmt not in {"any", "standard", "extended", "std", "ext"}:
+        raise ValueError("Frame format must be Any, Standard or Extended.")
+    payload_query = "".join(str(payload_contains or "").split()).replace("0x", "").upper()
+    if any(ch not in "0123456789ABCDEF" for ch in payload_query):
+        raise ValueError("Payload filter must contain hexadecimal characters only.")
+
+    matches = []
+    for index, frame in enumerate(frames):
+        if wanted_id is not None and int(frame["arbitration_id"]) != wanted_id:
+            continue
+        extended = bool(frame.get("extended", False))
+        if fmt in {"standard", "std"} and extended:
+            continue
+        if fmt in {"extended", "ext"} and not extended:
+            continue
+        if payload_query and payload_query not in str(frame.get("data", "")).upper():
+            continue
+        matches.append((index, frame))
+    return matches
+
+
+def build_replay_timeline(capture, can_id="", frame_format="Any", payload_contains=""):
+    """Merge filtered CAN frames and archived sensor samples into timestamp order.
+
+    Original frame/sample indices are retained so display filters never mutate archives.
+    """
+    frames = capture.get("frames", [])
+    samples = capture.get("sensor_samples", [])
+    timeline = []
+    for source_index, frame in filter_capture_frames(
+        frames, can_id, frame_format, payload_contains
+    ):
+        timeline.append({
+            "kind": "frame", "timestamp": float(frame.get("timestamp", 0.0)),
+            "source_index": source_index, "frame": frame,
+        })
+    for source_index, sample in enumerate(samples):
+        try:
+            timestamp = float(sample.get("timestamp", 0.0) or 0.0)
+            value = float(sample["value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if timestamp < 0 or not sample.get("sensor_id"):
+            continue
+        normalized = dict(sample)
+        normalized["timestamp"] = timestamp
+        normalized["value"] = value
+        timeline.append({
+            "kind": "sensor", "timestamp": timestamp,
+            "source_index": source_index, "sample": normalized,
+        })
+    # Frames precede sensor samples at identical timestamps; stable source order is kept.
+    timeline.sort(key=lambda event: (
+        event["timestamp"], 0 if event["kind"] == "frame" else 1,
+        event["source_index"],
+    ))
+    return timeline
