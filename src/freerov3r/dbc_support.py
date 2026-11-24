@@ -334,6 +334,7 @@ class DBCLibrary:
         values = {}
         signal_units = {}
         message_values = {}
+        message_frame_counts = {}
         for record in records:
             try:
                 payload = bytes.fromhex(record.get("data", ""))
@@ -354,6 +355,7 @@ class DBCLibrary:
                 f"{result.message_name}"
             )
             per_message = message_values.setdefault(message_key, {})
+            message_frame_counts[message_key] = message_frame_counts.get(message_key, 0) + 1
             for name, value in result.decoded.items():
                 if not isinstance(value, (int, float)) or isinstance(value, bool):
                     continue
@@ -397,10 +399,7 @@ class DBCLibrary:
         }
         messages = {
             message_name: {
-                "frame_count": max(
-                    (len(signal["values"]) for signal in signal_map.values()),
-                    default=0,
-                ),
+                "frame_count": message_frame_counts.get(message_name, 0),
                 "signals": {
                     name: summarize(
                         signal["values"],
