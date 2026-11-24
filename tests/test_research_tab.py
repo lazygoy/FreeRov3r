@@ -274,7 +274,7 @@ def test_operation_uds_transactions_are_correlated_per_capture():
                     if item["response_kind"] == "negative")
     assert positive["capture_count"] == 2
     assert positive["repeatability"] == "Seen in multiple captures"
-    assert positive["median_latency_seconds"] == pytest.approx(0.05)
+    assert abs(positive["median_latency_seconds"] - 0.05) < 1e-9
     assert positive["request_payload"] == "22f190"
     assert positive["response_payload"] == "62f190"
     assert negative["capture_count"] == 1
