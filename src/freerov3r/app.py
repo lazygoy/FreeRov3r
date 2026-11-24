@@ -1,5 +1,6 @@
 """FreeRov3r – user-friendly diagnostic interface with graphing, OBD-II, and modules."""
 import csv
+import can
 import json
 import math
 import sys
@@ -1959,9 +1960,11 @@ class WiringDiagramsTab(QWidget):
 
 
 class VehicleHistoryTab(QWidget):
-    def __init__(self, store: VehicleHistoryStore, parent=None):
+    def __init__(self, store: VehicleHistoryStore, parent=None, replay_callback=None, replay_state_callback=None):
         super().__init__(parent)
         self.store = store
+        self.replay_callback = replay_callback
+        self.replay_state_callback = replay_state_callback
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         controls.addWidget(QLabel("Vehicle VIN:"))
@@ -2165,6 +2168,8 @@ class VehicleHistoryTab(QWidget):
         if self.replay_index >= len(self.replay_capture["frames"]):
             self.replay_index = 0
         self.play_capture_btn.setText("Pause")
+        if self.replay_state_callback:
+            self.replay_state_callback(True)
         self.replay_timer.start(1)
 
     def _replay_step(self):
@@ -2174,13 +2179,17 @@ class VehicleHistoryTab(QWidget):
             return
         index = self.replay_index
         frame = frames[index]
+        if self.replay_callback:
+            self.replay_callback(frame)
         self.capture_table.selectRow(index)
         self.capture_table.scrollToItem(self.capture_table.item(index, 0))
         self.replay_index += 1
         if self.replay_index >= len(frames):
             self.replay_timer.stop()
             self.play_capture_btn.setText("Replay")
-            self.replay_status.setText(f"Playback complete: {len(frames):,} frames reviewed. Offline only.")
+            if self.replay_state_callback:
+                self.replay_state_callback(False)
+            self.replay_status.setText(f"Playback complete: {len(frames):,} frames reviewed in the CAN monitor and sensor workspaces. Offline only.")
             return
         next_timestamp = frames[self.replay_index]["timestamp"]
         delta = max(0.0, next_timestamp - frame["timestamp"])
@@ -2191,6 +2200,8 @@ class VehicleHistoryTab(QWidget):
         if hasattr(self, "replay_timer"):
             self.replay_timer.stop()
         self.replay_index = 0
+        if self.replay_state_callback:
+            self.replay_state_callback(False)
         if hasattr(self, "play_capture_btn"):
             self.play_capture_btn.setText("Play")
         if not completed and hasattr(self, "replay_status") and self.replay_capture:
@@ -2680,6 +2691,7 @@ class MainWindow(QMainWindow):
         self.sensor_capture = SensorCapture()
         self.history_store = VehicleHistoryStore(SETTINGS_DIR / "vehicle_history.json")
         self.receiver = None
+        self._replay_active = False
         self.capture_started_at = None
         self.capture_start_frames = 0
         self.capture_start_sample_index = 0
@@ -2805,7 +2817,11 @@ class MainWindow(QMainWindow):
             storage_path=SETTINGS_DIR / "solutions.json",
         )
         self.tabs.addTab(self.solutions_tab, "Solutions")
-        self.history_tab = VehicleHistoryTab(self.history_store)
+        self.history_tab = VehicleHistoryTab(
+            self.history_store,
+            replay_callback=self.on_replay_frame,
+            replay_state_callback=self.on_replay_state,
+        )
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self.research_tab = ResearchTab()
         self.tabs.addTab(self.research_tab, "Research")
@@ -3003,7 +3019,10 @@ class MainWindow(QMainWindow):
         )
         self.header_vehicle.setText(vehicle_text)
         running = bool(self.receiver and self.receiver.isRunning())
-        if running:
+        if self._replay_active and not running:
+            self.header_connection.setText("● REPLAY")
+            self.header_connection.setObjectName("headerSimulation")
+        elif running:
             if self.active_interface == "simulator":
                 self.header_connection.setText("● SIMULATION")
                 self.header_connection.setObjectName("headerSimulation")
@@ -3661,6 +3680,9 @@ class MainWindow(QMainWindow):
         self.show_toast(f"VIN identified: {vin}", "success")
 
     def toggle_capture(self):
+        if not (self.receiver and self.receiver.isRunning()) and self._replay_active:
+            self.show_toast("Stop archive replay before opening a live CAN interface", "warning")
+            return
         if self.receiver and self.receiver.isRunning():
             self.receiver.stop()
             elapsed = max(0.0, time.time() - (self.capture_started_at or time.time()))
@@ -3762,8 +3784,30 @@ class MainWindow(QMainWindow):
         self._refresh_workspace_header()
         self.show_toast("CAN listener started", "success")
 
+    def on_replay_state(self, active):
+        """Mark offline archive playback without changing the selected adapter."""
+        self._replay_active = bool(active)
+        self._refresh_workspace_header()
+
+    def on_replay_frame(self, frame_data):
+        """Feed one archived frame through the normal monitor/decoder path, never the adapter."""
+        if self.receiver and self.receiver.isRunning():
+            self.show_toast("Stop live listening before replaying an archive", "warning")
+            return
+        frame = can.Message(
+            timestamp=float(frame_data["timestamp"]),
+            arbitration_id=int(frame_data["arbitration_id"]),
+            is_extended_id=bool(frame_data["extended"]),
+            data=bytes.fromhex(frame_data["data"]),
+            channel=frame_data.get("channel"),
+            check=True,
+        )
+        self.on_frame(frame)
+
     def on_frame(self, frame):
-        detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
+        detected_vin = None if self._replay_active else self.vin_decoder.feed(
+            frame.arbitration_id, bytes(frame.data)
+        )
         if detected_vin:
             self._apply_detected_vin(detected_vin)
         self.session.add(frame)
@@ -3784,10 +3828,12 @@ class MainWindow(QMainWindow):
             self.obd_tab.update_value(pid, value)
             sensor_id = f"obd_{pid:02X}"
             simulated = self.active_interface == "simulator"
+            replayed = self._replay_active
             self.sensor_capture.add(SensorSample(
                 timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
-                value=value, unit=unit, source="simulated" if simulated else "ecu",
-                ecu="SIMULATED ECU" if simulated else None,
+                value=value, unit=unit,
+                source="replay" if replayed else ("simulated" if simulated else "ecu"),
+                ecu="REPLAY CAPTURE" if replayed else ("SIMULATED ECU" if simulated else None),
                 signal=f"Mode 01 PID {pid:02X}",
                 metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
                          "vin": self.capture_vin or "UNASSIGNED"},
