@@ -17,6 +17,10 @@ class FakeMessage:
     length = 2
     signals = [FakeSignal("EngineSpeed"), FakeSignal("CoolantTemp")]
 
+    def decode(self, payload, **kwargs):
+        assert len(payload) == 2
+        return {"EngineSpeed": 1500.0, "CoolantTemp": 88.5}
+
 
 class FakeDatabase:
     messages = [FakeMessage()]
@@ -74,6 +78,7 @@ def test_dbc_coverage_reports_numeric_signal_statistics(tmp_path, monkeypatch):
         {"arbitration_id": 0x123, "extended": False, "data": "0102"},
         {"arbitration_id": 0x123, "extended": False, "data": "0304"},
         {"arbitration_id": 0x124, "extended": False, "data": "0102"},
+        {"arbitration_id": 0x123, "extended": False, "data": "not-hex"},
     ])
     assert coverage["matched_frames"] == 2
     assert coverage["unmatched_frames"] == 2
@@ -120,3 +125,30 @@ def test_real_cantools_dbc_decode_when_optional_dependency_is_installed(tmp_path
     assert result is not None
     assert result.message_name == "EngineData"
     assert result.decoded["EngineSpeed"] == 1500.0
+
+
+
+def test_real_cantools_compares_signal_layout_and_scaling(tmp_path):
+    pytest.importorskip("cantools")
+    left = tmp_path / "left.dbc"
+    right = tmp_path / "right.dbc"
+    header = (
+        'VERSION "test"\nNS_ :\nBS_ :\nBU_: ECU\n'
+        'BO_ 291 EngineData: 2 ECU\n'
+    )
+    left.write_text(
+        header + ' SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" ECU\n',
+        encoding="utf-8",
+    )
+    right.write_text(
+        header + ' SG_ EngineSpeed : 0|16@1+ (0.5,0) [0|32767.5] "rpm" ECU\n'
+        ' SG_ CoolantTemp : 16|8@1+ (1,-40) [-40|215] "degC" ECU\n',
+        encoding="utf-8",
+    )
+    report = DBCLibrary.compare_files(left, right)
+    assert report["shared_message_count"] == 1
+    assert report["message_differences"]
+    changes = report["message_differences"][0]["signal_differences"]
+    assert any(item["kind"] == "signal_changed" for item in changes)
+    assert any(item["kind"] == "signal_added" for item in changes)
+    assert report["identical_shared_definitions"] is False
