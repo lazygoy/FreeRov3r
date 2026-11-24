@@ -665,6 +665,17 @@ class ResearchTab(QWidget):
                 f"  {name}: n={stats['count']} min={stats['min']:.5g} mean={stats['mean']:.5g} max={stats['max']:.5g} {stats.get('unit', '')}"
                 for name, stats in sorted(coverage["signals"].items())
             )
+            if coverage["messages"]:
+                lines.append("Per-message DBC range audit (outside declared limits):")
+                for message_name, audit in sorted(coverage["messages"].items()):
+                    out_of_range = sum(
+                        signal["out_of_range_count"]
+                        for signal in audit["signals"].values()
+                    )
+                    lines.append(
+                        f"  {message_name}: {audit['frame_count']} frames, "
+                        f"{len(audit['signals'])} signals, {out_of_range} out-of-range samples"
+                    )
             if not coverage["matched_frames"]:
                 lines.append("  No matching frame IDs and formats in this working set.")
         if self.reference_frames:
@@ -797,6 +808,16 @@ class ResearchTab(QWidget):
                 f"- {name}: n={stats['count']}, min={stats['min']:.6g}, mean={stats['mean']:.6g}, max={stats['max']:.6g} {stats.get('unit', '')}"
                 for name, stats in sorted(coverage["signals"].items())
             )
+            lines.append("- Declared DBC range checks (not independent validation):")
+            for message_name, audit in sorted(coverage["messages"].items()):
+                out_of_range = sum(
+                    signal["out_of_range_count"]
+                    for signal in audit["signals"].values()
+                )
+                lines.append(
+                    f"- {message_name}: {audit['frame_count']} frames; "
+                    f"{out_of_range} decoded samples outside DBC-declared limits"
+                )
         if self.reference_frames:
             lines += ["", f"Comparison capture contains {len(self.reference_frames)} frames."]
         return "\n".join(lines)
