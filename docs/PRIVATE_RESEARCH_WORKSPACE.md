@@ -38,6 +38,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Observed UDS identifier summary for ReadDataByIdentifier (0x22), WriteDataByIdentifier (0x2E), InputOutputControlByIdentifier (0x2F) and RoutineControl (0x31), aggregating DIDs, routine IDs, routine-control subfunctions, outcomes and cross-capture repeatability without guessing vehicle-specific meanings.
 - DID response-data comparison: compares raw positive single-DID ReadDataByIdentifier payloads across marked operations and captures, reporting distinct values, data lengths and differing byte offsets. Multi-DID responses are deliberately skipped until record boundaries can be established from a trusted vehicle-specific definition.
 - Source-backed DID response decoding: load a JSON definition registry, select its exact vehicle key, and decode only paired positive single-DID 0x22 transactions. The Research tab displays raw request/response bytes, decoded fields, confidence and source provenance. Multi-DID, negative, unmatched and unknown definitions remain uninterpreted.
+- Registry validation CLI: run `python -m freerov3r.did_definitions path/to/registry.json` to validate the JSON structure and print definition counts, vehicle keys, confidence counts and source references. `examples/did_definitions.example.json` is an intentionally empty starter template; it contains no invented vehicle definitions.
 - JSON session save and Markdown handoff packet for REA / ChatGPT.
 
 ## Safety and interpretation limits
