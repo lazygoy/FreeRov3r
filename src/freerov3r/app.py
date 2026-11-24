@@ -2722,7 +2722,8 @@ class MainWindow(QMainWindow):
             "make": data["make"], "model": data["model"],
             "model_year": data["model_year"], "profile_id": data["profile_id"],
             "identification_confidence": data["identification"].get("confidence", "manual"),
-            "variant_id": data["identification"].get("variant_id"), "nickname": "",
+            "variant_id": data["identification"].get("variant_id"),
+            "profile_selection_explicit": True, "nickname": "",
         }
         vin = data["vin"]
         if vin:
@@ -3353,7 +3354,7 @@ class MainWindow(QMainWindow):
             })
             vehicles[vin] = active.copy()
         profile_id = active.get("profile_id", "generic")
-        if profile_id == "generic":
+        if profile_id == "generic" and not active.get("profile_selection_explicit"):
             make = str(active.get("make") or "").strip().lower()
             model = str(active.get("model") or "").strip().lower()
             if (not make and not model) or ("land rover" in make and not model):
