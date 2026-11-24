@@ -362,3 +362,27 @@ def test_cross_capture_summary_labels_single_capture_evidence():
     assert result[0]["capture_count"] == 1
     assert result[0]["repeatability"] == "Observed in one capture only"
     assert result[0]["negative_count"] == 1
+
+
+
+def test_cross_capture_summary_counts_two_files_with_same_session_name_separately():
+    from freerov3r.isotp import summarize_cross_capture_address_pairs
+
+    request = {"arbitration_id": 0x7E0, "extended": False, "channel": "can0"}
+    response = {"arbitration_id": 0x7E8, "extended": False, "channel": "can0"}
+    pair = {
+        "confidence": "probable", "request": request, "response": response,
+        "request_service": 0x22, "response_kind": "positive", "latency_seconds": 0.02,
+    }
+    result = summarize_cross_capture_address_pairs([
+        {"name": "LAUNCH capture", "transactions": [pair]},
+        {"name": "LAUNCH capture", "transactions": [pair]},
+    ])
+    assert result[0]["capture_count"] == 2
+    assert result[0]["capture_names"] == [
+        "LAUNCH capture [capture 1]", "LAUNCH capture [capture 2]"
+    ]
+    assert result[0]["per_capture_pair_counts"] == {
+        "LAUNCH capture [capture 1]": 1,
+        "LAUNCH capture [capture 2]": 1,
+    }
