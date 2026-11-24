@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
+from freerov3r.timestamp_analysis import analyze_channel_timestamps
 
 from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
@@ -879,6 +880,15 @@ class ResearchTab(QWidget):
             receiver_layout.addWidget(label, 1)
         root.addWidget(receiver_box)
 
+        timing_box = QGroupBox("DUAL-CHANNEL TIMING HEALTH")
+        timing_layout = QVBoxLayout(timing_box)
+        self.timestamp_health_label = QLabel(
+            "No device timestamps observed yet. ESP32 clocks are independent; host time is the shared timeline."
+        )
+        self.timestamp_health_label.setWordWrap(True)
+        timing_layout.addWidget(self.timestamp_health_label)
+        root.addWidget(timing_box)
+
         session_box = QGroupBox("RESEARCH SESSION")
         session_form = QFormLayout(session_box)
         self.session_name = QLineEdit("LAUNCH Creader Elite V2.0 capture")
@@ -1250,6 +1260,41 @@ class ResearchTab(QWidget):
         source_label = "recorded/imported" if self.frames else "live preview"
         self.count_label.setText(f"{len(rows):,} displayed · {source_count:,} {source_label}")
         self._update_summary()
+        self._update_timestamp_health()
+
+    def _update_timestamp_health(self):
+        if not hasattr(self, "timestamp_health_label"):
+            return
+        records = self.frames if self.frames else self.live_preview
+        if not records:
+            self.timestamp_health_label.setText(
+                "No device timestamps observed yet. Host monotonic time remains the shared timeline."
+            )
+            return
+        report = analyze_channel_timestamps(records)
+        if not report["channels"] or not any(
+            item["timed_frame_count"] for item in report["channels"]
+        ):
+            self.timestamp_health_label.setText(
+                f"{report['frame_count']:,} frames; no valid ESP32 device timestamps. "
+                "Older firmware/capture formats remain supported."
+            )
+            return
+        summaries = []
+        for item in report["channels"]:
+            fit = item["clock_fit"]
+            drift = f"{fit['drift_ppm']:+.1f} ppm" if fit else "drift unavailable"
+            jitter = f"{fit['residual_p95_ms']:.3f} ms p95 residual" if fit else "jitter unavailable"
+            summaries.append(
+                f"{item['channel']}: {item['timed_frame_count']}/{item['frame_count']} timed, "
+                f"{drift}, {jitter}, non-monotonic {item['non_monotonic_device_steps']}, "
+                f"gaps {item['suspicious_device_gaps']}"
+            )
+        self.timestamp_health_label.setText(
+            " | ".join(summaries)
+            + " | ESP32 clocks are independent; residuals are timing consistency estimates, "
+              "not absolute transport latency."
+        )
 
     def show_selected_frame(self):
         row = self.frame_table.currentRow()
@@ -2234,6 +2279,9 @@ class ResearchTab(QWidget):
             "Do not infer ECU identity or request/response direction from CAN ID alone.",
             "ISO-TP and UDS labels below are heuristic hints, not confirmed interpretations.",
             "Do not recommend replaying unknown frames or performing ECU writes.",
+            "",
+            "## Per-channel timestamp quality",
+            json.dumps(analyze_channel_timestamps(self.frames), indent=2),
             "",
             "## Session context",
             json.dumps({
