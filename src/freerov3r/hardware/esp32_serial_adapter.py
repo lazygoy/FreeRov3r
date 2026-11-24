@@ -54,6 +54,8 @@ def parse_can_line(raw, channel=None):
 
 
 class Esp32SerialAdapter(CanAdapter):
+    ACTIVE_FRAME_WINDOW_SECONDS = 2.5
+
     def __init__(self, port="COM3", baudrate=921600, timeout=0.2):
         self.port, self.baudrate, self.timeout = port, baudrate, timeout
         self.connection = None
@@ -86,8 +88,20 @@ class Esp32SerialAdapter(CanAdapter):
             max(0.0, now - self.last_status_monotonic)
             if self.last_status_monotonic is not None else None
         )
+        if not self.connected:
+            receiver_state = "disconnected/error" if self.last_error else "disconnected"
+        elif self.firmware_error_count or (
+            self.last_error and not self.last_error.startswith("ALERT,")
+        ):
+            receiver_state = "connected/error"
+        elif frame_age is None or frame_age > self.ACTIVE_FRAME_WINDOW_SECONDS:
+            receiver_state = "connected/silent"
+        else:
+            receiver_state = "receiving"
+
         return {
             "connected": self.connected,
+            "receiver_state": receiver_state,
             "port": self.port,
             "baudrate": self.baudrate,
             "frames_received": self.frames_received,
