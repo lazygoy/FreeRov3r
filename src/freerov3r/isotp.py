@@ -397,11 +397,19 @@ def summarize_cross_capture_address_pairs(captures):
     repeated in multiple captures is stronger repeatability evidence, not proof
     of ECU identity or physical network topology.
     """
+    capture_list = [item for item in (captures or []) if isinstance(item, dict)]
+    name_totals = {}
+    for item in capture_list:
+        base_name = str(item.get("name") or "Unnamed capture")
+        name_totals[base_name] = name_totals.get(base_name, 0) + 1
+
     groups = {}
-    for capture in captures:
-        if not isinstance(capture, dict):
-            continue
-        name = str(capture.get("name") or "Unnamed capture")
+    for capture_index, capture in enumerate(capture_list):
+        base_name = str(capture.get("name") or "Unnamed capture")
+        name = (
+            f"{base_name} [capture {capture_index + 1}]"
+            if name_totals[base_name] > 1 else base_name
+        )
         transactions = capture.get("transactions") or []
         seen_in_capture = set()
         for pair in transactions:
