@@ -51,7 +51,7 @@ def test_dbc_library_imports_validates_and_copies_file(tmp_path, monkeypatch):
     source = tmp_path / "sample.dbc"
     source.write_text('VERSION "test"\n', encoding="utf-8")
     library = DBCLibrary(tmp_path / "library")
-    monkeypatch.setattr(library, "_cantools", lambda: FakeCantools)
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
     destination = library.import_file(source)
     assert destination.parent == tmp_path / "library"
     assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
@@ -120,7 +120,7 @@ def test_real_cantools_dbc_decode_when_optional_dependency_is_installed(tmp_path
         'NS_ :\n'
         'BS_ :\n'
         'BU_: ECU\n'
-        'BO_ 291 EngineData: 3 ECU\n'
+        'BO_ 291 EngineData: 2 ECU\n'
         ' SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" ECU\n',
         encoding="utf-8",
     )
