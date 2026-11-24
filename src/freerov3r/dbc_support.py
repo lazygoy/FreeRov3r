@@ -7,8 +7,10 @@ local user library and are never silently treated as verified vehicle data.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
+import json
 import shutil
 
 
@@ -29,11 +31,23 @@ class DBCLibrary:
     def __init__(self, library_dir=None):
         self.library_dir = Path(library_dir or (Path.home() / ".freerov3r" / "dbc"))
         self.library_dir.mkdir(parents=True, exist_ok=True)
+        self.metadata_dir = self.library_dir / "metadata"
+        self.metadata_dir.mkdir(parents=True, exist_ok=True)
+        self.active_state_path = self.library_dir / "active.json"
         self.database = None
         self.path = None
         self.messages_by_key = {}
         self.signal_count = 0
         self.message_count = 0
+        self.metadata = {}
+        try:
+            state = json.loads(self.active_state_path.read_text(encoding="utf-8"))
+            active_path = Path(state.get("path", ""))
+            if active_path.is_file():
+                self.load_file(active_path)
+        except (OSError, ValueError, TypeError, DBCUnavailableError):
+            # Missing optional dependency or stale last-used path must not block startup.
+            pass
 
     @staticmethod
     def _cantools():
@@ -56,11 +70,27 @@ class DBCLibrary:
         if not database.messages:
             raise ValueError("The DBC contains no CAN messages.")
 
-        digest = hashlib.sha256(source.read_bytes()).hexdigest()[:12]
+        if source.resolve().parent == self.library_dir.resolve():
+            self.load_file(source)
+            return source
+        source_bytes = source.read_bytes()
+        digest_full = hashlib.sha256(source_bytes).hexdigest()
+        digest = digest_full[:12]
         safe_stem = "".join(c if c.isalnum() or c in "-_" else "_" for c in source.stem)[:48]
         destination = self.library_dir / f"{safe_stem}_{digest}.dbc"
         if source.resolve() != destination.resolve():
             shutil.copy2(source, destination)
+        metadata = {
+            "file": destination.name,
+            "sha256": digest_full,
+            "source_file": source.name,
+            "source_origin": "Not recorded",
+            "vehicle_applicability": "Unverified",
+            "verification_status": "unverified",
+            "imported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        metadata_path = self.metadata_dir / f"{destination.name}.json"
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         self.load_file(destination)
         return destination
 
@@ -85,6 +115,22 @@ class DBCLibrary:
         self.messages_by_key = index
         self.message_count = len(database.messages)
         self.signal_count = sum(len(message.signals) for message in database.messages)
+        metadata_path = self.metadata_dir / f"{source.name}.json"
+        try:
+            self.metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.metadata = {
+                "file": source.name,
+                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "source_file": source.name,
+                "source_origin": "Not recorded",
+                "vehicle_applicability": "Unverified",
+                "verification_status": "unverified",
+                "imported_at": None,
+            }
+        self.active_state_path.write_text(
+            json.dumps({"path": str(source.resolve())}, indent=2), encoding="utf-8"
+        )
         return self.summary()
 
     def summary(self):
@@ -93,6 +139,7 @@ class DBCLibrary:
             "name": self.path.name if self.path else None,
             "message_count": self.message_count,
             "signal_count": self.signal_count,
+            "metadata": dict(self.metadata),
             "messages": [
                 {
                     "frame_id": int(message.frame_id),
