@@ -140,3 +140,18 @@ def test_adapter_can_assign_logical_bus_name_independent_of_com_port():
     assert frame is not None
     assert frame.channel == "HS-CAN"
     assert adapter.diagnostics["port"] == "COM7"
+
+
+def test_received_frame_uses_host_monotonic_timestamp():
+    import time
+    from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
+
+    adapter = Esp32SerialAdapter(port="COM8", channel_name="MS-CAN")
+    adapter.connection = FakeSerial([b"S,00000123,1,AA\\n"])
+    before = time.monotonic()
+    frame = adapter.receive()
+    after = time.monotonic()
+
+    assert frame is not None
+    assert before <= frame.timestamp <= after
+    assert frame.channel == "MS-CAN"
