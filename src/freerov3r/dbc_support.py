@@ -289,6 +289,49 @@ class DBCLibrary:
         )
         return report
 
+    def catalog(self):
+        """Return an explicit, read-only inventory of every message and signal."""
+        if self.database is None:
+            return []
+        rows = []
+        for message in self.database.messages:
+            common = {
+                "frame_id": int(message.frame_id),
+                "format": "EXT" if message.is_extended_frame else "STD",
+                "message": str(message.name),
+                "length": int(message.length),
+                "senders": ", ".join(str(x) for x in (getattr(message, "senders", None) or [])),
+                "cycle_time": getattr(message, "cycle_time", None),
+            }
+            if not message.signals:
+                rows.append({**common, "signal": "(no signals)"})
+                continue
+            for signal in message.signals:
+                choices = getattr(signal, "choices", None) or {}
+                rows.append({
+                    **common,
+                    "signal": str(signal.name),
+                    "start_bit": int(signal.start),
+                    "bit_length": int(signal.length),
+                    "byte_order": str(signal.byte_order),
+                    "signed": bool(signal.is_signed),
+                    "factor": float(signal.scale),
+                    "offset": float(signal.offset),
+                    "unit": str(signal.unit or ""),
+                    "minimum": signal.minimum,
+                    "maximum": signal.maximum,
+                    "multiplexer": bool(getattr(signal, "is_multiplexer", False)),
+                    "multiplexer_signal": str(getattr(signal, "multiplexer_signal", None) or ""),
+                    "multiplexer_ids": ", ".join(
+                        str(value) for value in (getattr(signal, "multiplexer_ids", None) or [])
+                    ),
+                    "choices": "; ".join(
+                        f"{int(value)}={getattr(choice, 'name', choice)}"
+                        for value, choice in sorted(choices.items(), key=lambda item: int(item[0]))
+                    ),
+                })
+        return rows
+
     def decode(self, frame_id, data, extended=False):
         """Decode one received frame. Returns None when this DBC has no matching ID."""
         if self.database is None:
