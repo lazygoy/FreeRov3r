@@ -289,6 +289,79 @@ class DBCLibrary:
         )
         return report
 
+    def compare_captures(self, working_records, reference_records):
+        """Compare decoded numeric signal distributions across two passive captures.
+
+        This is descriptive only. Differences may reflect operating conditions,
+        capture duration, vehicle configuration, or an incorrect DBC.
+        """
+        def collect(records):
+            samples = {}
+            matched = 0
+            unmatched = 0
+            for record in records:
+                try:
+                    payload = bytes.fromhex(record.get("data", ""))
+                    decoded = self.decode(
+                        record.get("arbitration_id", -1),
+                        payload,
+                        record.get("extended", False),
+                    )
+                except (TypeError, ValueError):
+                    decoded = None
+                if decoded is None:
+                    unmatched += 1
+                    continue
+                matched += 1
+                for name, value in decoded.decoded.items():
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        samples.setdefault(name, {
+                            "values": [], "unit": decoded.units.get(name, "")
+                        })["values"].append(float(value))
+            summaries = {}
+            for name, item in samples.items():
+                values = item["values"]
+                summaries[name] = {
+                    "count": len(values), "min": min(values), "max": max(values),
+                    "mean": sum(values) / len(values), "unit": item["unit"],
+                }
+            return {
+                "frame_count": len(records), "matched_frames": matched,
+                "unmatched_frames": unmatched, "signals": summaries,
+            }
+
+        working = collect(working_records)
+        reference = collect(reference_records)
+        differences = []
+        for name in sorted(set(working["signals"]) | set(reference["signals"])):
+            current = working["signals"].get(name)
+            baseline = reference["signals"].get(name)
+            if current is None or baseline is None:
+                differences.append({
+                    "signal": name,
+                    "status": "working only" if current else "reference only",
+                    "working": current, "reference": baseline, "mean_delta": None,
+                })
+            else:
+                differences.append({
+                    "signal": name, "status": "shared",
+                    "working": current, "reference": baseline,
+                    "mean_delta": current["mean"] - baseline["mean"],
+                })
+        differences.sort(
+            key=lambda item: abs(item["mean_delta"])
+            if item["mean_delta"] is not None else float("inf"),
+            reverse=True,
+        )
+        return {
+            "working": working, "reference": reference,
+            "signal_differences": differences,
+            "interpretation": (
+                "Descriptive decoded-value comparison only; it does not establish "
+                "signal meaning, causation, vehicle applicability, or DBC correctness."
+            ),
+        }
+
     def catalog(self):
         """Return an explicit, read-only inventory of every message and signal."""
         if self.database is None:
