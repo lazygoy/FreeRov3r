@@ -381,11 +381,19 @@ def summarize_operation_uds_transactions(captures, *, after_seconds=5.0,
     if response_window < 0:
         raise ValueError("Response window must be non-negative")
 
+    capture_list = [item for item in (captures or []) if isinstance(item, dict)]
+    name_totals = {}
+    for item in capture_list:
+        base_name = str(item.get("name") or "Unnamed capture")
+        name_totals[base_name] = name_totals.get(base_name, 0) + 1
+
     groups = {}
-    for capture_index, capture in enumerate(captures or []):
-        if not isinstance(capture, dict):
-            continue
-        capture_name = str(capture.get("name") or f"Capture {capture_index + 1}")
+    for capture_index, capture in enumerate(capture_list):
+        base_name = str(capture.get("name") or "Unnamed capture")
+        capture_name = (
+            f"{base_name} [capture {capture_index + 1}]"
+            if name_totals[base_name] > 1 else base_name
+        )
         frames = []
         for frame in capture.get("frames") or []:
             if not isinstance(frame, dict):
@@ -412,7 +420,14 @@ def summarize_operation_uds_transactions(captures, *, after_seconds=5.0,
                 center = float(marker["elapsed_seconds"])
             except (KeyError, TypeError, ValueError):
                 continue
-            markers.append((center, str(marker.get("operation") or "Unspecified")))
+            operation = str(marker.get("operation") or "Unspecified")
+            markers.append((center, operation))
+            group = groups.setdefault(operation, {
+                "operation": operation,
+                "capture_names": set(),
+                "transactions": {},
+            })
+            group["capture_names"].add(capture_name)
 
         for transaction in transactions:
             if transaction.get("confidence") != "probable":
@@ -465,7 +480,6 @@ def summarize_operation_uds_transactions(captures, *, after_seconds=5.0,
             item["capture_names"].add(capture_name)
             item["latencies"].append(latency)
             item["count"] += 1
-            group["capture_names"].add(capture_name)
 
     results = []
     for group in groups.values():
@@ -496,6 +510,7 @@ def summarize_operation_uds_transactions(captures, *, after_seconds=5.0,
         })
     results.sort(key=lambda item: item["operation"].casefold())
     return results
+
 
 def _frame_record(frame):
     return {
