@@ -342,3 +342,23 @@ def test_load_json_preserves_monotonic_elapsed_seconds(tmp_path):
     assert metadata["markers"][0]["operation"] == "Scan"
     assert frames[0]["timestamp"] == 1730000000.0
     assert frames[0]["elapsed_seconds"] == 5.25
+
+
+
+def test_load_json_keeps_can_frame_when_elapsed_time_is_invalid(tmp_path):
+    import json
+
+    path = tmp_path / "bad-elapsed.json"
+    path.write_text(json.dumps({
+        "frames": [{
+            "timestamp": 12.0,
+            "elapsed_seconds": "not-a-clock",
+            "arbitration_id": 0x700,
+            "data": "0102",
+        }]
+    }), encoding="utf-8")
+
+    _, frames = load_capture_file(path)
+    assert len(frames) == 1
+    assert frames[0]["arbitration_id"] == 0x700
+    assert "elapsed_seconds" not in frames[0]
