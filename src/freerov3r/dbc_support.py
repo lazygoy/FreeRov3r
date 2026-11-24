@@ -105,6 +105,108 @@ class DBCLibrary:
             ],
         }
 
+
+    @classmethod
+    def compare_files(cls, left_path, right_path):
+        """Compare two DBC definitions structurally without assuming either is correct."""
+        left_path = Path(left_path)
+        right_path = Path(right_path)
+        for path in (left_path, right_path):
+            if not path.is_file() or path.suffix.lower() != ".dbc":
+                raise ValueError(f"Select an existing .dbc file: {path}")
+        cantools = cls._cantools()
+        left_db = cantools.database.load_file(str(left_path), strict=True)
+        right_db = cantools.database.load_file(str(right_path), strict=True)
+
+        def index_messages(database):
+            indexed = {}
+            for message in database.messages:
+                key = (int(message.frame_id), bool(message.is_extended_frame))
+                if key in indexed:
+                    raise ValueError(f"Duplicate message definition for 0x{message.frame_id:X}")
+                indexed[key] = message
+            return indexed
+
+        def signal_signature(signal):
+            return {
+                "start": int(signal.start),
+                "length": int(signal.length),
+                "byte_order": str(signal.byte_order),
+                "is_signed": bool(signal.is_signed),
+                "scale": float(signal.scale),
+                "offset": float(signal.offset),
+                "unit": str(signal.unit or ""),
+            }
+
+        left_messages = index_messages(left_db)
+        right_messages = index_messages(right_db)
+        left_keys = set(left_messages)
+        right_keys = set(right_messages)
+        shared = sorted(left_keys & right_keys)
+        report = {
+            "left": left_path.name,
+            "right": right_path.name,
+            "left_message_count": len(left_messages),
+            "right_message_count": len(right_messages),
+            "shared_message_count": len(shared),
+            "left_only": [
+                {"frame_id": key[0], "extended": key[1], "name": left_messages[key].name}
+                for key in sorted(left_keys - right_keys)
+            ],
+            "right_only": [
+                {"frame_id": key[0], "extended": key[1], "name": right_messages[key].name}
+                for key in sorted(right_keys - left_keys)
+            ],
+            "message_differences": [],
+        }
+        for key in shared:
+            left_message = left_messages[key]
+            right_message = right_messages[key]
+            difference = {
+                "frame_id": key[0],
+                "extended": key[1],
+                "left_name": left_message.name,
+                "right_name": right_message.name,
+                "left_length": int(left_message.length),
+                "right_length": int(right_message.length),
+                "signal_differences": [],
+            }
+            if left_message.length != right_message.length:
+                difference["signal_differences"].append({
+                    "kind": "message_length",
+                    "left": int(left_message.length),
+                    "right": int(right_message.length),
+                })
+            left_signals = {signal.name: signal for signal in left_message.signals}
+            right_signals = {signal.name: signal for signal in right_message.signals}
+            for name in sorted(set(left_signals) | set(right_signals)):
+                if name not in left_signals:
+                    difference["signal_differences"].append({
+                        "kind": "signal_added", "signal": name,
+                    })
+                elif name not in right_signals:
+                    difference["signal_differences"].append({
+                        "kind": "signal_removed", "signal": name,
+                    })
+                else:
+                    left_sig = signal_signature(left_signals[name])
+                    right_sig = signal_signature(right_signals[name])
+                    changed = {
+                        field: {"left": left_sig[field], "right": right_sig[field]}
+                        for field in left_sig if left_sig[field] != right_sig[field]
+                    }
+                    if changed:
+                        difference["signal_differences"].append({
+                            "kind": "signal_changed", "signal": name, "fields": changed,
+                        })
+            if difference["signal_differences"] or left_message.name != right_message.name:
+                report["message_differences"].append(difference)
+        report["identical_shared_definitions"] = (
+            report["shared_message_count"] == len(left_messages) == len(right_messages)
+            and not report["message_differences"]
+        )
+        return report
+
     def decode(self, frame_id, data, extended=False):
         """Decode one received frame. Returns None when this DBC has no matching ID."""
         if self.database is None:
