@@ -253,3 +253,46 @@ def test_dbc_catalog_exposes_signal_layout_and_scaling(tmp_path, monkeypatch):
 def test_dbc_catalog_is_empty_without_loaded_database(tmp_path):
     library = DBCLibrary(tmp_path / "library")
     assert library.catalog() == []
+
+
+def test_dbc_capture_comparison_reports_signal_mean_deltas(tmp_path, monkeypatch):
+    source = tmp_path / "sample.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    library.load_file(source)
+
+    working = [
+        {"arbitration_id": 0x123, "extended": False, "data": "0102"},
+        {"arbitration_id": 0x123, "extended": False, "data": "0304"},
+        {"arbitration_id": 0x124, "extended": False, "data": "0102"},
+    ]
+    reference = [
+        {"arbitration_id": 0x123, "extended": False, "data": "0102"},
+        {"arbitration_id": 0x123, "extended": False, "data": "0102"},
+    ]
+    report = library.compare_captures(working, reference)
+    assert report["working"]["matched_frames"] == 2
+    assert report["working"]["unmatched_frames"] == 1
+    assert report["reference"]["matched_frames"] == 2
+    speed = next(item for item in report["signal_differences"] if item["signal"] == "EngineSpeed")
+    assert speed["mean_delta"] == 2750.0
+    assert speed["working"]["count"] == 2
+    assert speed["reference"]["count"] == 2
+    assert "does not establish" in report["interpretation"]
+
+
+def test_dbc_capture_comparison_marks_signals_present_in_only_one_capture(tmp_path, monkeypatch):
+    source = tmp_path / "sample.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    library.load_file(source)
+    report = library.compare_captures(
+        [{"arbitration_id": 0x123, "extended": False, "data": "0102"}],
+        [{"arbitration_id": 0x124, "extended": False, "data": "0102"}],
+    )
+    assert all(item["mean_delta"] is None for item in report["signal_differences"])
+    assert {item["status"] for item in report["signal_differences"]} == {
+        "working only", "reference only"
+    }
