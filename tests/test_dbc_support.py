@@ -84,7 +84,9 @@ def test_dbc_coverage_reports_numeric_signal_statistics(tmp_path, monkeypatch):
     assert coverage["matched_frames"] == 2
     assert coverage["unmatched_frames"] == 2
     assert coverage["signals"]["EngineSpeed"]["mean"] == 1500.0
+    assert coverage["signals"]["EngineSpeed"]["unit"] == "rpm"
     assert coverage["signals"]["CoolantTemp"]["max"] == 88.5
+    assert coverage["signals"]["CoolantTemp"]["unit"] == "degC"
 
 
 def test_dbc_library_rejects_non_dbc_paths(tmp_path):
