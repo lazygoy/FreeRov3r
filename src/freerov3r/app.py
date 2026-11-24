@@ -2218,6 +2218,12 @@ class VehicleHistoryTab(QWidget):
                 "Extended" if item["extended"] else "Standard",
                 str(item["left_count"]), str(item["right_count"]), f"{item['delta']:+d}",
             ])
+        for item in result["payloads"]:
+            rows.append([
+                f"0x{item['arbitration_id']:08X}",
+                ("EXT " if item["extended"] else "STD ") + item["data"],
+                str(item["left_count"]), str(item["right_count"]), f"{item['delta']:+d}",
+            ])
         for item in result["sensors"]:
             left_stats, right_stats = item["left"], item["right"]
             left_mean = f"{left_stats['mean']:.3f}" if left_stats else "—"
