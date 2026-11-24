@@ -622,6 +622,77 @@ def summarize_operation_uds_identifiers(operation_summaries):
     ))
     return results
 
+
+def summarize_operation_did_response_variation(operation_summaries):
+    """Compare raw positive 0x22 DID data across captures without decoding it.
+
+    Multi-DID responses are intentionally skipped because variable-length DID
+    records cannot be split reliably without a vehicle-specific data definition.
+    """
+    aggregates = {}
+    for operation in operation_summaries or []:
+        operation_name = str(operation.get("operation") or "Unspecified")
+        for transaction in operation.get("transactions") or []:
+            try:
+                service = int(transaction["service"])
+                request = bytes.fromhex(transaction.get("request_payload", ""))
+                response = bytes.fromhex(transaction.get("response_payload", ""))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if service != 0x22 or len(request) != 3 or request[0] != 0x22:
+                continue
+            if transaction.get("response_kind") != "positive":
+                continue
+            did = int.from_bytes(request[1:3], "big")
+            if len(response) < 3 or response[:3] != bytes((0x62,)) + request[1:3]:
+                continue
+            value = response[3:]
+            key = (operation_name, did)
+            item = aggregates.setdefault(key, {
+                "operation": operation_name,
+                "did": did,
+                "label": f"DID 0x{did:04X}",
+                "capture_names": set(),
+                "value_counts": {},
+                "value_lengths": set(),
+                "total_count": 0,
+            })
+            count = int(transaction.get("count", 1))
+            item["capture_names"].update(transaction.get("capture_names") or [])
+            item["value_counts"][value.hex()] = (
+                item["value_counts"].get(value.hex(), 0) + count
+            )
+            item["value_lengths"].add(len(value))
+            item["total_count"] += count
+
+    results = []
+    for item in aggregates.values():
+        values = sorted(item["value_counts"])
+        decoded = [bytes.fromhex(value) for value in values]
+        common_lengths = {len(value) for value in decoded}
+        variable_offsets = []
+        if len(common_lengths) == 1 and decoded:
+            width = len(decoded[0])
+            variable_offsets = [
+                offset for offset in range(width)
+                if len({value[offset] for value in decoded}) > 1
+            ]
+        item["capture_names"] = sorted(item["capture_names"])
+        item["capture_count"] = len(item["capture_names"])
+        item["distinct_value_count"] = len(values)
+        item["value_lengths"] = sorted(item["value_lengths"])
+        item["value_examples"] = values[:8]
+        item["variable_byte_offsets"] = variable_offsets
+        item["data_pattern"] = (
+            "Identical observed data" if len(values) == 1
+            else "Variable-length data" if len(common_lengths) > 1
+            else "Byte values vary" if variable_offsets
+            else "Distinct values; comparison unavailable"
+        )
+        results.append(item)
+    results.sort(key=lambda item: (item["operation"].casefold(), item["did"]))
+    return results
+
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
@@ -1299,6 +1370,27 @@ class ResearchTab(QWidget):
                         value.upper() for value in item["response_examples"][:5]
                     )
                 )
+        did_variations = summarize_operation_did_response_variation(uds_operations)
+        lines += [
+            "",
+            "DID RESPONSE DATA COMPARISON",
+            "Raw data bytes only. Single-DID positive responses are compared; multi-DID "
+            "responses are skipped because record boundaries are not known.",
+        ]
+        if not did_variations:
+            lines.append("No safely comparable positive single-DID responses observed.")
+        for item in did_variations:
+            lengths = ", ".join(str(value) for value in item["value_lengths"]) or "none"
+            offsets = ", ".join(str(value) for value in item["variable_byte_offsets"]) or "none"
+            lines.append(
+                f"  {item['operation']} | {item['label']} | "
+                f"captures={item['capture_count']} | observations={item['total_count']} | "
+                f"distinct values={item['distinct_value_count']} | "
+                f"data lengths={lengths} bytes | variable offsets={offsets} | "
+                f"{item['data_pattern']}"
+            )
+            for value in item["value_examples"]:
+                lines.append(f"    data={value.upper() or '(empty)'}")
         dialog = QDialog(self)
         dialog.setWindowTitle("Multi-capture operation-sequence comparison")
         dialog.resize(1100, 720)
@@ -1801,6 +1893,22 @@ class ResearchTab(QWidget):
                     )
                 if not operation["transactions"]:
                     lines.append("- No complete probable UDS transaction observed.")
+
+            did_variations = summarize_operation_did_response_variation(uds_operations)
+            lines += [
+                "",
+                "## DID response data comparison",
+                "Raw bytes only; multi-DID responses are omitted because record boundaries are unknown.",
+            ]
+            for item in did_variations:
+                offsets = ", ".join(str(value) for value in item["variable_byte_offsets"]) or "none"
+                lines.append(
+                    f"- {item['operation']} {item['label']}: "
+                    f"{item['capture_count']} captures; {item['total_count']} observations; "
+                    f"{item['distinct_value_count']} distinct values; "
+                    f"lengths={item['value_lengths']}; variable byte offsets={offsets}; "
+                    f"{item['data_pattern']}; examples={item['value_examples']}"
+                )
 
             identifier_summaries = summarize_operation_uds_identifiers(uds_operations)
             lines += [
