@@ -124,7 +124,7 @@ python -m pip install -e ".[protocols]"
 Use **Research → Load DBC** to import a definition. FreeRov3r validates the
 file with `cantools` and stores a local copy under
 `~/.freerov3r/dbc/`. The workspace reports message/signal counts, decoded
-values, observed min/mean/max statistics, and matched/unmatched frame counts.
+values with units, observed min/mean/max statistics, and matched/unmatched frame counts.
 DBC decoding is passive and does not transmit diagnostic requests.
 
 An imported DBC is a signal-layout hypothesis until its source, vehicle
