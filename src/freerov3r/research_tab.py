@@ -1265,7 +1265,7 @@ class ResearchTab(QWidget):
     def _update_timestamp_health(self):
         if not hasattr(self, "timestamp_health_label"):
             return
-        records = self.frames if self.frames else self.live_preview
+        records = (self.frames if self.frames else self.live_preview)[-10000:]
         if not records:
             self.timestamp_health_label.setText(
                 "No device timestamps observed yet. Host monotonic time remains the shared timeline."
@@ -1277,7 +1277,7 @@ class ResearchTab(QWidget):
         ):
             self.timestamp_health_label.setText(
                 f"{report['frame_count']:,} frames; no valid ESP32 device timestamps. "
-                "Older firmware/capture formats remain supported."
+                "Older firmware/capture formats remain supported. Live health uses the most recent 10,000 frames."
             )
             return
         summaries = []
@@ -1293,7 +1293,7 @@ class ResearchTab(QWidget):
         self.timestamp_health_label.setText(
             " | ".join(summaries)
             + " | ESP32 clocks are independent; residuals are timing consistency estimates, "
-              "not absolute transport latency."
+              "not absolute transport latency. Live health uses the most recent 10,000 frames."
         )
 
     def show_selected_frame(self):
