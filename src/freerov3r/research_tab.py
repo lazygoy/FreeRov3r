@@ -537,7 +537,7 @@ class ResearchTab(QWidget):
 
     def load_dbc(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load CAN DBC definition", "", "DBC files (*.dbc)"
+            self, "Load CAN DBC definition", str(self.dbc_library.library_dir), "DBC files (*.dbc)"
         )
         if not path:
             return
@@ -552,7 +552,9 @@ class ResearchTab(QWidget):
         self.dbc_status.setText(
             f"DBC: {summary['name']} | {summary['message_count']} messages | "
             f"{summary['signal_count']} signals | local copy: {summary['path']} "
-            "| Imported definition is unverified until matched to this vehicle."
+            f"| Source: {summary['metadata'].get('source_file', 'unknown')} "
+            f"| Status: {summary['metadata'].get('verification_status', 'unverified')} "
+            "| Unverified until matched to this vehicle."
         )
         self.refresh_table()
 
@@ -769,6 +771,10 @@ class ResearchTab(QWidget):
                 "## DBC decode coverage",
                 f"- Definition: {self.dbc_library.path.name}",
                 f"- Messages / signals: {self.dbc_library.message_count} / {self.dbc_library.signal_count}",
+                f"- Source file: {self.dbc_library.metadata.get('source_file', 'unknown')}",
+                f"- Source origin: {self.dbc_library.metadata.get('source_origin', 'not recorded')}",
+                f"- Verification: {self.dbc_library.metadata.get('verification_status', 'unverified')}",
+                f"- SHA-256: {self.dbc_library.metadata.get('sha256', 'unknown')}",
                 f"- Matched / unmatched frames: {coverage['matched_frames']} / {coverage['unmatched_frames']}",
                 "- Provenance: user-imported DBC; applicability to the selected vehicle is not assumed.",
             ]
