@@ -29,6 +29,10 @@ def _linear_fit(points):
         return None
     xs = [point[0] for point in points]
     ys = [point[1] for point in points]
+    # A very short device-clock baseline makes drift dominated by timestamp
+    # resolution and host scheduling noise. Keep raw statistics, but omit fit.
+    if max(xs) - min(xs) < 0.001:
+        return None
     mean_x = sum(xs) / len(xs)
     mean_y = sum(ys) / len(ys)
     variance = sum((x - mean_x) ** 2 for x in xs)
@@ -37,10 +41,13 @@ def _linear_fit(points):
     slope = sum((x - mean_x) * (y - mean_y) for x, y in points) / variance
     intercept = mean_y - slope * mean_x
     residuals_ms = [abs((y - (intercept + slope * x)) * 1000.0) for x, y in points]
+    drift_ppm = (slope - 1.0) * 1_000_000.0
+    if abs(drift_ppm) < 1e-6:
+        drift_ppm = 0.0
     return {
         "slope": slope,
         "intercept": intercept,
-        "drift_ppm": (slope - 1.0) * 1_000_000.0,
+        "drift_ppm": drift_ppm,
         "residual_p95_ms": _percentile(residuals_ms, 0.95),
         "residual_max_ms": max(residuals_ms),
     }
@@ -109,10 +116,10 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
             if previous is not None:
                 device_delta = device_seconds - previous[0]
                 host_delta = host_time - previous[1]
-                if device_delta <= 0:
+                if device_delta < 0:
                     non_monotonic += 1
-                    if device_delta == 0:
-                        duplicate_device_time += 1
+                elif device_delta == 0:
+                    duplicate_device_time += 1
                 else:
                     device_deltas.append(device_delta)
                     if device_delta >= suspicious_gap_seconds:
