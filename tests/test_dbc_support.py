@@ -253,3 +253,81 @@ def test_dbc_catalog_exposes_signal_layout_and_scaling(tmp_path, monkeypatch):
 def test_dbc_catalog_is_empty_without_loaded_database(tmp_path):
     library = DBCLibrary(tmp_path / "library")
     assert library.catalog() == []
+
+
+
+def test_dbc_evidence_metadata_persists_across_reload(tmp_path, monkeypatch):
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    source = tmp_path / "evidence.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    library.import_file(source)
+    metadata = library.update_metadata(
+        source_origin="https://example.invalid/dbc-source",
+        vehicle_applicability="2010 LR4 5.0 petrol",
+        bus_name="Powertrain CAN",
+        evidence_grade="B",
+        verification_status="provisional",
+        verification_notes="Candidate source; compare against vehicle capture.",
+    )
+    assert metadata["evidence_grade"] == "B"
+    assert metadata["verification_status"] == "provisional"
+    restored = DBCLibrary(tmp_path / "library")
+    assert restored.metadata["bus_name"] == "Powertrain CAN"
+    assert restored.metadata["verification_notes"].startswith("Candidate source")
+
+
+def test_dbc_evidence_metadata_rejects_unknown_grade_or_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    source = tmp_path / "evidence.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    library.import_file(source)
+    with pytest.raises(ValueError, match="grade"):
+        library.update_metadata(
+            source_origin="", vehicle_applicability="", bus_name="",
+            evidence_grade="E", verification_status="unverified", verification_notes="",
+        )
+    with pytest.raises(ValueError, match="status"):
+        library.update_metadata(
+            source_origin="", vehicle_applicability="", bus_name="",
+            evidence_grade="D", verification_status="trusted", verification_notes="",
+        )
+
+
+def test_dbc_cannot_be_marked_verified_without_grade_a_complete_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    source = tmp_path / "evidence.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    library.import_file(source)
+    with pytest.raises(ValueError, match="grade A"):
+        library.update_metadata(
+            source_origin="manual source", vehicle_applicability="2010 LR4",
+            bus_name="Powertrain CAN", evidence_grade="B",
+            verification_status="verified", verification_notes="Cross-check complete.",
+        )
+    with pytest.raises(ValueError, match="physical bus"):
+        library.update_metadata(
+            source_origin="manual source", vehicle_applicability="2010 LR4",
+            bus_name="", evidence_grade="A",
+            verification_status="verified", verification_notes="Known-value cross-check complete.",
+        )
+
+
+def test_dbc_grade_a_complete_evidence_can_be_marked_verified(tmp_path, monkeypatch):
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    source = tmp_path / "evidence.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    library.import_file(source)
+    metadata = library.update_metadata(
+        source_origin="https://example.invalid/source",
+        vehicle_applicability="2010 LR4 5.0 petrol",
+        bus_name="Powertrain CAN",
+        evidence_grade="A",
+        verification_status="verified",
+        verification_notes="Signal matched against a measured physical value and controlled state change.",
+    )
+    assert metadata["verification_status"] == "verified"
+    assert metadata["evidence_grade"] == "A"
