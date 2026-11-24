@@ -2814,28 +2814,35 @@ class MainWindow(QMainWindow):
         dialog.setObjectName("startupSplash")
         dialog.setWindowTitle("Welcome to FreeRov3r")
         dialog.setWindowModality(Qt.ApplicationModal)
-        dialog.setMinimumSize(1100, 660)
+        screen = QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else self.geometry()
+        dialog_width = min(1100, max(640, available.width() - 40))
+        dialog_height = min(660, max(480, available.height() - 40))
+        dialog.setMinimumSize(min(640, dialog_width), min(480, dialog_height))
+        dialog.resize(dialog_width, dialog_height)
         layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(30, 26, 30, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(12)
         splash_banner = QLabel()
         splash_banner.setAlignment(Qt.AlignCenter)
-        splash_banner.setFixedHeight(210)
+        banner_height = min(210, max(110, int(dialog_height * 0.30)))
+        splash_banner.setFixedHeight(banner_height)
         splash_banner.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Fixed
         )
 
         splash_source = QPixmap(str(ASSET_DIR / "brand_banner.jpg"))
         if not splash_source.isNull():
+            banner_width = max(1, dialog_width - 64)
             scaled_banner = splash_source.scaled(
-                940, 210,
+                banner_width, banner_height,
                 Qt.KeepAspectRatioByExpanding,
                 Qt.SmoothTransformation
             )
-            crop_x = max(0, (scaled_banner.width() - 940) // 2)
-            crop_y = max(0, (scaled_banner.height() - 210) // 2)
+            crop_x = max(0, (scaled_banner.width() - banner_width) // 2)
+            crop_y = max(0, (scaled_banner.height() - banner_height) // 2)
             splash_banner.setPixmap(
-                scaled_banner.copy(crop_x, crop_y, 940, 210)
+                scaled_banner.copy(crop_x, crop_y, banner_width, banner_height)
             )
 
         layout.addWidget(splash_banner)
@@ -2867,6 +2874,7 @@ class MainWindow(QMainWindow):
              ("Vehicle setup wizard", "Detect an interface, read or enter a VIN, identify the vehicle and select its capability package.",
               "Start setup", self.run_setup_wizard),
         ]
+        splash_columns = 2 if dialog_width < 900 else 3
         for index, (heading, description, action_text, action) in enumerate(choices):
             card = QFrame()
             card.setObjectName("splashCard")
@@ -2887,7 +2895,7 @@ class MainWindow(QMainWindow):
                 lambda checked=False, callback=action: (dialog.accept(), callback())
             )
             card_layout.addWidget(action_button)
-            grid.addWidget(card, index // 3, index % 3)
+            grid.addWidget(card, index // splash_columns, index % splash_columns)
         layout.addLayout(grid, 1)
         footer = QHBoxLayout()
         self.splash_skip_checkbox = QCheckBox("Don't show this welcome screen at startup")
@@ -3919,6 +3927,23 @@ class MainWindow(QMainWindow):
         save_settings(self.settings)
         self.status.setText("Settings saved")
         self.show_toast("Settings saved", "success")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        width = self.width()
+        compact = width < 980
+        if hasattr(self, "header_vehicle"):
+            self.header_vehicle.setVisible(not compact)
+        if hasattr(self, "header_traffic"):
+            self.header_traffic.setVisible(width >= 860)
+        if hasattr(self, "drawer_button"):
+            self.drawer_button.setText("☷  NAV" if compact else "☷  QUICK PANEL")
+            self.drawer_button.setToolTip(
+                "Open workspace navigation" if compact
+                else "Open vehicle context and workspace shortcuts"
+            )
+        if hasattr(self, "quick_drawer") and compact and self.quick_drawer.isVisible():
+            self.quick_drawer.hide()
 
     def closeEvent(self, event):
         if self.receiver and self.receiver.isRunning():
