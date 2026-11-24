@@ -206,3 +206,39 @@ class DIDDefinitionRegistry:
             "data": data.hex(),
             "fields": decoded,
         }
+
+
+def decode_uds_did_transactions(transactions, registry, *, vehicle):
+    """Decode only paired, positive, single-DID 0x22 transactions.
+
+    Multi-DID reads and unmatched/negative transactions remain outside this
+    decoder until their record boundaries or response semantics are known.
+    """
+    results = []
+    for pair in transactions or []:
+        if pair.get("confidence") != "probable" or pair.get("response_kind") != "positive":
+            continue
+        if pair.get("request_service") != 0x22:
+            continue
+        request = pair.get("request") or {}
+        response = pair.get("response") or {}
+        try:
+            request_payload = bytes.fromhex(request.get("payload", ""))
+            response_payload = bytes.fromhex(response.get("payload", ""))
+        except (TypeError, ValueError):
+            continue
+        if len(request_payload) != 3 or request_payload[0] != 0x22:
+            continue
+        did = int.from_bytes(request_payload[1:3], "big")
+        decoded = registry.decode_response(
+            did, response_payload, vehicle=vehicle
+        )
+        results.append({
+            "did": did,
+            "request_id": request.get("arbitration_id"),
+            "response_id": response.get("arbitration_id"),
+            "request_payload": request_payload.hex(),
+            "response_payload": response_payload.hex(),
+            "decoded": decoded,
+        })
+    return results
