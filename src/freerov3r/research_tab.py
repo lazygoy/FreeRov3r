@@ -17,7 +17,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
-    QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QGridLayout, QWidget,
 )
 
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
@@ -850,47 +850,55 @@ class ResearchTab(QWidget):
         self.refresh_timer.start()
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 12, 14, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(7, 6, 7, 6)
+        root.setSpacing(5)
+        self.setStyleSheet(self.styleSheet() + """
+            ResearchTab { font-size: 8pt; }
+            ResearchTab QGroupBox { font-size: 8pt; font-weight: 700; margin-top: 5px; padding-top: 4px; }
+            ResearchTab QGroupBox::title { subcontrol-origin: margin; left: 7px; padding: 0 3px; }
+            ResearchTab QLabel, ResearchTab QCheckBox { font-size: 8pt; }
+            ResearchTab QPushButton, ResearchTab QLineEdit, ResearchTab QComboBox {
+                font-size: 8pt; min-height: 23px; padding: 2px 6px;
+            }
+            ResearchTab QPlainTextEdit { font-size: 8pt; padding: 3px; }
+            ResearchTab QTableWidget { font-size: 8pt; }
+            ResearchTab QHeaderView::section { font-size: 8pt; padding: 3px 4px; }
+        """)
 
-        intro = QGroupBox("PROTOCOL RESEARCH · DEVELOPMENT ONLY")
-        intro_layout = QVBoxLayout(intro)
         self.status_label = QLabel(
-            "This tab only observes incoming frames. It never transmits or replays; the selected main adapter may have its own active polling behavior."
+            "PASSIVE RESEARCH: incoming frames only. This workspace does not transmit or replay CAN traffic."
         )
-        self.status_label.setWordWrap(True)
-        intro_layout.addWidget(self.status_label)
-        root.addWidget(intro)
+        self.status_label.setWordWrap(False)
+        root.addWidget(self.status_label)
 
-        receiver_box = QGroupBox("CAN RECEIVER HEALTH")
-        receiver_layout = QHBoxLayout(receiver_box)
+        health_layout = QGridLayout()
+        health_layout.setContentsMargins(0, 0, 0, 0)
+        health_layout.setHorizontalSpacing(8)
+        health_layout.setVerticalSpacing(2)
         self.receiver_connection_label = QLabel("Connection: not selected")
         self.receiver_frame_label = QLabel("Frames: 0")
         self.receiver_activity_label = QLabel("Last frame: never")
         self.receiver_alert_label = QLabel("Alerts / errors: 0 / 0")
         self.receiver_status_label = QLabel("Firmware: no status received")
-        for label in (
-            self.receiver_connection_label,
-            self.receiver_frame_label,
-            self.receiver_activity_label,
-            self.receiver_alert_label,
-            self.receiver_status_label,
-        ):
-            label.setWordWrap(True)
-            receiver_layout.addWidget(label, 1)
-        root.addWidget(receiver_box)
-
-        timing_box = QGroupBox("DUAL-CHANNEL TIMING HEALTH")
-        timing_layout = QVBoxLayout(timing_box)
         self.timestamp_health_label = QLabel(
-            "No device timestamps observed yet. ESP32 clocks are independent; host time is the shared timeline."
+            "Timing: no device timestamps yet; ESP32 clocks are independent."
         )
+        for column, label in enumerate((
+            self.receiver_connection_label, self.receiver_frame_label,
+            self.receiver_activity_label, self.receiver_alert_label,
+            self.receiver_status_label,
+        )):
+            label.setMinimumWidth(0)
+            health_layout.addWidget(label, 0, column)
         self.timestamp_health_label.setWordWrap(True)
-        timing_layout.addWidget(self.timestamp_health_label)
-        root.addWidget(timing_box)
+        health_layout.addWidget(self.timestamp_health_label, 1, 0, 1, 5)
+        root.addLayout(health_layout)
 
-        session_box = QGroupBox("RESEARCH SESSION")
-        session_form = QFormLayout(session_box)
+        session_box = QGroupBox("SESSION")
+        session_form = QGridLayout(session_box)
+        session_form.setContentsMargins(6, 8, 6, 5)
+        session_form.setHorizontalSpacing(6)
+        session_form.setVerticalSpacing(3)
         self.session_name = QLineEdit("LAUNCH Creader Elite V2.0 capture")
         self.operation = QComboBox()
         self.operation.addItems([
@@ -910,37 +918,48 @@ class ResearchTab(QWidget):
         self.vin_label = QLabel("VIN: not set")
         self.did_vehicle_key = QLineEdit("Land Rover L319 5.0 petrol")
         self.did_vehicle_key.setPlaceholderText("Exact vehicle key from the DID definition file")
-        session_form.addRow("Session:", self.session_name)
-        session_form.addRow("Scanner operation:", self.operation)
-        session_form.addRow("Operator notes:", self.notes)
-        session_form.addRow("Vehicle:", self.vin_label)
-        session_form.addRow("DID definition vehicle key:", self.did_vehicle_key)
+        session_form.addWidget(QLabel("Session"), 0, 0)
+        session_form.addWidget(self.session_name, 0, 1)
+        session_form.addWidget(QLabel("Operation"), 0, 2)
+        session_form.addWidget(self.operation, 0, 3)
+        session_form.addWidget(QLabel("Notes"), 1, 0)
+        session_form.addWidget(self.notes, 1, 1)
+        session_form.addWidget(QLabel("VIN"), 1, 2)
+        session_form.addWidget(self.vin_label, 1, 3)
+        session_form.addWidget(QLabel("DID vehicle key"), 2, 0)
+        session_form.addWidget(self.did_vehicle_key, 2, 1, 1, 3)
+        session_form.setColumnStretch(1, 2)
+        session_form.setColumnStretch(3, 2)
         root.addWidget(session_box)
 
-        controls = QHBoxLayout()
+        controls = QGridLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setHorizontalSpacing(5)
+        controls.setVerticalSpacing(3)
         self.live_check = QCheckBox("Show incoming live frames")
         self.live_check.setChecked(True)
         self.live_check.toggled.connect(self._set_live_enabled)
-        controls.addWidget(self.live_check)
-        self.record_button = QPushButton("Start research recording")
+        controls.addWidget(self.live_check, 0, 0)
+        self.record_button = QPushButton("Start recording")
         self.record_button.clicked.connect(self.toggle_recording)
-        controls.addWidget(self.record_button)
-        self.marker_button = QPushButton("Mark scanner action")
+        controls.addWidget(self.record_button, 0, 1)
+        self.marker_button = QPushButton("Mark action")
         self.marker_button.clicked.connect(self.mark_action)
-        controls.addWidget(self.marker_button)
+        controls.addWidget(self.marker_button, 0, 2)
         self.import_button = QPushButton("Import capture")
         self.import_button.clicked.connect(self.import_capture)
-        controls.addWidget(self.import_button)
-        self.reference_button = QPushButton("Load comparison capture")
+        controls.addWidget(self.import_button, 0, 3)
+        self.reference_button = QPushButton("Load comparison")
         self.reference_button.clicked.connect(self.load_reference)
-        controls.addWidget(self.reference_button)
-        self.sequence_load_button = QPushButton("Load sequence captures")
+        controls.addWidget(self.reference_button, 0, 4)
+        self.sequence_load_button = QPushButton("Load sequences")
         self.sequence_load_button.clicked.connect(self.load_sequence_captures)
-        controls.addWidget(self.sequence_load_button)
+        controls.addWidget(self.sequence_load_button, 0, 5)
         self.save_button = QPushButton("Save session")
         self.save_button.clicked.connect(self.save_session)
-        controls.addWidget(self.save_button)
-        controls.addStretch(1)
+        controls.addWidget(self.save_button, 0, 6)
+        for column in range(1, 7):
+            controls.setColumnStretch(column, 1)
         root.addLayout(controls)
 
         dbc_controls = QHBoxLayout()
@@ -958,10 +977,11 @@ class ResearchTab(QWidget):
         self.compare_dbc_button = QPushButton("Compare DBCs")
         self.compare_dbc_button.clicked.connect(self.compare_dbcs)
         dbc_controls.addWidget(self.compare_dbc_button)
-        dbc_controls.addStretch(1)
+        dbc_controls.setContentsMargins(0, 0, 0, 0)
+        dbc_controls.setSpacing(5)
         root.addLayout(dbc_controls)
         self.dbc_status = QLabel("DBC: none loaded. Install optional protocols support to decode imported DBC files.")
-        self.dbc_status.setWordWrap(True)
+        self.dbc_status.setWordWrap(False)
         if self.dbc_library.path is not None:
             self.dbc_status.setText(
                 f"DBC: {self.dbc_library.path.name} | {self.dbc_library.message_count} messages | "
@@ -1004,7 +1024,7 @@ class ResearchTab(QWidget):
         details_layout = QVBoxLayout(details_box)
         self.frame_detail = QPlainTextEdit()
         self.frame_detail.setReadOnly(True)
-        self.frame_detail.setMaximumHeight(115)
+        self.frame_detail.setMaximumHeight(75)
         self.annotation = QLineEdit()
         self.annotation.setPlaceholderText("Annotation: e.g. immediately after selecting Read ECU Information")
         self.bookmark_button = QPushButton("Bookmark selected frame")
@@ -1018,7 +1038,7 @@ class ResearchTab(QWidget):
         analysis_layout = QVBoxLayout(analysis_box)
         self.summary = QPlainTextEdit()
         self.summary.setReadOnly(True)
-        self.summary.setMinimumHeight(140)
+        self.summary.setMinimumHeight(65)
         self.summary.setPlaceholderText("Frame counts, frequent IDs, protocol hints and comparison results appear here.")
         analysis_layout.addWidget(self.summary)
         lower_layout.addWidget(analysis_box, 1)
@@ -1027,7 +1047,10 @@ class ResearchTab(QWidget):
         splitter.setStretchFactor(1, 2)
         root.addWidget(splitter, 1)
 
-        footer = QHBoxLayout()
+        footer = QGridLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        footer.setHorizontalSpacing(5)
+        footer.setVerticalSpacing(3)
         self.isotp_button = QPushButton("Reassemble ISO-TP")
         self.isotp_button.clicked.connect(self.analyze_isotp)
         self.pair_button = QPushButton("Pair UDS transactions")
@@ -1044,17 +1067,17 @@ class ResearchTab(QWidget):
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
         self.clear_button.clicked.connect(self.clear_data)
-        footer.addWidget(self.isotp_button)
-        footer.addWidget(self.pair_button)
-        footer.addWidget(self.address_map_button)
-        footer.addWidget(self.marker_analysis_button)
-        footer.addWidget(self.sequence_analysis_button)
-        footer.addWidget(self.did_decode_button)
-        footer.addWidget(self.packet_button)
-        footer.addWidget(self.clear_button)
-        footer.addStretch(1)
+        footer_buttons = (
+            self.isotp_button, self.pair_button, self.address_map_button,
+            self.marker_analysis_button, self.sequence_analysis_button,
+            self.did_decode_button, self.packet_button, self.clear_button,
+        )
+        for index, button in enumerate(footer_buttons):
+            button.setToolTip(button.text())
+            footer.addWidget(button, index // 4, index % 4)
+            footer.setColumnStretch(index % 4, 1)
         self.count_label = QLabel("0 displayed · 0 recorded")
-        footer.addWidget(self.count_label)
+        footer.addWidget(self.count_label, 2, 0, 1, 4)
         root.addLayout(footer)
 
     def set_receiver_diagnostics(self, diagnostics=None):
