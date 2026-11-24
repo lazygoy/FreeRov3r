@@ -3947,8 +3947,13 @@ class MainWindow(QMainWindow):
                 quality=archived.get("quality") or "valid",
                 metadata=metadata,
             )
+            known = any(
+                self.graph_tab.sensor_list.item(i).text().endswith(f"({sample.sensor_id})")
+                for i in range(self.graph_tab.sensor_list.count())
+            )
             self.sensor_capture.add(sample)
-            self.graph_tab.refresh_sensor_list()
+            if not known:
+                self.graph_tab.refresh_sensor_list()
             self.sensor_log.appendPlainText(
                 f"{sample.name}: {sample.value:.3f} {sample.unit} [{sample.sensor_id}] (replay)"
             )
