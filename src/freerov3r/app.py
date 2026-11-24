@@ -519,10 +519,12 @@ class VehicleSetupWizard(QDialog):
                 profile_id = "land_rover_l319"
             elif "land rover" in make and not model:
                 profile_id = "land_rover_l319"
-            elif "land rover" in make and "discovery" in model:
-                if "discovery 3" in model or (year and 2005 <= year <= 2009):
+            elif "land rover" in make and (
+                "discovery" in model or "lr3" in model or "lr4" in model
+            ):
+                if "discovery 3" in model or "lr3" in model or (year and 2005 <= year <= 2009):
                     profile_id = "land_rover_l319_lr3"
-                elif "discovery 4" in model or (year and 2010 <= year <= 2016):
+                elif "discovery 4" in model or "lr4" in model or (year and 2010 <= year <= 2016):
                     profile_id = "land_rover_l319_lr4"
                 else:
                     profile_id = "land_rover_l319"
@@ -3357,8 +3359,19 @@ class MainWindow(QMainWindow):
         if profile_id == "generic" and not active.get("profile_selection_explicit"):
             make = str(active.get("make") or "").strip().lower()
             model = str(active.get("model") or "").strip().lower()
+            year = active.get("model_year")
             if (not make and not model) or ("land rover" in make and not model):
                 profile_id = "land_rover_l319"
+            elif "land rover" in make and (
+                "discovery" in model or "lr3" in model or "lr4" in model
+            ):
+                if "discovery 3" in model or "lr3" in model or (year and 2005 <= year <= 2009):
+                    profile_id = "land_rover_l319_lr3"
+                elif "discovery 4" in model or "lr4" in model or (year and 2010 <= year <= 2016):
+                    profile_id = "land_rover_l319_lr4"
+                else:
+                    profile_id = "land_rover_l319"
+            if profile_id != "generic":
                 active["profile_id"] = profile_id
         self.active_vehicle_profile = self.vehicle_profiles.get(profile_id)
         self.sensor_capture.vehicle_context = {**active, "vin": vin}
