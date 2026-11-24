@@ -578,12 +578,12 @@ class ResearchTab(QWidget):
         lines += ["", "Recognized protocol hints (heuristic only):"]
         lines.extend(f"  {name}: {count:,}" for name, count in services.most_common(12))
         if self.dbc_library.database is not None:
-            coverage = self.dbc_library.decode_coverage(dataset)
+            coverage = self.dbc_library.decode_coverage(dataset[-20000:])
             lines += [
                 "",
                 f"Loaded DBC: {self.dbc_library.path.name}",
                 f"DBC frame matches: {coverage['matched_frames']:,} | unmatched: {coverage['unmatched_frames']:,}",
-                "Decoded signal statistics (observed frames only):",
+                "Decoded signal statistics (last 20,000 observed frames):",
             ]
             lines.extend(
                 f"  {name}: n={stats['count']} min={stats['min']:.5g} mean={stats['mean']:.5g} max={stats['max']:.5g}"
