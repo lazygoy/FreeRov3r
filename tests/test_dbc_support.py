@@ -185,3 +185,27 @@ def test_dbc_comparison_rejects_non_dbc_paths(tmp_path):
     right.write_text("x", encoding="utf-8")
     with pytest.raises(ValueError, match=r"\.dbc"):
         DBCLibrary.compare_files(left, right)
+
+
+
+def test_dbc_import_falls_back_to_permissive_mode_for_overlapping_signals(tmp_path, monkeypatch):
+    class PermissiveDatabase:
+        @staticmethod
+        def load_file(path, strict=True):
+            if strict:
+                raise ValueError("overlapping signals")
+            return FakeDatabase()
+
+    class PermissiveCantools:
+        database = PermissiveDatabase()
+
+    monkeypatch.setattr(
+        DBCLibrary, "_cantools", staticmethod(lambda: PermissiveCantools)
+    )
+    source = tmp_path / "overlap.dbc"
+    source.write_text("overlap fixture", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    library.import_file(source)
+    assert library.metadata["validation_mode"] == "permissive"
+    restored = DBCLibrary(tmp_path / "library")
+    assert restored.metadata["validation_mode"] == "permissive"
