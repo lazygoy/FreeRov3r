@@ -51,6 +51,7 @@ except ImportError:
     QPdfDocument = QPdfView = None
     HAS_PDF_VIEWER = False
 from .vehicle_history import VehicleHistoryStore
+from .capture_replay import list_capture_archives, load_capture, compare_captures
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .research_tab import ResearchTab
@@ -1978,6 +1979,65 @@ class VehicleHistoryTab(QWidget):
         controls.addWidget(self.export_backup_btn)
         layout.addLayout(controls)
 
+        replay_group = QGroupBox("CAPTURE REPLAY / SESSION COMPARISON")
+        replay_layout = QVBoxLayout(replay_group)
+        archive_row = QHBoxLayout()
+        self.capture_combo = QComboBox()
+        self.capture_combo.setMinimumWidth(220)
+        self.compare_combo = QComboBox()
+        self.compare_combo.setMinimumWidth(220)
+        archive_row.addWidget(QLabel("Playback:"))
+        archive_row.addWidget(self.capture_combo, 1)
+        archive_row.addWidget(QLabel("Compare with:"))
+        archive_row.addWidget(self.compare_combo, 1)
+        replay_layout.addLayout(archive_row)
+
+        action_row = QHBoxLayout()
+        self.load_capture_btn = QPushButton("Load capture")
+        self.load_capture_btn.clicked.connect(self.load_selected_capture)
+        action_row.addWidget(self.load_capture_btn)
+        self.play_capture_btn = QPushButton("Play")
+        self.play_capture_btn.clicked.connect(self.toggle_replay)
+        action_row.addWidget(self.play_capture_btn)
+        self.stop_capture_btn = QPushButton("Stop")
+        self.stop_capture_btn.clicked.connect(self.stop_replay)
+        action_row.addWidget(self.stop_capture_btn)
+        self.replay_speed = QComboBox()
+        for speed, label in ((0.25, "0.25×"), (0.5, "0.5×"), (1.0, "1×"), (2.0, "2×"), (4.0, "4×")):
+            self.replay_speed.addItem(label, speed)
+        self.replay_speed.setCurrentIndex(2)
+        action_row.addWidget(QLabel("Speed:"))
+        action_row.addWidget(self.replay_speed)
+        self.compare_captures_btn = QPushButton("Compare sessions")
+        self.compare_captures_btn.clicked.connect(self.compare_selected_captures)
+        action_row.addWidget(self.compare_captures_btn)
+        self.export_comparison_btn = QPushButton("Export comparison CSV")
+        self.export_comparison_btn.clicked.connect(self.export_comparison_csv)
+        action_row.addWidget(self.export_comparison_btn)
+        replay_layout.addLayout(action_row)
+
+        self.replay_status = QLabel("Select a VIN to list its archived captures. Playback is offline and read-only.")
+        self.replay_status.setWordWrap(True)
+        replay_layout.addWidget(self.replay_status)
+        self.capture_table = QTableWidget(0, 5)
+        self.capture_table.setHorizontalHeaderLabels(["Time", "CAN ID", "Format", "DLC", "Data"])
+        self.capture_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.capture_table.setAlternatingRowColors(True)
+        self.capture_table.setMaximumHeight(230)
+        replay_layout.addWidget(self.capture_table)
+        self.comparison_table = QTableWidget(0, 5)
+        self.comparison_table.setHorizontalHeaderLabels(["Signal / CAN ID", "Unit / Format", "Capture A", "Capture B", "Delta"])
+        self.comparison_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.comparison_table.setMaximumHeight(210)
+        replay_layout.addWidget(self.comparison_table)
+        layout.addWidget(replay_group)
+
+        self.replay_timer = QTimer(self)
+        self.replay_timer.timeout.connect(self._replay_step)
+        self.replay_capture = None
+        self.replay_index = 0
+        self.comparison_result = None
+
         split = QHBoxLayout()
         self.events_tree = QTreeWidget()
         self.events_tree.setHeaderLabels(["Date / time", "Event", "Summary"])
@@ -2044,6 +2104,162 @@ class VehicleHistoryTab(QWidget):
         self.events_tree.resizeColumnToContents(0)
         self.events_tree.resizeColumnToContents(1)
         self.details.clear()
+        self.stop_replay()
+        self.replay_capture = None
+        self.capture_table.setRowCount(0)
+        self.comparison_table.setRowCount(0)
+        self.comparison_result = None
+        self.capture_combo.clear()
+        self.compare_combo.clear()
+        if selected_vin:
+            archives = list_capture_archives(self.store.path, selected_vin)
+            for archive in archives:
+                label = archive.name.replace("capture_", "").replace(".json", "")
+                self.capture_combo.addItem(label, str(archive))
+                self.compare_combo.addItem(label, str(archive))
+            self.replay_status.setText(
+                f"{len(archives)} archived capture(s) for {selected_vin}. "
+                "Playback is offline and read-only."
+            )
+        else:
+            self.replay_status.setText("Choose a specific VIN to browse its archived captures.")
+
+    def load_selected_capture(self):
+        path = self.capture_combo.currentData()
+        if not path:
+            QMessageBox.information(self, "No capture selected", "Choose a VIN with an archived capture.")
+            return
+        try:
+            self.replay_capture = load_capture(path)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "Capture load failed", str(exc))
+            return
+        frames = self.replay_capture["frames"]
+        self.capture_table.setRowCount(len(frames))
+        for row, frame in enumerate(frames):
+            timestamp = frame["timestamp"]
+            values = [
+                f"{timestamp:.6f}",
+                f"{frame['arbitration_id']:08X}",
+                "EXT" if frame["extended"] else "STD",
+                str(len(bytes.fromhex(frame["data"]))),
+                frame["data"].upper(),
+            ]
+            for column, value in enumerate(values):
+                self.capture_table.setItem(row, column, QTableWidgetItem(value))
+        self.replay_index = 0
+        self.replay_status.setText(
+            f"Loaded {len(frames):,} frames from {Path(path).name}. "
+            "No CAN adapter is opened and no frames are transmitted."
+        )
+
+    def toggle_replay(self):
+        if self.replay_timer.isActive():
+            self.replay_timer.stop()
+            self.play_capture_btn.setText("Resume")
+            return
+        if self.replay_capture is None:
+            self.load_selected_capture()
+        if self.replay_capture is None or not self.replay_capture["frames"]:
+            return
+        if self.replay_index >= len(self.replay_capture["frames"]):
+            self.replay_index = 0
+        self.play_capture_btn.setText("Pause")
+        self.replay_timer.start(1)
+
+    def _replay_step(self):
+        frames = self.replay_capture["frames"] if self.replay_capture else []
+        if self.replay_index >= len(frames):
+            self.stop_replay(completed=True)
+            return
+        index = self.replay_index
+        frame = frames[index]
+        self.capture_table.selectRow(index)
+        self.capture_table.scrollToItem(self.capture_table.item(index, 0))
+        self.replay_index += 1
+        if self.replay_index >= len(frames):
+            self.replay_timer.stop()
+            self.play_capture_btn.setText("Replay")
+            self.replay_status.setText(f"Playback complete: {len(frames):,} frames reviewed. Offline only.")
+            return
+        next_timestamp = frames[self.replay_index]["timestamp"]
+        delta = max(0.0, next_timestamp - frame["timestamp"])
+        speed = float(self.replay_speed.currentData() or 1.0)
+        self.replay_timer.start(max(5, min(1000, int(delta * 1000 / speed))))
+
+    def stop_replay(self, completed=False):
+        if hasattr(self, "replay_timer"):
+            self.replay_timer.stop()
+        self.replay_index = 0
+        if hasattr(self, "play_capture_btn"):
+            self.play_capture_btn.setText("Play")
+        if not completed and hasattr(self, "replay_status") and self.replay_capture:
+            self.replay_status.setText("Playback stopped. Archived data remains unchanged.")
+
+    def compare_selected_captures(self):
+        left_path, right_path = self.capture_combo.currentData(), self.compare_combo.currentData()
+        if not left_path or not right_path:
+            QMessageBox.information(self, "Select two captures", "Choose two archived captures for comparison.")
+            return
+        if left_path == right_path:
+            QMessageBox.information(self, "Choose different captures", "Select two different capture files.")
+            return
+        try:
+            left, right = load_capture(left_path), load_capture(right_path)
+            result = compare_captures(left, right)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            QMessageBox.warning(self, "Comparison failed", str(exc))
+            return
+        self.comparison_result = result
+        rows = []
+        for item in result["frame_ids"]:
+            rows.append([
+                f"0x{item['arbitration_id']:08X}",
+                "Extended" if item["extended"] else "Standard",
+                str(item["left_count"]), str(item["right_count"]), f"{item['delta']:+d}",
+            ])
+        for item in result["sensors"]:
+            left_stats, right_stats = item["left"], item["right"]
+            left_mean = f"{left_stats['mean']:.3f}" if left_stats else "—"
+            right_mean = f"{right_stats['mean']:.3f}" if right_stats else "—"
+            delta = f"{item['mean_delta']:+.3f}" if item["mean_delta"] is not None else "n/a"
+            rows.append([
+                item["sensor_id"], item["unit"], left_mean, right_mean, delta,
+            ])
+        self.comparison_table.setRowCount(len(rows))
+        for row, values in enumerate(rows):
+            for column, value in enumerate(values):
+                self.comparison_table.setItem(row, column, QTableWidgetItem(value))
+        self.replay_status.setText(
+            f"Compared {result['left_frames']:,} vs {result['right_frames']:,} frames. "
+            "Frame counts are compared by arbitration ID; sensor means require matching signal IDs and units."
+        )
+
+    def export_comparison_csv(self):
+        if not self.comparison_result:
+            QMessageBox.information(self, "No comparison", "Run a session comparison first.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export session comparison", "FreeRov3r_session_comparison.csv", "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".csv"):
+            path += ".csv"
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["Signal / CAN ID", "Unit / Format", "Capture A", "Capture B", "Delta"])
+                for row in range(self.comparison_table.rowCount()):
+                    writer.writerow([
+                        self.comparison_table.item(row, col).text()
+                        if self.comparison_table.item(row, col) else ""
+                        for col in range(self.comparison_table.columnCount())
+                    ])
+        except OSError as exc:
+            QMessageBox.warning(self, "CSV export failed", str(exc))
+            return
+        QMessageBox.information(self, "Comparison exported", f"Saved comparison CSV:\n{path}")
 
     def show_details(self):
         item = self.events_tree.currentItem()
