@@ -274,7 +274,7 @@ def test_operation_uds_transactions_are_correlated_per_capture():
                     if item["response_kind"] == "negative")
     assert positive["capture_count"] == 2
     assert positive["repeatability"] == "Seen in multiple captures"
-    assert positive["median_latency_seconds"] == 0.05
+    assert positive["median_latency_seconds"] == pytest.approx(0.05)
     assert positive["request_payload"] == "22f190"
     assert positive["response_payload"] == "62f190"
     assert negative["capture_count"] == 1
@@ -295,3 +295,26 @@ def test_operation_uds_transaction_summary_ignores_unmarked_or_incomplete_data()
         ],
     }
     assert summarize_operation_uds_transactions([capture]) == []
+
+
+
+def test_operation_uds_summary_counts_capture_with_no_transaction():
+    from freerov3r.research_tab import summarize_operation_uds_transactions
+
+    result = summarize_operation_uds_transactions([
+        {
+            "name": "responding",
+            "markers": [{"elapsed_seconds": 1, "operation": "Module scan"}],
+            "frames": [
+                {"elapsed_seconds": 1.1, "arbitration_id": 0x7E0, "data": "03 22 F1 90"},
+                {"elapsed_seconds": 1.2, "arbitration_id": 0x7E8, "data": "03 62 F1 90"},
+            ],
+        },
+        {
+            "name": "silent",
+            "markers": [{"elapsed_seconds": 1, "operation": "Module scan"}],
+            "frames": [],
+        },
+    ])
+    assert result[0]["capture_count"] == 2
+    assert result[0]["transactions"][0]["capture_count"] == 1
