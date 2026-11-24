@@ -629,3 +629,33 @@ def test_research_tab_receiver_health_panel_displays_adapter_diagnostics(monkeyp
     tab.refresh_timer.stop()
     tab.close()
     app.processEvents()
+
+
+
+def test_research_tab_receiver_health_displays_explicit_receiver_state(monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from freerov3r.research_tab import ResearchTab
+
+    app = QApplication.instance() or QApplication([])
+    tab = ResearchTab()
+    tab.set_receiver_diagnostics({
+        "connected": True,
+        "receiver_state": "connected/silent",
+        "port": "COM7",
+        "mode": "receive-only",
+        "frames_received": 0,
+    })
+    assert "connected/silent" in tab.receiver_connection_label.text()
+    tab.set_receiver_diagnostics({
+        "connected": True,
+        "receiver_state": "receiving",
+        "port": "COM7",
+        "mode": "receive-only",
+        "frames_received": 12,
+    })
+    assert "receiving" in tab.receiver_connection_label.text()
+    tab.refresh_timer.stop()
+    tab.close()
+    app.processEvents()
