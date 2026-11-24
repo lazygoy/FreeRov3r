@@ -704,6 +704,7 @@ def summarize_operation_did_response_variation(operation_summaries):
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
+        "timestamp_clock": "host_monotonic",
         "arbitration_id": int(frame.arbitration_id),
         "extended": bool(frame.is_extended_id),
         "data": bytes(frame.data).hex(),
@@ -1790,6 +1791,9 @@ class ResearchTab(QWidget):
                 "operation": self.operation.currentText(),
                 "notes": self.notes.text().strip(),
                 "saved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "capture_timestamp_basis": "host_monotonic",
+                "channel_names": sorted({str(frame.get("channel")) for frame in self.frames if frame.get("channel")}),
+                "channel_frame_counts": dict(Counter(str(frame.get("channel") or "unspecified") for frame in self.frames)),
             },
             "frames": self.frames,
             "bookmarks": self.bookmarks,
