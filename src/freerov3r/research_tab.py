@@ -563,6 +563,7 @@ class ResearchTab(QWidget):
             f"{summary['signal_count']} signals | local copy: {summary['path']} "
             f"| Source: {summary['metadata'].get('source_file', 'unknown')} "
             f"| Status: {summary['metadata'].get('verification_status', 'unverified')} "
+            f"| Parse: {summary['metadata'].get('validation_mode', 'unknown')} "
             "| Unverified until matched to this vehicle."
         )
         self.refresh_table()
@@ -588,6 +589,7 @@ class ResearchTab(QWidget):
         lines = [
             f"Reference: {report['left']}",
             f"Candidate: {report['right']}",
+            f"Parser mode: {report['left_validation_mode']} / {report['right_validation_mode']}",
             f"Messages: {report['left_message_count']} vs {report['right_message_count']}",
             f"Shared CAN IDs/formats: {report['shared_message_count']}",
             f"Only in reference: {len(report['left_only'])}",
