@@ -684,9 +684,14 @@ def summarize_operation_did_response_variation(operation_summaries):
         item["value_examples"] = values[:8]
         item["variable_byte_offsets"] = variable_offsets
         item["data_pattern"] = (
-            "Identical observed data" if len(values) == 1
-            else "Variable-length data" if len(common_lengths) > 1
-            else "Byte values vary" if variable_offsets
+            "Same data in all observed responses"
+            if len(values) == 1 and item["total_count"] > 1
+            else "Single observed value"
+            if len(values) == 1
+            else "Variable-length data"
+            if len(common_lengths) > 1
+            else "Byte values vary"
+            if variable_offsets
             else "Distinct values; comparison unavailable"
         )
         results.append(item)
@@ -1375,7 +1380,7 @@ class ResearchTab(QWidget):
             "",
             "DID RESPONSE DATA COMPARISON",
             "Raw data bytes only. Single-DID positive responses are compared; multi-DID "
-            "responses are skipped because record boundaries are not known.",
+            "responses are skipped because record boundaries are not known. Byte offsets are zero-based.",
         ]
         if not did_variations:
             lines.append("No safely comparable positive single-DID responses observed.")
@@ -1898,7 +1903,7 @@ class ResearchTab(QWidget):
             lines += [
                 "",
                 "## DID response data comparison",
-                "Raw bytes only; multi-DID responses are omitted because record boundaries are unknown.",
+                "Raw bytes only; multi-DID responses are omitted because record boundaries are unknown. Byte offsets are zero-based.",
             ]
             for item in did_variations:
                 offsets = ", ".join(str(value) for value in item["variable_byte_offsets"]) or "none"
