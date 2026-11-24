@@ -117,6 +117,62 @@ def classify_uds_payload(payload):
     return f"Unclassified service 0x{service:02X}"
 
 
+
+def analyze_marker_windows(frames, markers, *, before_seconds=2.0, after_seconds=5.0):
+    """Compare CAN traffic immediately before and after each monotonic action marker.
+
+    Frames without elapsed_seconds are deliberately excluded: wall-clock and bus
+    timestamps are not assumed to share a clock with the operator's monotonic timer.
+    """
+    if before_seconds < 0 or after_seconds < 0:
+        raise ValueError("Marker windows must be non-negative")
+    timed = []
+    for frame in frames:
+        try:
+            elapsed = float(frame["elapsed_seconds"])
+            can_id = int(frame["arbitration_id"])
+            payload = bytes.fromhex(str(frame.get("data", ""))).hex()
+        except (KeyError, TypeError, ValueError):
+            continue
+        timed.append((elapsed, can_id, bool(frame.get("extended", False)),
+                      frame.get("channel"), payload))
+
+    results = []
+    for index, marker in enumerate(markers):
+        try:
+            center = float(marker["elapsed_seconds"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        before = [item for item in timed if center - before_seconds <= item[0] < center]
+        after = [item for item in timed if center <= item[0] <= center + after_seconds]
+        def counts(items):
+            result = Counter()
+            for _, can_id, extended, channel, payload in items:
+                result[(can_id, extended, channel, payload)] += 1
+            return result
+        pre_counts, post_counts = counts(before), counts(after)
+        keys = set(pre_counts) | set(post_counts)
+        changes = []
+        for key in keys:
+            delta = post_counts[key] - pre_counts[key]
+            if delta:
+                can_id, extended, channel, payload = key
+                changes.append({
+                    "can_id": can_id, "extended": extended, "channel": channel,
+                    "payload": payload, "before_count": pre_counts[key],
+                    "after_count": post_counts[key], "delta": delta,
+                })
+        changes.sort(key=lambda item: (-abs(item["delta"]), item["can_id"], item["payload"]))
+        results.append({
+            "marker_index": index + 1,
+            "marker": marker,
+            "before_frames": len(before),
+            "after_frames": len(after),
+            "changes": changes,
+            "timed_frame_count": len(before) + len(after),
+        })
+    return results
+
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
@@ -370,6 +426,8 @@ class ResearchTab(QWidget):
         self.pair_button.clicked.connect(self.analyze_uds_pairs)
         self.address_map_button = QPushButton("Build CAN address map")
         self.address_map_button.clicked.connect(self.analyze_address_map)
+        self.marker_analysis_button = QPushButton("Compare around markers")
+        self.marker_analysis_button.clicked.connect(self.analyze_marker_windows)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
@@ -377,6 +435,7 @@ class ResearchTab(QWidget):
         footer.addWidget(self.isotp_button)
         footer.addWidget(self.pair_button)
         footer.addWidget(self.address_map_button)
+        footer.addWidget(self.marker_analysis_button)
         footer.addWidget(self.packet_button)
         footer.addWidget(self.clear_button)
         footer.addStretch(1)
@@ -438,6 +497,8 @@ class ResearchTab(QWidget):
     def observe_frame(self, frame):
         record = _frame_record(frame)
         if self.recording:
+            if self._recording_started_monotonic is not None:
+                record["elapsed_seconds"] = round(time.monotonic() - self._recording_started_monotonic, 6)
             self._pending_records.append(record)
         elif self.live_enabled:
             self._pending_preview.append(record)
@@ -899,6 +960,64 @@ class ResearchTab(QWidget):
             "physical ECU identities remain unknown"
         )
 
+
+    def analyze_marker_windows(self):
+        """Compare frame payload frequencies in short windows around each action marker."""
+        self._flush_pending_frames()
+        if not self.frames or not self.markers:
+            QMessageBox.information(
+                self, "Operation comparison",
+                "A recorded capture with at least one action marker is required."
+            )
+            return
+        results = analyze_marker_windows(self.frames, self.markers)
+        lines = [
+            "Default windows: 2.0 seconds before and 5.0 seconds after each marker.",
+            "Only frames carrying the recording's monotonic elapsed_seconds are included.",
+            "Payload count changes are correlation evidence, not proof of ECU identity or causation.",
+            "",
+        ]
+        for result in results:
+            marker = result["marker"]
+            lines.append(
+                f'MARKER {result["marker_index"]}: {marker.get("elapsed_seconds", 0):.3f}s '
+                f'| {marker.get("operation", "Unspecified")} | {marker.get("note", "")}'
+            )
+            lines.append(
+                f'  Frames: before={result["before_frames"]}, after={result["after_frames"]}'
+            )
+            for change in result["changes"][:30]:
+                channel = change["channel"] if change["channel"] is not None else "unspecified"
+                lines.append(
+                    f'  CAN 0x{change["can_id"]:X} '
+                    f'{"EXT" if change["extended"] else "STD"} channel={channel} '
+                    f'{change["payload"].upper() or "(empty)"} '
+                    f'before={change["before_count"]} after={change["after_count"]} '
+                    f'delta={change["delta"]:+}'
+                )
+            if not result["changes"]:
+                lines.append("  No payload-frequency changes found in the selected windows.")
+            lines.append("")
+        if not results:
+            lines.append("No usable marker timestamps were found.")
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Scanner operation traffic comparison")
+        dialog.resize(1050, 680)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(f"{len(results):,} operation markers analyzed")
+        layout.addWidget(summary)
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\n".join(lines))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Operation comparison complete: {len(results):,} markers; correlation only"
+        )
+
     def build_analysis_packet(self):
         self._flush_pending_frames()
         lines = [
@@ -984,6 +1103,23 @@ class ResearchTab(QWidget):
             f'- {m["elapsed_seconds"]:.3f}s | {m["operation"]} | {m["note"]}'
             for m in self.markers
         )
+        marker_results = analyze_marker_windows(self.frames, self.markers) if self.frames and self.markers else []
+        lines += ["", "## Marker-window traffic comparison",
+                  "Default windows: 2 seconds before and 5 seconds after each marker. "
+                  "Only monotonic-timed frames are included; correlations do not prove causation."]
+        for result in marker_results:
+            marker = result["marker"]
+            lines.append(
+                f'- Marker {result["marker_index"]} at {marker["elapsed_seconds"]:.3f}s: '
+                f'{marker.get("operation", "Unspecified")}; frames before/after: '
+                f'{result["before_frames"]}/{result["after_frames"]}'
+            )
+            for change in result["changes"][:50]:
+                lines.append(
+                    f'  - CAN 0x{change["can_id"]:X} {change["payload"].upper()}: '
+                    f'{change["before_count"]} → {change["after_count"]} '
+                    f'(delta {change["delta"]:+})'
+                )
         lines += ["", "## Bookmarks"]
         lines.extend(f"- {key}: {note}" for key, note in self.bookmarks.items())
         if self.reference_frames:
