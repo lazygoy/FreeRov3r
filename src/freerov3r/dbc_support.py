@@ -120,7 +120,8 @@ class DBCLibrary:
                 message.frame_id, payload, decode_choices=False,
                 allow_truncated=False, allow_excess=False,
             )
-        except (ValueError, KeyError, OverflowError):
+        except Exception:
+            # Malformed or incompatible payloads are not decoded as valid signals.
             return None
         return DBCDecodeResult(
             decoded=values, message_name=message.name, frame_id=int(message.frame_id)
