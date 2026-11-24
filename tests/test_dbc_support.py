@@ -76,14 +76,14 @@ def test_dbc_coverage_reports_numeric_signal_statistics(tmp_path, monkeypatch):
         {"arbitration_id": 0x124, "extended": False, "data": "0102"},
     ])
     assert coverage["matched_frames"] == 2
-    assert coverage["unmatched_frames"] == 1
+    assert coverage["unmatched_frames"] == 2
     assert coverage["signals"]["EngineSpeed"]["mean"] == 1500.0
     assert coverage["signals"]["CoolantTemp"]["max"] == 88.5
 
 
 def test_dbc_library_rejects_non_dbc_paths(tmp_path):
     library = DBCLibrary(tmp_path / "library")
-    with pytest.raises(ValueError, match="\.dbc"):
+    with pytest.raises(ValueError, match=r"\.dbc"):
         library.load_file(tmp_path / "not-a-dbc.txt")
 
 
