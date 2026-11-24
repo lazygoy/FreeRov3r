@@ -6,6 +6,8 @@ Examples: S,00000123,2,0102 and E,18DAF110,8,032201F190000000
 The legacy three-field format remains accepted for older firmware. This
 adapter only receives frames; it never sends serial commands or CAN traffic.
 """
+import time
+
 import serial
 
 from .base import CanAdapter
@@ -59,6 +61,11 @@ class Esp32SerialAdapter(CanAdapter):
         self.invalid_lines = 0
         self.last_error = None
         self.last_status = None
+        self.status_lines = 0
+        self.alert_count = 0
+        self.firmware_error_count = 0
+        self.last_frame_monotonic = None
+        self.last_status_monotonic = None
 
     @property
     def description(self):
@@ -70,12 +77,26 @@ class Esp32SerialAdapter(CanAdapter):
 
     @property
     def diagnostics(self):
+        now = time.monotonic()
+        frame_age = (
+            max(0.0, now - self.last_frame_monotonic)
+            if self.last_frame_monotonic is not None else None
+        )
+        status_age = (
+            max(0.0, now - self.last_status_monotonic)
+            if self.last_status_monotonic is not None else None
+        )
         return {
             "connected": self.connected,
             "port": self.port,
             "baudrate": self.baudrate,
             "frames_received": self.frames_received,
             "invalid_lines": self.invalid_lines,
+            "status_lines": self.status_lines,
+            "alert_count": self.alert_count,
+            "firmware_error_count": self.firmware_error_count,
+            "last_frame_age_seconds": frame_age,
+            "last_status_age_seconds": status_age,
             "last_error": self.last_error,
             "last_status": self.last_status,
             "mode": "receive-only",
@@ -84,6 +105,11 @@ class Esp32SerialAdapter(CanAdapter):
     def open(self):
         self.last_error = None
         self.last_status = None
+        self.status_lines = 0
+        self.alert_count = 0
+        self.firmware_error_count = 0
+        self.last_frame_monotonic = None
+        self.last_status_monotonic = None
         self.connection = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
 
     def close(self):
@@ -105,8 +131,14 @@ class Esp32SerialAdapter(CanAdapter):
         except UnicodeDecodeError:
             status = ""
         if status.startswith("#"):
+            self.status_lines += 1
+            self.last_status_monotonic = time.monotonic()
             self.last_status = status[1:][:120]
-            if status.startswith("#ERROR,") or status.startswith("#ALERT,"):
+            if status.startswith("#ALERT,"):
+                self.alert_count += 1
+                self.last_error = status[1:][:120]
+            elif status.startswith("#ERROR,"):
+                self.firmware_error_count += 1
                 self.last_error = status[1:][:120]
             return None
 
@@ -116,5 +148,6 @@ class Esp32SerialAdapter(CanAdapter):
             self.last_error = status[:120] if status else "Unreadable serial input"
             return None
         self.frames_received += 1
+        self.last_frame_monotonic = time.monotonic()
         self.last_error = None
         return frame
