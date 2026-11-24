@@ -3805,6 +3805,7 @@ class MainWindow(QMainWindow):
             is_extended_id=bool(frame_data["extended"]),
             data=bytes.fromhex(frame_data["data"]),
             channel=frame_data.get("channel"),
+            is_fd=len(bytes.fromhex(frame_data["data"])) > 8,
             check=True,
         )
         self.on_frame(frame)
