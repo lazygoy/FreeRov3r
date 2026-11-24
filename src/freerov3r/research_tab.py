@@ -554,7 +554,11 @@ def _normalize_record(record):
             "channel": record.get("channel"),
         }
         if record.get("elapsed_seconds") is not None:
-            normalized["elapsed_seconds"] = float(record["elapsed_seconds"])
+            try:
+                normalized["elapsed_seconds"] = float(record["elapsed_seconds"])
+            except (TypeError, ValueError):
+                # Preserve the valid CAN frame even if optional timing metadata is bad.
+                pass
         return normalized
     except (TypeError, ValueError):
         return None
