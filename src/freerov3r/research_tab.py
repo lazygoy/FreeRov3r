@@ -546,13 +546,16 @@ def _normalize_record(record):
             extended = extended_value.strip().lower() in ("1", "true", "yes", "ext", "extended")
         else:
             extended = bool(extended_value)
-        return {
+        normalized = {
             "timestamp": float(record.get("timestamp", record.get("time", 0.0)) or 0.0),
             "arbitration_id": arbitration_id,
             "extended": extended,
             "data": payload.hex(),
             "channel": record.get("channel"),
         }
+        if record.get("elapsed_seconds") is not None:
+            normalized["elapsed_seconds"] = float(record["elapsed_seconds"])
+        return normalized
     except (TypeError, ValueError):
         return None
 
