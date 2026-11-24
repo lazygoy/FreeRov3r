@@ -1043,8 +1043,11 @@ class ResearchTab(QWidget):
         connected = bool(data.get("connected", False))
         port = data.get("port") or "not selected"
         mode = data.get("mode") or "unknown mode"
+        receiver_state = data.get("receiver_state")
+        if not receiver_state:
+            receiver_state = "connected" if connected else "disconnected"
         self.receiver_connection_label.setText(
-            f"Connection: {'connected' if connected else 'disconnected'} · {port} · {mode}"
+            f"Receiver: {receiver_state} · {port} · {mode}"
         )
         self.receiver_frame_label.setText(
             f"Frames: {int(data.get('frames_received', 0)):,} · invalid lines: "
