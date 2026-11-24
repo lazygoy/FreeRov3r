@@ -437,3 +437,38 @@ def test_operation_uds_identifier_summary_extracts_routine_control():
     assert start["positive_count"] == 2
     assert stop["identifier"] == 0xA201
     assert stop["negative_count"] == 1
+
+
+
+def test_operation_uds_identifier_summary_distinguishes_did_access_modes():
+    from freerov3r.research_tab import summarize_operation_uds_identifiers
+
+    result = summarize_operation_uds_identifiers([{
+        "operation": "Inspect configuration",
+        "transactions": [
+            {
+                "service": 0x22,
+                "request_payload": "22f1a0",
+                "response_payload": "62f1a0aa",
+                "response_kind": "positive",
+                "capture_names": ["read"],
+            },
+            {
+                "service": 0x2E,
+                "request_payload": "2ef1a001",
+                "response_payload": "6ef1a0",
+                "response_kind": "positive",
+                "capture_names": ["write"],
+            },
+            {
+                "service": 0x2F,
+                "request_payload": "2ff1a00301",
+                "response_payload": "6ff1a0",
+                "response_kind": "positive",
+                "capture_names": ["io"],
+            },
+        ],
+    }])
+    modes = {item["access"] for item in result}
+    assert modes == {"Read", "Write", "I/O control"}
+    assert len(result) == 3
