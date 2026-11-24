@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from freerov3r.isotp import (
+from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions\n\nfrom freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
     summarize_cross_capture_address_pairs,
 )
@@ -966,7 +966,7 @@ class ResearchTab(QWidget):
         self.marker_analysis_button.clicked.connect(self.analyze_marker_windows)
         self.sequence_analysis_button = QPushButton("Compare operation sequences")
         self.sequence_analysis_button.clicked.connect(self.analyze_operation_sequences)
-        self.packet_button = QPushButton("Copy REA analysis packet")
+        self.did_decode_button = QPushButton("Decode DID responses")\n        self.did_decode_button.clicked.connect(self.decode_did_responses)\n        self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
         self.clear_button.clicked.connect(self.clear_data)
@@ -1441,6 +1441,114 @@ class ResearchTab(QWidget):
         }
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         self.status_label.setText(f"Saved {len(self.frames):,} frames to {Path(path).name}")
+
+    def decode_did_responses(self):
+        """Load a source-backed DID registry and decode matching captured responses."""
+        self._flush_pending_frames()
+        if not self.frames:
+            QMessageBox.information(
+                self, "DID response decoding", "Capture or import CAN frames first."
+            )
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load DID definition registry", "",
+            "DID definitions (*.json);;All files (*)"
+        )
+        if not path:
+            return
+        try:
+            registry = DIDDefinitionRegistry.from_json(path)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(
+                self, "DID definition registry",
+                f"Could not load the definition file:\\n{exc}"
+            )
+            return
+
+        vehicle = self.did_vehicle_key.text().strip()
+        if not vehicle:
+            QMessageBox.warning(
+                self, "DID response decoding",
+                "Enter the exact vehicle key used by the definitions."
+            )
+            return
+
+        messages = reassemble_isotp(self.frames)
+        transactions = pair_uds_transactions(messages)
+        decoded = decode_uds_did_transactions(
+            transactions, registry, vehicle=vehicle
+        )
+        self.did_registry = registry
+        self.did_registry_path = path
+
+        lines = [
+            f"Definition file: {Path(path).name}",
+            f"Vehicle key: {vehicle}",
+            f"Transactions paired: {sum(p.get('confidence') == 'probable' for p in transactions)}",
+            f"Single-DID positive reads considered: {len(decoded)}",
+            "",
+            "Only exact vehicle/DID matches are decoded. Raw payloads and source provenance are retained.",
+            "Multi-DID, negative, unmatched and unknown definitions are not interpreted.",
+            "",
+        ]
+        for item in decoded:
+            result = item["decoded"]
+            lines.append(
+                f"DID 0x{item['did']:04X} | request CAN 0x{int(item['request_id']):X} "
+                f"-> response CAN 0x{int(item['response_id']):X}"
+            )
+            lines.append(
+                f"  REQ={item['request_payload'].upper()} RESP={item['response_payload'].upper()}"
+            )
+            if result["status"] == "unknown_definition":
+                lines.append(f"  UNKNOWN DEFINITION | raw data={result.get('data', '').upper()}")
+                continue
+            if result["status"] != "decoded":
+                lines.append(f"  Not decoded: {result['status']}")
+                continue
+            definition = result["definition"]
+            source = definition["source"]
+            lines.append(
+                f"  {definition['name']} | module={definition['module'] or 'unassigned'} "
+                f"| confidence={definition['confidence']}"
+            )
+            lines.append(
+                f"  Source: {source['title']} | {source['reference']} "
+                f"{source['url']}".rstrip()
+            )
+            lines.append(f"  Raw DID data: {result['data'].upper()}")
+            for field in result["fields"]:
+                if field["status"] == "truncated":
+                    value = "TRUNCATED"
+                else:
+                    value = str(field["value"])
+                    if field["unit"]:
+                        value += f" {field['unit']}"
+                lines.append(
+                    f"    +{field['offset']} {field['name']}: {value} "
+                    f"[{field['raw_hex'].upper()}]"
+                )
+        if not decoded:
+            lines.append("No eligible single-DID positive responses were found.")
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Source-backed DID response decoding")
+        dialog.resize(1050, 700)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            f"{len(decoded)} eligible response(s) · {len(registry._definitions)} definition(s) loaded"
+        ))
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\\n".join(lines))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"DID decoding complete: {len(decoded)} eligible response(s); raw captures unchanged."
+        )
 
     def analyze_isotp(self):
         """Reassemble captured ISO-TP messages without transmitting anything."""
