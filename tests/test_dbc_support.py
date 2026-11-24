@@ -21,6 +21,10 @@ class FakeMessage:
         assert len(payload) == 2
         return {"EngineSpeed": 1500.0, "CoolantTemp": 88.5}
 
+    def decode(self, payload, **kwargs):
+        assert len(payload) == 2
+        return {"EngineSpeed": 1500.0, "CoolantTemp": 88.5}
+
 
 class FakeDatabase:
     messages = [FakeMessage()]
