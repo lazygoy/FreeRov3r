@@ -35,7 +35,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Capture comparison by CAN identifier traffic counts.\n- Monotonic-time action markers and before/after payload-frequency comparison (2-second baseline, 5-second response window by default). Frames without a matching monotonic elapsed-time field are excluded rather than mixing unrelated clocks.
 - Multi-capture operation-sequence alignment against the first loaded capture, reporting missing, inserted or substituted marker steps, alongside per-operation CAN traffic repeatability and timing.
 - Per-operation UDS transaction correlation: reassembles each capture independently using monotonic elapsed time, pairs probable requests and responses, and compares raw request/response payloads, response kind, repeatability and latency across captures.
-- Observed UDS identifier summary for ReadDataByIdentifier (0x22) and RoutineControl (0x31), aggregating requested DIDs, routine IDs, raw routine-control subfunctions, positive/negative outcomes and cross-capture repeatability without guessing identifier meanings.
+- Observed UDS identifier summary for ReadDataByIdentifier (0x22), WriteDataByIdentifier (0x2E), InputOutputControlByIdentifier (0x2F) and RoutineControl (0x31), aggregating DIDs, routine IDs, routine-control subfunctions, outcomes and cross-capture repeatability without guessing vehicle-specific meanings.
 - JSON session save and Markdown handoff packet for REA / ChatGPT.
 
 ## Safety and interpretation limits
