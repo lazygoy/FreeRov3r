@@ -102,3 +102,10 @@ difference between session means where both sessions contain the same signal
 and unit. Comparison tables can be exported to CSV. Different capture clocks
 are not assumed to be synchronized, so the comparison does not claim
 point-by-point temporal alignment.
+
+
+### Replay timeline, filters and sensor synchronization
+
+Archived captures can be reviewed on a merged timestamp timeline containing both CAN frames and recorded sensor samples. The Vehicle History replay panel supports seeking through that timeline and display-only filters for CAN arbitration ID (decimal or `0x` hexadecimal), standard/extended frame format, and payload hex content. Filtering does not modify the archived JSON capture.
+
+During playback, CAN frames flow through the local monitor and decoder while archived sensor samples are restored to the graph workspace with replay provenance and the selected VIN. Replay remains offline: it does not open an adapter or transmit frames. Stop live listening before starting replay. Scrubbing previews the selected event; playback is required to feed events into the workspaces.

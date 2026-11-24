@@ -85,3 +85,76 @@ def test_compare_captures_reports_id_and_sensor_deltas(tmp_path):
     assert len(payloads) == 2
     assert sum(row["left_count"] for row in payloads) == 2
     assert sum(row["right_count"] for row in payloads) == 1
+
+
+from freerov3r.capture_replay import build_replay_timeline, filter_capture_frames
+
+
+def test_filter_capture_frames_keeps_original_indices_and_supports_hex_id():
+    frames = [
+        {"timestamp": 1, "arbitration_id": 0x123, "extended": False, "data": "AABB"},
+        {"timestamp": 2, "arbitration_id": 0x123, "extended": True, "data": "CCDD"},
+        {"timestamp": 3, "arbitration_id": 0x456, "extended": False, "data": "AACC"},
+    ]
+    matches = filter_capture_frames(frames, "0x123", "Standard", "aa")
+    assert matches == [(0, frames[0])]
+
+
+@pytest.mark.parametrize("filters", [
+    {"can_id": "not-an-id"},
+    {"can_id": "0x20000000"},
+    {"frame_format": "CAN-FD"},
+    {"payload_contains": "GG"},
+])
+def test_filter_capture_frames_rejects_invalid_filters(filters):
+    with pytest.raises(ValueError):
+        filter_capture_frames([], **filters)
+
+
+def test_build_replay_timeline_merges_frames_and_sensor_samples_by_timestamp():
+    capture = {
+        "frames": [
+            {"timestamp": 2.0, "arbitration_id": 100, "extended": False, "data": "01"},
+            {"timestamp": 1.0, "arbitration_id": 200, "extended": False, "data": "02"},
+        ],
+        "sensor_samples": [
+            {"timestamp": 1.0, "sensor_id": "rpm", "value": 900, "unit": "rpm"},
+            {"timestamp": 1.5, "sensor_id": "coolant", "value": 88, "unit": "C"},
+            {"timestamp": -1, "sensor_id": "bad", "value": 1},
+            {"timestamp": 1.2, "sensor_id": "invalid", "value": "not numeric"},
+        ],
+    }
+    timeline = build_replay_timeline(capture)
+    assert [(event["kind"], event["timestamp"]) for event in timeline] == [
+        ("frame", 1.0), ("sensor", 1.0), ("sensor", 1.5), ("frame", 2.0)
+    ]
+    assert timeline[0]["source_index"] == 1
+    assert timeline[1]["sample"]["sensor_id"] == "rpm"
+
+
+def test_replay_timeline_filters_frames_without_dropping_sensor_samples():
+    capture = {
+        "frames": [
+            {"timestamp": 1.0, "arbitration_id": 100, "extended": False, "data": "0102"},
+            {"timestamp": 2.0, "arbitration_id": 200, "extended": False, "data": "0304"},
+        ],
+        "sensor_samples": [
+            {"timestamp": 1.5, "sensor_id": "rpm", "value": 1000, "unit": "rpm"}
+        ],
+    }
+    timeline = build_replay_timeline(capture, can_id="100")
+    assert [event["kind"] for event in timeline] == ["frame", "sensor"]
+    assert timeline[0]["frame"]["arbitration_id"] == 100
+
+
+def test_loaded_capture_and_timeline_preserve_archive_vin(tmp_path):
+    vin = "SALXXXXXXXXXXXX1"
+    folder = tmp_path / "vehicles" / vin / "captures"
+    folder.mkdir(parents=True)
+    path = _capture(folder / "capture_test.json", [
+        {"timestamp": 1.0, "arbitration_id": 100, "extended": False, "data": "01"}
+    ], [{"timestamp": 1.1, "sensor_id": "rpm", "value": 900, "unit": "rpm"}])
+    capture = load_capture(path)
+    timeline = build_replay_timeline(capture)
+    assert capture["vin"] == vin
+    assert {event["vin"] for event in timeline} == {vin}

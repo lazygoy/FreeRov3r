@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
     QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QGroupBox,
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
+    QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem, QSlider,
     QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
     QDialog, QFrame, QScrollArea, QSizePolicy,
 )
@@ -52,7 +52,9 @@ except ImportError:
     QPdfDocument = QPdfView = None
     HAS_PDF_VIEWER = False
 from .vehicle_history import VehicleHistoryStore
-from .capture_replay import list_capture_archives, load_capture, compare_captures
+from .capture_replay import (
+    list_capture_archives, load_capture, compare_captures, build_replay_timeline,
+)
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .research_tab import ResearchTab
@@ -2019,6 +2021,36 @@ class VehicleHistoryTab(QWidget):
         action_row.addWidget(self.export_comparison_btn)
         replay_layout.addLayout(action_row)
 
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("CAN ID:"))
+        self.replay_can_id_filter = QLineEdit()
+        self.replay_can_id_filter.setPlaceholderText("Any ID / decimal / 0x123")
+        self.replay_can_id_filter.setMaximumWidth(150)
+        filter_row.addWidget(self.replay_can_id_filter)
+        filter_row.addWidget(QLabel("Format:"))
+        self.replay_format_filter = QComboBox()
+        self.replay_format_filter.addItems(["Any", "Standard", "Extended"])
+        filter_row.addWidget(self.replay_format_filter)
+        filter_row.addWidget(QLabel("Payload contains:"))
+        self.replay_payload_filter = QLineEdit()
+        self.replay_payload_filter.setPlaceholderText("Hex bytes")
+        self.replay_payload_filter.setMaximumWidth(150)
+        filter_row.addWidget(self.replay_payload_filter)
+        self.apply_replay_filter_btn = QPushButton("Apply filters")
+        self.apply_replay_filter_btn.clicked.connect(self.apply_replay_filters)
+        filter_row.addWidget(self.apply_replay_filter_btn)
+        replay_layout.addLayout(filter_row)
+
+        timeline_row = QHBoxLayout()
+        self.replay_position_label = QLabel("0 / 0 events")
+        self.replay_timeline_slider = QSlider(Qt.Horizontal)
+        self.replay_timeline_slider.setRange(0, 0)
+        self.replay_timeline_slider.valueChanged.connect(self._timeline_scrubbed)
+        timeline_row.addWidget(QLabel("Timeline:"))
+        timeline_row.addWidget(self.replay_timeline_slider, 1)
+        timeline_row.addWidget(self.replay_position_label)
+        replay_layout.addLayout(timeline_row)
+
         self.replay_status = QLabel("Select a VIN to list its archived captures. Playback is offline and read-only.")
         self.replay_status.setWordWrap(True)
         replay_layout.addWidget(self.replay_status)
@@ -2038,7 +2070,9 @@ class VehicleHistoryTab(QWidget):
         self.replay_timer = QTimer(self)
         self.replay_timer.timeout.connect(self._replay_step)
         self.replay_capture = None
+        self.replay_timeline = []
         self.replay_index = 0
+        self._timeline_frame_rows = {}
         self.comparison_result = None
 
         split = QHBoxLayout()
@@ -2109,7 +2143,10 @@ class VehicleHistoryTab(QWidget):
         self.details.clear()
         self.stop_replay()
         self.replay_capture = None
+        self.replay_timeline = []
         self.capture_table.setRowCount(0)
+        self.replay_timeline_slider.setRange(0, 0)
+        self.replay_position_label.setText("0 / 0 events")
         self.comparison_table.setRowCount(0)
         self.comparison_result = None
         self.capture_combo.clear()
@@ -2137,12 +2174,42 @@ class VehicleHistoryTab(QWidget):
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             QMessageBox.warning(self, "Capture load failed", str(exc))
             return
-        frames = self.replay_capture["frames"]
-        self.capture_table.setRowCount(len(frames))
-        for row, frame in enumerate(frames):
-            timestamp = frame["timestamp"]
+        self._rebuild_replay_timeline()
+        if self.replay_capture is None:
+            return
+        self.replay_status.setText(
+            f"Loaded {len(self.replay_capture['frames']):,} frames and "
+            f"{len(self.replay_capture['sensor_samples']):,} archived sensor samples "
+            f"from {Path(path).name}. No CAN adapter is opened and no frames are transmitted."
+        )
+
+    def _rebuild_replay_timeline(self):
+        if not self.replay_capture:
+            self.replay_timeline = []
+            self.capture_table.setRowCount(0)
+            self.replay_timeline_slider.setRange(0, 0)
+            self.replay_position_label.setText("0 / 0 events")
+            return
+        try:
+            self.replay_timeline = build_replay_timeline(
+                self.replay_capture,
+                self.replay_can_id_filter.text(),
+                self.replay_format_filter.currentText(),
+                self.replay_payload_filter.text(),
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid replay filter", str(exc))
+            return
+        visible_frames = [
+            event for event in self.replay_timeline if event["kind"] == "frame"
+        ]
+        self._timeline_frame_rows = {}
+        self.capture_table.setRowCount(len(visible_frames))
+        for row, event in enumerate(visible_frames):
+            frame = event["frame"]
+            self._timeline_frame_rows[event["source_index"]] = row
             values = [
-                f"{timestamp:.6f}",
+                f"{frame['timestamp']:.6f}",
                 f"{frame['arbitration_id']:08X}",
                 "EXT" if frame["extended"] else "STD",
                 str(len(bytes.fromhex(frame["data"]))),
@@ -2151,10 +2218,54 @@ class VehicleHistoryTab(QWidget):
             for column, value in enumerate(values):
                 self.capture_table.setItem(row, column, QTableWidgetItem(value))
         self.replay_index = 0
+        self.replay_timeline_slider.blockSignals(True)
+        self.replay_timeline_slider.setRange(0, max(0, len(self.replay_timeline) - 1))
+        self.replay_timeline_slider.setValue(0)
+        self.replay_timeline_slider.blockSignals(False)
+        self._update_timeline_position()
         self.replay_status.setText(
-            f"Loaded {len(frames):,} frames from {Path(path).name}. "
-            "No CAN adapter is opened and no frames are transmitted."
+            f"Timeline contains {len(visible_frames):,} filtered CAN frames and "
+            f"{len(self.replay_timeline) - len(visible_frames):,} sensor samples. "
+            "Filters affect display/replay only; the archive is unchanged."
         )
+
+    def apply_replay_filters(self):
+        if self.replay_timer.isActive():
+            self.stop_replay()
+        if self.replay_capture is None:
+            self.load_selected_capture()
+            return
+        self._rebuild_replay_timeline()
+
+    def _update_timeline_position(self):
+        total = len(self.replay_timeline)
+        current = min(self.replay_index + (1 if total else 0), total)
+        self.replay_position_label.setText(f"{current:,} / {total:,} events")
+
+    def _timeline_scrubbed(self, value):
+        if self.replay_timer.isActive():
+            return
+        self.replay_index = max(0, min(int(value), max(0, len(self.replay_timeline) - 1)))
+        if not self.replay_timeline:
+            self._update_timeline_position()
+            return
+        event = self.replay_timeline[self.replay_index]
+        if event["kind"] == "frame":
+            row = self._timeline_frame_rows.get(event["source_index"])
+            if row is not None:
+                self.capture_table.selectRow(row)
+                item = self.capture_table.item(row, 0)
+                if item:
+                    self.capture_table.scrollToItem(item)
+            detail = f"CAN {event['frame']['arbitration_id']:08X}"
+        else:
+            sample = event["sample"]
+            detail = f"Sensor {sample.get('name') or sample['sensor_id']}: {sample['value']} {sample.get('unit', '')}"
+        self.replay_status.setText(
+            f"Position preview: {event['timestamp']:.6f} s | {detail}. "
+            "Press Play to feed this event and following events into the workspaces."
+        )
+        self._update_timeline_position()
 
     def toggle_replay(self):
         if self.replay_timer.isActive():
@@ -2163,9 +2274,13 @@ class VehicleHistoryTab(QWidget):
             return
         if self.replay_capture is None:
             self.load_selected_capture()
-        if self.replay_capture is None or not self.replay_capture["frames"]:
+        if self.replay_capture is None:
             return
-        if self.replay_index >= len(self.replay_capture["frames"]):
+        if not self.replay_timeline:
+            self._rebuild_replay_timeline()
+        if not self.replay_timeline:
+            return
+        if self.replay_index >= len(self.replay_timeline):
             self.replay_index = 0
         self.play_capture_btn.setText("Pause")
         if self.replay_state_callback and self.replay_state_callback(True) is False:
@@ -2174,26 +2289,38 @@ class VehicleHistoryTab(QWidget):
         self.replay_timer.start(1)
 
     def _replay_step(self):
-        frames = self.replay_capture["frames"] if self.replay_capture else []
-        if self.replay_index >= len(frames):
+        timeline = self.replay_timeline
+        if self.replay_index >= len(timeline):
             self.stop_replay(completed=True)
             return
         index = self.replay_index
-        frame = frames[index]
+        event = timeline[index]
         if self.replay_callback:
-            self.replay_callback(frame)
-        self.capture_table.selectRow(index)
-        self.capture_table.scrollToItem(self.capture_table.item(index, 0))
+            self.replay_callback(event)
+        if event["kind"] == "frame":
+            row = self._timeline_frame_rows.get(event["source_index"])
+            if row is not None:
+                self.capture_table.selectRow(row)
+                item = self.capture_table.item(row, 0)
+                if item:
+                    self.capture_table.scrollToItem(item)
         self.replay_index += 1
-        if self.replay_index >= len(frames):
+        self.replay_timeline_slider.blockSignals(True)
+        self.replay_timeline_slider.setValue(min(self.replay_index, max(0, len(timeline) - 1)))
+        self.replay_timeline_slider.blockSignals(False)
+        self._update_timeline_position()
+        if self.replay_index >= len(timeline):
             self.replay_timer.stop()
             self.play_capture_btn.setText("Replay")
             if self.replay_state_callback:
                 self.replay_state_callback(False)
-            self.replay_status.setText(f"Playback complete: {len(frames):,} frames reviewed in the CAN monitor and sensor workspaces. Offline only.")
+            self.replay_status.setText(
+                f"Playback complete: {sum(e['kind'] == 'frame' for e in timeline):,} CAN frames "
+                f"and {sum(e['kind'] == 'sensor' for e in timeline):,} sensor samples reviewed. Offline only."
+            )
             return
-        next_timestamp = frames[self.replay_index]["timestamp"]
-        delta = max(0.0, next_timestamp - frame["timestamp"])
+        next_timestamp = timeline[self.replay_index]["timestamp"]
+        delta = max(0.0, next_timestamp - event["timestamp"])
         speed = float(self.replay_speed.currentData() or 1.0)
         self.replay_timer.start(max(5, min(1000, int(delta * 1000 / speed))))
 
@@ -2201,6 +2328,11 @@ class VehicleHistoryTab(QWidget):
         if hasattr(self, "replay_timer"):
             self.replay_timer.stop()
         self.replay_index = 0
+        if hasattr(self, "replay_timeline_slider"):
+            self.replay_timeline_slider.blockSignals(True)
+            self.replay_timeline_slider.setValue(0)
+            self.replay_timeline_slider.blockSignals(False)
+            self._update_timeline_position()
         if self.replay_state_callback:
             self.replay_state_callback(False)
         if hasattr(self, "play_capture_btn"):
@@ -3794,11 +3926,41 @@ class MainWindow(QMainWindow):
         self._refresh_workspace_header()
         return True
 
-    def on_replay_frame(self, frame_data):
-        """Feed one archived frame through the normal monitor/decoder path, never the adapter."""
+    def on_replay_frame(self, event_data):
+        """Feed an archived CAN frame or sensor sample into local workspaces only."""
         if self.receiver and self.receiver.isRunning():
             self.show_toast("Stop live listening before replaying an archive", "warning")
             return
+        if event_data.get("kind") == "sensor":
+            archived = event_data["sample"]
+            metadata = dict(archived.get("metadata") or {})
+            metadata["vin"] = event_data.get("vin") or self.settings.get("current_vin")
+            metadata["replay"] = True
+            metadata["archived_source"] = archived.get("source")
+            sample = SensorSample(
+                timestamp=float(archived["timestamp"]),
+                sensor_id=str(archived["sensor_id"]),
+                name=str(archived.get("name") or archived["sensor_id"]),
+                value=float(archived["value"]),
+                unit=str(archived.get("unit") or ""),
+                source="replay",
+                ecu=archived.get("ecu") or "REPLAY CAPTURE",
+                signal=archived.get("signal"),
+                quality=archived.get("quality") or "valid",
+                metadata=metadata,
+            )
+            known = any(
+                self.graph_tab.sensor_list.item(i).text().endswith(f"({sample.sensor_id})")
+                for i in range(self.graph_tab.sensor_list.count())
+            )
+            self.sensor_capture.add(sample)
+            if not known:
+                self.graph_tab.refresh_sensor_list()
+            self.sensor_log.appendPlainText(
+                f"{sample.name}: {sample.value:.3f} {sample.unit} [{sample.sensor_id}] (replay)"
+            )
+            return
+        frame_data = event_data.get("frame", event_data)
         frame = can.Message(
             timestamp=float(frame_data["timestamp"]),
             arbitration_id=int(frame_data["arbitration_id"]),
@@ -3835,18 +3997,16 @@ class MainWindow(QMainWindow):
             sensor_id = f"obd_{pid:02X}"
             simulated = self.active_interface == "simulator"
             replayed = self._replay_active
-            self.sensor_capture.add(SensorSample(
-                timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
-                value=value, unit=unit,
-                source="replay" if replayed else ("simulated" if simulated else "ecu"),
-                ecu="REPLAY CAPTURE" if replayed else ("SIMULATED ECU" if simulated else None),
-                signal=f"Mode 01 PID {pid:02X}",
-                metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
-                         "vin": (
-                             self.settings.get("current_vin") if replayed
-                             else (self.capture_vin or "UNASSIGNED")
-                         )},
-            ))
+            if not replayed:
+                self.sensor_capture.add(SensorSample(
+                    timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
+                    value=value, unit=unit,
+                    source="simulated" if simulated else "ecu",
+                    ecu="SIMULATED ECU" if simulated else None,
+                    signal=f"Mode 01 PID {pid:02X}",
+                    metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
+                             "vin": self.capture_vin or "UNASSIGNED"},
+                ))
             known = any(
                 self.graph_tab.sensor_list.item(i).text().endswith(f"({sensor_id})")
                 for i in range(self.graph_tab.sensor_list.count())
