@@ -154,6 +154,56 @@ class DBCLibrary:
         )
         return self.summary()
 
+    def update_metadata(
+        self,
+        *,
+        source_origin,
+        vehicle_applicability,
+        bus_name,
+        evidence_grade,
+        verification_status,
+        verification_notes,
+    ):
+        """Persist evidence context; verified status requires a complete grade-A record."""
+        if self.database is None or self.path is None:
+            raise ValueError("Load a DBC before editing its evidence metadata.")
+        grade = str(evidence_grade).strip().upper()
+        status = str(verification_status).strip().lower()
+        if grade not in {"A", "B", "C", "D"}:
+            raise ValueError("Evidence grade must be A, B, C or D.")
+        if status not in {"unverified", "provisional", "verified"}:
+            raise ValueError("Verification status must be unverified, provisional or verified.")
+        source = str(source_origin).strip()
+        vehicle = str(vehicle_applicability).strip()
+        bus = str(bus_name).strip()
+        notes = str(verification_notes).strip()
+        if status == "verified":
+            missing = [
+                label for label, value in (
+                    ("source reference", source),
+                    ("vehicle applicability", vehicle),
+                    ("physical bus/network", bus),
+                    ("verification notes and known-value cross-check", notes),
+                ) if not value
+            ]
+            if grade != "A" or missing:
+                detail = ", ".join(missing) if missing else "grade A evidence"
+                raise ValueError(
+                    "Verified status requires grade A evidence and complete "
+                    f"documentation: {detail}."
+                )
+        self.metadata.update({
+            "source_origin": source or "Not recorded",
+            "vehicle_applicability": vehicle or "Unverified",
+            "bus_name": bus or "Not recorded",
+            "evidence_grade": grade,
+            "verification_status": status,
+            "verification_notes": notes,
+        })
+        metadata_path = self.metadata_dir / f"{self.path.name}.json"
+        metadata_path.write_text(json.dumps(self.metadata, indent=2), encoding="utf-8")
+        return dict(self.metadata)
+
     def summary(self):
         return {
             "path": str(self.path) if self.path else None,
