@@ -4,6 +4,12 @@ from freerov3r.vehicle_profiles.registry import VehicleProfileRegistry
 def test_registry_includes_generic_core_and_l319_package():
     registry = VehicleProfileRegistry()
     assert registry.get("generic").profile_id == "generic"
+    family = registry.get("land_rover_l319")
+    assert family.make == "Land Rover"
+    assert family.year_start == 2005
+    assert family.year_end == 2016
+    assert "l319_module_inventory" in family.capabilities
+    assert "l319_wiring_reference" not in family.capabilities
     lr3 = registry.get("land_rover_l319_lr3")
     lr4 = registry.get("land_rover_l319_lr4")
     assert lr3.make == "Land Rover"
