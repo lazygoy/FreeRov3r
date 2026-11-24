@@ -1,6 +1,7 @@
 """Read-only loading, validation and comparison of archived CAN captures."""
 from collections import Counter, defaultdict
 import json
+import math
 from pathlib import Path
 
 
@@ -46,7 +47,7 @@ def load_capture(path):
             raise ValueError(f"Frame {index + 1} uses an extended ID but is marked standard.")
         if len(payload) > 64:
             raise ValueError(f"Frame {index + 1} exceeds the 64-byte CAN FD payload limit.")
-        if timestamp < 0:
+        if not math.isfinite(timestamp) or timestamp < 0:
             raise ValueError(f"Frame {index + 1} has a negative timestamp.")
         frames.append({
             "timestamp": timestamp,
@@ -172,7 +173,7 @@ def filter_capture_frames(frames, can_id="", frame_format="Any", payload_contain
     fmt = str(frame_format or "Any").strip().lower()
     if fmt not in {"any", "standard", "extended", "std", "ext"}:
         raise ValueError("Frame format must be Any, Standard or Extended.")
-    payload_query = "".join(str(payload_contains or "").split()).replace("0x", "").upper()
+    payload_query = "".join(str(payload_contains or "").split()).upper().replace("0X", "")
     if any(ch not in "0123456789ABCDEF" for ch in payload_query):
         raise ValueError("Payload filter must contain hexadecimal characters only.")
 
@@ -212,7 +213,7 @@ def build_replay_timeline(capture, can_id="", frame_format="Any", payload_contai
             value = float(sample["value"])
         except (KeyError, TypeError, ValueError):
             continue
-        if timestamp < 0 or not sample.get("sensor_id"):
+        if not math.isfinite(timestamp) or not math.isfinite(value) or timestamp < 0 or not sample.get("sensor_id"):
             continue
         normalized = dict(sample)
         normalized["timestamp"] = timestamp
