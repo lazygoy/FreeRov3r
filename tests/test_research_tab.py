@@ -362,3 +362,78 @@ def test_load_json_keeps_can_frame_when_elapsed_time_is_invalid(tmp_path):
     assert len(frames) == 1
     assert frames[0]["arbitration_id"] == 0x700
     assert "elapsed_seconds" not in frames[0]
+
+
+
+def test_operation_uds_identifier_summary_extracts_multiple_dids():
+    from freerov3r.research_tab import summarize_operation_uds_identifiers
+
+    summaries = [{
+        "operation": "Read vehicle identity",
+        "transactions": [
+            {
+                "service": 0x22,
+                "request_payload": "22f190f187",
+                "response_payload": "62f19012345662f187abcd",
+                "response_kind": "positive",
+                "capture_names": ["run 1", "run 2"],
+                "count": 2,
+            },
+            {
+                "service": 0x22,
+                "request_payload": "22f190",
+                "response_payload": "7f2231",
+                "response_kind": "negative",
+                "capture_names": ["run 3"],
+                "count": 1,
+            },
+        ],
+    }]
+
+    result = summarize_operation_uds_identifiers(summaries)
+    vin_did = next(item for item in result if item["identifier"] == 0xF190)
+    other_did = next(item for item in result if item["identifier"] == 0xF187)
+
+    assert vin_did["kind"] == "DID"
+    assert vin_did["capture_count"] == 3
+    assert vin_did["request_count"] == 3
+    assert vin_did["positive_count"] == 2
+    assert vin_did["negative_count"] == 1
+    assert vin_did["repeatability"] == "Seen in multiple captures"
+    assert other_did["capture_count"] == 2
+    assert other_did["positive_count"] == 2
+
+
+def test_operation_uds_identifier_summary_extracts_routine_control():
+    from freerov3r.research_tab import summarize_operation_uds_identifiers
+
+    result = summarize_operation_uds_identifiers([{
+        "operation": "Run scanner routine",
+        "transactions": [
+            {
+                "service": 0x31,
+                "request_payload": "3101a201",
+                "response_payload": "7101a201",
+                "response_kind": "positive",
+                "capture_names": ["routine A", "routine B"],
+                "count": 2,
+            },
+            {
+                "service": 0x31,
+                "request_payload": "3102a201",
+                "response_payload": "7f3178",
+                "response_kind": "negative",
+                "capture_names": ["routine C"],
+                "count": 1,
+            },
+        ],
+    }])
+
+    start = next(item for item in result if item["subfunction"] == 0x01)
+    stop = next(item for item in result if item["subfunction"] == 0x02)
+    assert start["identifier"] == 0xA201
+    assert start["routine_control_type"] == 0x01
+    assert start["capture_count"] == 2
+    assert start["positive_count"] == 2
+    assert stop["identifier"] == 0xA201
+    assert stop["negative_count"] == 1
