@@ -147,7 +147,7 @@ def test_received_frame_uses_host_monotonic_timestamp():
     from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
 
     adapter = Esp32SerialAdapter(port="COM8", channel_name="MS-CAN")
-    adapter.connection = FakeSerial([b"S,00000123,1,AA\\n"])
+    adapter.connection = FakeSerial([b"S,00000123,1,AA\n"])
     before = time.monotonic()
     frame = adapter.receive()
     after = time.monotonic()
