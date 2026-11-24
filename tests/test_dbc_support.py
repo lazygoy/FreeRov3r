@@ -22,10 +22,6 @@ class FakeMessage:
         assert len(payload) == 2
         return {"EngineSpeed": 1500.0, "CoolantTemp": 88.5}
 
-    def decode(self, payload, **kwargs):
-        assert len(payload) == 2
-        return {"EngineSpeed": 1500.0, "CoolantTemp": 88.5}
-
 
 class FakeDatabase:
     messages = [FakeMessage()]
@@ -63,7 +59,7 @@ def test_dbc_library_decodes_only_matching_id_format_and_length(tmp_path, monkey
     source = tmp_path / "sample.dbc"
     source.write_text("test", encoding="utf-8")
     library = DBCLibrary(tmp_path / "library")
-    monkeypatch.setattr(library, "_cantools", lambda: FakeCantools)
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
     library.load_file(source)
     decoded = library.decode(0x123, bytes.fromhex("0102"), extended=False)
     assert decoded.message_name == "EngineData"
