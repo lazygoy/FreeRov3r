@@ -58,3 +58,30 @@ The **Solutions** tab provides an expandable module list. Selecting a module bui
 
 
 The sensor subsystem records ECU-reported and externally measured values as distinct sources. It supports CSV, JSONL, and a provider-neutral Markdown analysis packet suitable for ChatGPT or local/other LLMs. See [sensor capture documentation](docs/SENSOR_CAPTURE_AND_LLM.md). The current simulator and generic Mode 01 decoder exercise the live capture path. Real L319-specific signal definitions and external DAQ drivers remain future work.
+
+
+### Simulator state persistence
+
+Synthetic module/DTC state is stored separately for each selected VIN under
+`~/.freerov3r/vehicles/<VIN>/simulated_modules.json`. Scan timestamps and
+simulated DTC clear operations are saved locally and restored on the next
+application launch. These records remain demonstration data and are not
+evidence of a physical ECU response. The file is written atomically; an
+unreadable or unsupported state file leaves the seeded simulator defaults
+intact.
+
+### Automated checks
+
+GitHub Actions runs Python compilation and the test suite on Python 3.10 and
+3.12 for pushes to `main` and feature branches, and for pull requests targeting
+`main`.
+
+
+### VIN backup export
+
+The Vehicle History workspace can export a selected VIN as a ZIP backup. The
+bundle contains that vehicle's event history, available capture JSON archives,
+and saved simulated module state. It excludes other VINs and includes a
+manifest identifying the export schema and synthetic-data limitation. Choose
+a specific VIN; the combined "All vehicles" view cannot be exported as a
+vehicle backup.

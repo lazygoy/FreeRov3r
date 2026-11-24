@@ -54,3 +54,45 @@ class VehicleHistoryStore:
 
     def vehicles(self):
         return sorted({event.get("vin", "UNASSIGNED") for event in self.events})
+
+
+    def export_vehicle_backup(self, vin, destination):
+        """Create a portable ZIP backup of one VIN's history and local artifacts."""
+        import zipfile
+
+        if not vin or vin == "UNASSIGNED":
+            raise ValueError("Select a specific vehicle VIN before creating a backup.")
+
+        safe_vin = "".join(ch for ch in str(vin) if ch.isalnum() or ch in "-_")
+        if not safe_vin:
+            raise ValueError("VIN contains no usable filename characters.")
+
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        events = self.for_vin(vin)
+        manifest = {
+            "schema_version": 1,
+            "vin": vin,
+            "event_count": len(events),
+            "contents": [
+                "history.json",
+                "captures/ (when capture archives exist)",
+                "simulated_modules.json (when present)",
+            ],
+            "note": "Simulator module data is synthetic and is not a physical ECU report.",
+        }
+
+        vehicle_root = self.path.parent / "vehicles" / safe_vin
+        captures_root = vehicle_root / "captures"
+        simulator_state = vehicle_root / "simulated_modules.json"
+
+        with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            bundle.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+            bundle.writestr("history.json", json.dumps(events, indent=2, ensure_ascii=False))
+            if captures_root.exists():
+                for capture in sorted(captures_root.glob("*.json")):
+                    if capture.is_file():
+                        bundle.write(capture, f"captures/{capture.name}")
+            if simulator_state.is_file():
+                bundle.write(simulator_state, "simulated_modules.json")
+        return destination
