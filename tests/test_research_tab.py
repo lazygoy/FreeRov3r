@@ -237,3 +237,61 @@ def test_operation_sequence_comparison_identical_order_has_no_changes():
     result = compare_operation_sequences(captures)
     assert result["sequence_comparisons"][0]["matches_reference"] is True
     assert result["sequence_comparisons"][0]["changes"] == []
+
+
+
+def test_operation_uds_transactions_are_correlated_per_capture():
+    from freerov3r.research_tab import summarize_operation_uds_transactions
+
+    def capture(name, response_data):
+        return {
+            "name": name,
+            "markers": [{"elapsed_seconds": 10.0, "operation": "Read ECU info"}],
+            "frames": [
+                {"elapsed_seconds": 10.10, "arbitration_id": 0x7E0,
+                 "data": "03 22 F1 90", "channel": "can0"},
+                {"elapsed_seconds": 10.15, "arbitration_id": 0x7E8,
+                 "data": response_data, "channel": "can0"},
+                # This wall-clock-only frame must not be mixed into monotonic analysis.
+                {"timestamp": 10.16, "arbitration_id": 0x7E8,
+                 "data": "03 62 F1 90", "channel": "can0"},
+            ],
+        }
+
+    result = summarize_operation_uds_transactions([
+        capture("positive one", "03 62 F1 90"),
+        capture("positive two", "03 62 F1 90"),
+        capture("negative", "03 7F 22 31"),
+    ])
+
+    assert len(result) == 1
+    operation = result[0]
+    assert operation["operation"] == "Read ECU info"
+    assert operation["capture_count"] == 3
+    positive = next(item for item in operation["transactions"]
+                    if item["response_kind"] == "positive")
+    negative = next(item for item in operation["transactions"]
+                    if item["response_kind"] == "negative")
+    assert positive["capture_count"] == 2
+    assert positive["repeatability"] == "Seen in multiple captures"
+    assert positive["median_latency_seconds"] == 0.05
+    assert positive["request_payload"] == "22f190"
+    assert positive["response_payload"] == "62f190"
+    assert negative["capture_count"] == 1
+    assert negative["response_payload"] == "7f2231"
+
+
+def test_operation_uds_transaction_summary_ignores_unmarked_or_incomplete_data():
+    from freerov3r.research_tab import summarize_operation_uds_transactions
+
+    capture = {
+        "name": "unmarked",
+        "markers": [],
+        "frames": [
+            {"elapsed_seconds": 1.0, "arbitration_id": 0x7E0,
+             "data": "03 22 F1 90"},
+            {"elapsed_seconds": 1.1, "arbitration_id": 0x7E8,
+             "data": "03 62 F1 90"},
+        ],
+    }
+    assert summarize_operation_uds_transactions([capture]) == []
