@@ -184,12 +184,22 @@ def compare_operation_sequences(captures, *, before_seconds=2.0, after_seconds=5
     if before_seconds <= 0 or after_seconds <= 0:
         raise ValueError("Comparison windows must be positive")
 
+    capture_list = [item for item in (captures or []) if isinstance(item, dict)]
+    name_totals = {}
+    for item in capture_list:
+        base_name = str(item.get("name") or "Unnamed capture")
+        name_totals[base_name] = name_totals.get(base_name, 0) + 1
+
     operation_groups = {}
     capture_sequences = []
-    for capture_index, capture in enumerate(captures or []):
+    for capture_index, capture in enumerate(capture_list):
         if not isinstance(capture, dict):
             continue
-        name = str(capture.get("name") or f"Capture {capture_index + 1}")
+        base_name = str(capture.get("name") or "Unnamed capture")
+        name = (
+            f"{base_name} [capture {capture_index + 1}]"
+            if name_totals[base_name] > 1 else base_name
+        )
         frames = capture.get("frames") or []
         markers = capture.get("markers") or []
         valid_markers = []
@@ -881,10 +891,10 @@ class ResearchTab(QWidget):
         self.status_label.setText(message.replace("\\n", "\n"))
 
     def analyze_operation_sequences(self):
-        if not self.sequence_captures:
+        if len(self.sequence_captures) < 2:
             QMessageBox.information(
                 self, "Operation-sequence comparison",
-                "Load two or more saved research captures that contain action markers."
+                "Load at least two saved research captures that contain action markers."
             )
             return
         result = compare_operation_sequences(self.sequence_captures)
