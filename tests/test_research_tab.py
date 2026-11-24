@@ -318,3 +318,27 @@ def test_operation_uds_summary_counts_capture_with_no_transaction():
     ])
     assert result[0]["capture_count"] == 2
     assert result[0]["transactions"][0]["capture_count"] == 1
+
+
+
+def test_load_json_preserves_monotonic_elapsed_seconds(tmp_path):
+    import json
+
+    path = tmp_path / "marked-session.json"
+    path.write_text(json.dumps({
+        "metadata": {"session_name": "marked"},
+        "markers": [{"elapsed_seconds": 5.0, "operation": "Scan"}],
+        "frames": [{
+            "timestamp": 1730000000.0,
+            "elapsed_seconds": 5.25,
+            "arbitration_id": 0x7E0,
+            "extended": False,
+            "data": "0322f190",
+            "channel": "can0",
+        }],
+    }), encoding="utf-8")
+
+    metadata, frames = load_capture_file(path)
+    assert metadata["markers"][0]["operation"] == "Scan"
+    assert frames[0]["timestamp"] == 1730000000.0
+    assert frames[0]["elapsed_seconds"] == 5.25
