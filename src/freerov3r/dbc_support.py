@@ -146,6 +146,8 @@ class DBCLibrary:
                 "imported_at": None,
             }
         self.metadata["validation_mode"] = validation_mode
+        if source.resolve().parent == self.library_dir.resolve():
+            metadata_path.write_text(json.dumps(self.metadata, indent=2), encoding="utf-8")
         self.active_state_path.write_text(
             json.dumps({"path": str(source.resolve())}, indent=2), encoding="utf-8"
         )
