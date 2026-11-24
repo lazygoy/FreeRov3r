@@ -202,6 +202,13 @@ class DBCLibrary:
                 "scale": float(signal.scale),
                 "offset": float(signal.offset),
                 "unit": str(signal.unit or ""),
+                "is_multiplexer": bool(getattr(signal, "is_multiplexer", False)),
+                "multiplexer_signal": str(getattr(signal, "multiplexer_signal", None) or ""),
+                "multiplexer_ids": tuple(sorted(getattr(signal, "multiplexer_ids", None) or [])),
+                "choices": tuple(sorted(
+                    (int(value), str(getattr(choice, "name", choice)))
+                    for value, choice in (getattr(signal, "choices", None) or {}).items()
+                )),
             }
 
         left_messages = index_messages(left_db)
