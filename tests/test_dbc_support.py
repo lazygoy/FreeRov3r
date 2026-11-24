@@ -136,7 +136,7 @@ def test_real_cantools_compares_signal_layout_and_scaling(tmp_path):
     right = tmp_path / "right.dbc"
     header = (
         'VERSION "test"\nNS_ :\nBS_ :\nBU_: ECU\n'
-        'BO_ 291 EngineData: 2 ECU\n'
+        'BO_ 291 EngineData: 3 ECU\n'
     )
     left.write_text(
         header + ' SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" ECU\n',
