@@ -246,7 +246,13 @@ class DBCLibrary:
                         difference["signal_differences"].append({
                             "kind": "signal_changed", "signal": name, "fields": changed,
                         })
-            if difference["signal_differences"] or left_message.name != right_message.name:
+            if left_message.name != right_message.name:
+                difference["signal_differences"].insert(0, {
+                    "kind": "message_name_changed",
+                    "left": left_message.name,
+                    "right": right_message.name,
+                })
+            if difference["signal_differences"]:
                 report["message_differences"].append(difference)
         report["identical_shared_definitions"] = (
             report["shared_message_count"] == len(left_messages) == len(right_messages)
