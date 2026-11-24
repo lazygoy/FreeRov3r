@@ -56,6 +56,14 @@ def test_load_capture_rejects_invalid_frames(tmp_path, frame):
         load_capture(path)
 
 
+def test_load_capture_rejects_extended_id_marked_as_standard(tmp_path):
+    path = _capture(tmp_path / "bad_standard.json", [
+        {"arbitration_id": 0x1234, "extended": False, "data": "00"}
+    ])
+    with pytest.raises(ValueError, match="marked standard"):
+        load_capture(path)
+
+
 def test_compare_captures_reports_id_and_sensor_deltas(tmp_path):
     left = load_capture(_capture(tmp_path / "left.json", [
         {"arbitration_id": 100, "data": "01"},
