@@ -6,7 +6,7 @@ local user library and are never silently treated as verified vehicle data.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
@@ -23,6 +23,7 @@ class DBCDecodeResult:
     decoded: dict
     message_name: str
     frame_id: int
+    units: dict = field(default_factory=dict)
 
 
 class DBCLibrary:
@@ -278,7 +279,10 @@ class DBCLibrary:
             # Malformed or incompatible payloads are not decoded as valid signals.
             return None
         return DBCDecodeResult(
-            decoded=values, message_name=message.name, frame_id=int(message.frame_id)
+            decoded=values,
+            message_name=message.name,
+            frame_id=int(message.frame_id),
+            units={signal.name: str(signal.unit or "") for signal in message.signals},
         )
 
     def decode_coverage(self, records):
