@@ -73,3 +73,7 @@ def test_compare_captures_reports_id_and_sensor_deltas(tmp_path):
     assert by_id[200]["right_count"] == 0
     assert by_id[300]["left_count"] == 0
     assert result["sensors"][0]["mean_delta"] == 400
+    payloads = [row for row in result["payloads"] if row["arbitration_id"] == 100]
+    assert len(payloads) == 2
+    assert sum(row["left_count"] for row in payloads) == 2
+    assert sum(row["right_count"] for row in payloads) == 1
