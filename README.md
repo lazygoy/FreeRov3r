@@ -109,3 +109,31 @@ point-by-point temporal alignment.
 Archived captures can be reviewed on a merged timestamp timeline containing both CAN frames and recorded sensor samples. The Vehicle History replay panel supports seeking through that timeline and display-only filters for CAN arbitration ID (decimal or `0x` hexadecimal), standard/extended frame format, and payload hex content. Filtering does not modify the archived JSON capture.
 
 During playback, CAN frames flow through the local monitor and decoder while archived sensor samples are restored to the graph workspace with replay provenance and the selected VIN. Replay remains offline: it does not open an adapter or transmit frames. Stop live listening before starting replay. Scrubbing previews the selected event; playback is required to feed events into the workspaces.
+
+
+### DBC signal decoding and comparison
+
+The Research workspace can import a local `.dbc` file and decode matching
+received CAN frames into physical signal values. Install the optional protocol
+dependencies with:
+
+```powershell
+python -m pip install -e ".[protocols]"
+```
+
+Use **Research → Load DBC** to import a definition. FreeRov3r validates the
+file with `cantools` and stores a local copy under
+`~/.freerov3r/dbc/`. The workspace reports message/signal counts, decoded
+values, observed min/mean/max statistics, and matched/unmatched frame counts.
+DBC decoding is passive and does not transmit diagnostic requests.
+
+An imported DBC is a signal-layout hypothesis until its source, vehicle
+applicability, CAN bus, arbitration ID, frame format, payload length, scaling,
+endianness, and signal behavior are independently checked. A matching CAN ID
+alone does not prove that a definition belongs to the selected vehicle.
+Definitions from other vehicles can be useful for comparison and reverse
+engineering, but must not be labeled as verified LR3/LR4 data. The DBC format
+primer in the [Open Vehicles documentation](https://docs.openvehicles.com/en/latest/components/vehicle_dbc/docs/dbc-primer.html)
+is a useful reference for message and signal syntax. DBC files describe
+passive decoding; they do not define diagnostic requests or authorize CAN
+transmission. Imported files remain local and are not automatically uploaded.
