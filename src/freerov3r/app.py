@@ -344,9 +344,10 @@ class VehicleSetupWizard(QDialog):
         self.year_edit = QLineEdit()
         self.year_edit.setPlaceholderText("Model year")
         self.profile_combo = QComboBox()
-        self.profile_combo.addItem("Generic OBD-II / CAN", "generic")
+        self.profile_combo.addItem("Land Rover L319 (LR3 / LR4)", "land_rover_l319")
         self.profile_combo.addItem("Land Rover LR3 / Discovery 3 (L319)", "land_rover_l319_lr3")
         self.profile_combo.addItem("Land Rover LR4 / Discovery 4 (L319)", "land_rover_l319_lr4")
+        self.profile_combo.addItem("Generic OBD-II / CAN (other vehicle)", "generic")
         vehicle_form.addRow("VIN:", self.vin_edit)
         vehicle_form.addRow("Make:", self.make_edit)
         vehicle_form.addRow("Model:", self.model_edit)
@@ -507,7 +508,25 @@ class VehicleSetupWizard(QDialog):
             self.model_edit.setText(result["model"])
         if result.get("model_year"):
             self.year_edit.setText(str(result["model_year"]))
-        profile_index = self.profile_combo.findData(result.get("profile_id", "generic"))
+        profile_id = result.get("profile_id", "generic")
+        if profile_id == "generic":
+            make = str(result.get("make") or "").strip().lower()
+            model = str(result.get("model") or "").strip().lower()
+            year = result.get("model_year")
+            # Unknown identity defaults to the shared L319 workspace. A VIN
+            # decode naming another make/model explicitly selects generic.
+            if not make and not model:
+                profile_id = "land_rover_l319"
+            elif "land rover" in make and not model:
+                profile_id = "land_rover_l319"
+            elif "land rover" in make and "discovery" in model:
+                if "discovery 3" in model or (year and 2005 <= year <= 2009):
+                    profile_id = "land_rover_l319_lr3"
+                elif "discovery 4" in model or (year and 2010 <= year <= 2016):
+                    profile_id = "land_rover_l319_lr4"
+                else:
+                    profile_id = "land_rover_l319"
+        profile_index = self.profile_combo.findData(profile_id)
         if profile_index >= 0:
             self.profile_combo.setCurrentIndex(profile_index)
 
@@ -629,8 +648,8 @@ class VehicleSetupWizard(QDialog):
             f'Model year: {year or "Not specified"}',
             f'Capability package: {self.profile_combo.currentText()}',
             "",
-            "Only the generic OBD-II/CAN features are enabled for unidentified vehicles. "
-            "The L319 package is selected only when chosen or matched to an LR3/LR4 VIN.",
+            "The shared L319 workspace is the default while vehicle identity is unknown. "
+            "A VIN decode identifying another make/model selects the generic package.",
         ]
         self.review_text.setPlainText("\n".join(rows))
 
@@ -639,6 +658,7 @@ class VehicleSetupWizard(QDialog):
         profile_id = self.result_data["profile_id"]
         year = self.result_data["model_year"]
         valid_years = {
+            "land_rover_l319": range(2005, 2017),
             "land_rover_l319_lr3": range(2005, 2010),
             "land_rover_l319_lr4": range(2010, 2017),
         }
@@ -2487,7 +2507,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignCenter)
         wlayout.addWidget(title)
 
-        subtitle = QLabel("Generic OBD-II/CAN tools are vehicle-independent. Manufacturer-specific workspaces activate only for a matching vehicle profile.")
+        subtitle = QLabel("Land Rover L319 workspaces are available by default. A VIN decode identifying another vehicle switches to generic OBD-II/CAN support.")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setObjectName("welcomeSubtitle")
         wlayout.addWidget(subtitle)
@@ -2730,7 +2750,7 @@ class MainWindow(QMainWindow):
             if self.tabs.tabText(index) == name:
                 if not self.tabs.isTabEnabled(index):
                     self.show_toast(
-                        "This workspace currently requires the LR4 2010–2016 support package. LR3-specific factory definitions are not yet available.",
+                        "This workspace is available for Land Rover L319 vehicles. A VIN decode identifying another vehicle selects generic support.",
                         "info",
                     )
                     return
@@ -3333,9 +3353,17 @@ class MainWindow(QMainWindow):
             })
             vehicles[vin] = active.copy()
         profile_id = active.get("profile_id", "generic")
+        if profile_id == "generic":
+            make = str(active.get("make") or "").strip().lower()
+            model = str(active.get("model") or "").strip().lower()
+            if (not make and not model) or ("land rover" in make and not model):
+                profile_id = "land_rover_l319"
+                active["profile_id"] = profile_id
         self.active_vehicle_profile = self.vehicle_profiles.get(profile_id)
         self.sensor_capture.vehicle_context = {**active, "vin": vin}
-        l319_enabled = profile_id == "land_rover_l319_lr4"
+        l319_enabled = profile_id in {
+            "land_rover_l319", "land_rover_l319_lr3", "land_rover_l319_lr4"
+        }
         l319_tabs = {"Special Functions", "Topology", "Wiring Diagrams"}
         for index in range(self.tabs.count()):
             tab_name = self.tabs.tabText(index)
@@ -3344,7 +3372,7 @@ class MainWindow(QMainWindow):
                 self.tabs.setTabToolTip(
                     index,
                     "" if l319_enabled else
-                    "Currently implemented factory network and wiring workspaces require the LR4 2010–2016 profile. LR3-specific factory definitions are not yet available."
+                    "VIN identification indicates a vehicle outside the supported L319 family. Generic OBD-II/CAN tools remain available."
                 )
 
         if vin and hasattr(self, "modules_tab"):
