@@ -1970,6 +1970,12 @@ class VehicleHistoryTab(QWidget):
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
         controls.addWidget(refresh_btn)
+        self.export_backup_btn = QPushButton("Export VIN Backup")
+        self.export_backup_btn.setToolTip(
+            "Export this vehicle's history, capture archives and simulator state to a ZIP file."
+        )
+        self.export_backup_btn.clicked.connect(self.export_vehicle_backup)
+        controls.addWidget(self.export_backup_btn)
         layout.addLayout(controls)
 
         split = QHBoxLayout()
@@ -1984,6 +1990,31 @@ class VehicleHistoryTab(QWidget):
         split.addWidget(self.details, 2)
         layout.addLayout(split)
         self.refresh()
+
+    def export_vehicle_backup(self):
+        vin = self.vin_filter.currentData()
+        if not vin:
+            QMessageBox.information(
+                self, "Select a vehicle", "Choose one VIN before exporting a vehicle backup."
+            )
+            return
+        suggested = f"FreeRov3r_{vin}_backup.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export VIN backup", suggested, "ZIP archives (*.zip)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+        try:
+            self.store.export_vehicle_backup(vin, path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Backup export failed", str(exc))
+            return
+        QMessageBox.information(
+            self, "Backup exported",
+            f"VIN backup saved successfully:\\n{path}"
+        )
 
     def refresh(self):
         current = self.vin_filter.currentData()
