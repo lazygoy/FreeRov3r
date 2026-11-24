@@ -109,7 +109,8 @@ class Esp32DualSerialAdapter:
             try:
                 frame = adapter.receive(timeout=0.1)
             except Exception as exc:
-                self._worker_errors[adapter.port] = str(exc)
+                if not self._stop_event.is_set():
+                    self._worker_errors[adapter.port] = str(exc)
                 break
             if frame is not None:
                 self._frames.put(frame)
