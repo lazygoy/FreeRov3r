@@ -568,3 +568,23 @@ def test_operation_did_response_variation_reports_length_variants():
     assert result[0]["value_lengths"] == [2, 3]
     assert result[0]["data_pattern"] == "Variable-length data"
     assert result[0]["variable_byte_offsets"] == []
+
+
+
+def test_operation_did_response_variation_distinguishes_repeated_stable_data():
+    from freerov3r.research_tab import summarize_operation_did_response_variation
+
+    result = summarize_operation_did_response_variation([{
+        "operation": "Read stable identifier",
+        "transactions": [{
+            "service": 0x22,
+            "request_payload": "22f1a1",
+            "response_payload": "62f1a1deadbeef",
+            "response_kind": "positive",
+            "capture_names": ["capture 1", "capture 2"],
+            "count": 2,
+        }],
+    }])
+    assert result[0]["distinct_value_count"] == 1
+    assert result[0]["data_pattern"] == "Same data in all observed responses"
+    assert result[0]["variable_byte_offsets"] == []
