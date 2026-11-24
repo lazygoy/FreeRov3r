@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
+from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 
 from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
@@ -830,6 +831,7 @@ class ResearchTab(QWidget):
         self.live_enabled = True
         self._pending_records = []
         self._pending_preview = []
+        self.dbc_library = DBCLibrary()
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(250)
@@ -903,6 +905,29 @@ class ResearchTab(QWidget):
         controls.addStretch(1)
         root.addLayout(controls)
 
+        dbc_controls = QHBoxLayout()
+        self.load_dbc_button = QPushButton("Load DBC")
+        self.load_dbc_button.setToolTip("Import a local DBC for passive CAN signal decoding. No frames are transmitted.")
+        self.load_dbc_button.clicked.connect(self.load_dbc)
+        dbc_controls.addWidget(self.load_dbc_button)
+        self.inspect_dbc_button = QPushButton("Inspect DBC")
+        self.inspect_dbc_button.clicked.connect(self.inspect_dbc)
+        dbc_controls.addWidget(self.inspect_dbc_button)
+        self.compare_dbc_button = QPushButton("Compare DBCs")
+        self.compare_dbc_button.clicked.connect(self.compare_dbcs)
+        dbc_controls.addWidget(self.compare_dbc_button)
+        dbc_controls.addStretch(1)
+        root.addLayout(dbc_controls)
+        self.dbc_status = QLabel("DBC: none loaded. Install optional protocols support to decode imported DBC files.")
+        self.dbc_status.setWordWrap(True)
+        if self.dbc_library.path is not None:
+            self.dbc_status.setText(
+                f"DBC: {self.dbc_library.path.name} | {self.dbc_library.message_count} messages | "
+                f"{self.dbc_library.signal_count} signals | restored from local library | "
+                f"Status: {self.dbc_library.metadata.get('verification_status', 'unverified')}"
+            )
+        root.addWidget(self.dbc_status)
+
         filters = QHBoxLayout()
         self.id_filter = QLineEdit()
         self.id_filter.setPlaceholderText("CAN ID filter (e.g. 7E0 or 7E0-7E8)")
@@ -919,9 +944,9 @@ class ResearchTab(QWidget):
         root.addLayout(filters)
 
         splitter = QSplitter(Qt.Vertical)
-        self.frame_table = QTableWidget(0, 7)
+        self.frame_table = QTableWidget(0, 8)
         self.frame_table.setHorizontalHeaderLabels([
-            "Timestamp", "CAN ID", "Format", "DLC", "Payload", "ISO-TP", "UDS hint"
+            "Timestamp", "CAN ID", "Format", "DLC", "Payload", "ISO-TP", "UDS hint", "DBC signals"
         ])
         self.frame_table.setAlternatingRowColors(True)
         self.frame_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -1118,6 +1143,7 @@ class ResearchTab(QWidget):
                 payload.hex(" ").upper(),
                 iso,
                 uds,
+                self._decode_dbc_record(record),
             ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -1144,7 +1170,8 @@ class ResearchTab(QWidget):
             f'{"Extended" if record["extended"] else "Standard"}  |  '
             f'Timestamp: {record["timestamp"]:.6f}\n'
             f'Payload: {record["data"].upper()}\nISO-TP: {iso}\nUDS hint: {uds}\n'
-            f'Channel: {record.get("channel") or "unknown"}'
+            f'Channel: {record.get("channel") or "unknown"}\n'
+            f'DBC decode: {self._decode_dbc_record(record) or "no matching loaded definition"}'
         )
         key = f'{record["timestamp"]:.6f}|{record["arbitration_id"]:X}|{record["data"]}'
         self.annotation.setText(self.bookmarks.get(key, ""))
@@ -1159,6 +1186,147 @@ class ResearchTab(QWidget):
         key = f'{record["timestamp"]:.6f}|{record["arbitration_id"]:X}|{record["data"]}'
         self.bookmarks[key] = self.annotation.text().strip()
         self._update_summary()
+
+    def _decode_dbc_record(self, record):
+        result = self.dbc_library.decode(
+            record["arbitration_id"], bytes.fromhex(record["data"]), record["extended"]
+        )
+        if result is None:
+            return ""
+        return "; ".join(
+            f"{name}={value} {result.units.get(name, '')}".rstrip()
+            for name, value in result.decoded.items()
+        )
+
+    def load_dbc(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load CAN DBC definition", str(self.dbc_library.library_dir), "DBC files (*.dbc)"
+        )
+        if not path:
+            return
+        try:
+            summary = self.dbc_library.import_file(path)
+        except DBCUnavailableError as exc:
+            QMessageBox.warning(self, "DBC support unavailable", str(exc))
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "DBC import failed", str(exc))
+            return
+        self.dbc_status.setText(
+            f"DBC: {summary['name']} | {summary['message_count']} messages | "
+            f"{summary['signal_count']} signals | local copy: {summary['path']} "
+            f"| Source: {summary['metadata'].get('source_file', 'unknown')} "
+            f"| Status: {summary['metadata'].get('verification_status', 'unverified')} "
+            f"| Parse: {summary['metadata'].get('validation_mode', 'unknown')} "
+            "| Unverified until matched to this vehicle."
+        )
+        self.refresh_table()
+
+    def inspect_dbc(self):
+        if self.dbc_library.database is None:
+            QMessageBox.information(self, "Inspect DBC", "Load a DBC definition first.")
+            return
+        rows = self.dbc_library.catalog()
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"DBC catalog · {self.dbc_library.path.name}")
+        dialog.resize(1180, 620)
+        layout = QVBoxLayout(dialog)
+        note = QLabel(
+            "Raw definition inventory only. Start bit conventions, scaling and applicability "
+            "must be checked against the target vehicle and capture."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        columns = [
+            ("CAN ID", "frame_id"), ("Fmt", "format"), ("Message", "message"),
+            ("DLC", "length"), ("Signal", "signal"), ("Start", "start_bit"),
+            ("Bits", "bit_length"), ("Byte order", "byte_order"), ("Signed", "signed"),
+            ("Factor", "factor"), ("Offset", "offset"), ("Unit", "unit"),
+            ("Min", "minimum"), ("Max", "maximum"), ("Mux", "multiplexer"),
+            ("Mux signal", "multiplexer_signal"), ("Mux IDs", "multiplexer_ids"),
+            ("Choices", "choices"),
+        ]
+        table = QTableWidget(len(rows), len(columns))
+        table.setHorizontalHeaderLabels([label for label, _ in columns])
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSortingEnabled(True)
+        for row_index, record in enumerate(rows):
+            for column_index, (_, key) in enumerate(columns):
+                value = record.get(key, "")
+                if key == "frame_id":
+                    value = f"0x{int(value):X}"
+                elif value is None:
+                    value = ""
+                table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+
+    def compare_dbcs(self):
+        if self.dbc_library.path is None:
+            QMessageBox.information(self, "Compare DBCs", "Load a DBC definition first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select comparison DBC", "", "DBC files (*.dbc)"
+        )
+        if not path:
+            return
+        try:
+            report = DBCLibrary.compare_files(self.dbc_library.path, path)
+        except DBCUnavailableError as exc:
+            QMessageBox.warning(self, "DBC support unavailable", str(exc))
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "DBC comparison failed", str(exc))
+            return
+
+        lines = [
+            f"Reference: {report['left']}",
+            f"Candidate: {report['right']}",
+            f"Parser mode: {report['left_validation_mode']} / {report['right_validation_mode']}",
+            f"Messages: {report['left_message_count']} vs {report['right_message_count']}",
+            f"Shared CAN IDs/formats: {report['shared_message_count']}",
+            f"Only in reference: {len(report['left_only'])}",
+            f"Only in candidate: {len(report['right_only'])}",
+            f"Shared messages with definition differences: {len(report['message_differences'])}",
+            "",
+            "This is a structural comparison only. It does not establish vehicle applicability.",
+        ]
+        for label, key in (("Reference-only messages", "left_only"), ("Candidate-only messages", "right_only")):
+            if report[key]:
+                lines += ["", label + ":"]
+                lines.extend(
+                    f"  0x{item['frame_id']:X} {'EXT' if item['extended'] else 'STD'} {item['name']}"
+                    for item in report[key][:20]
+                )
+        for item in report["message_differences"][:30]:
+            lines += [
+                "",
+                f"0x{item['frame_id']:X} {'EXT' if item['extended'] else 'STD'} "
+                f"{item['left_name']} / {item['right_name']}"
+            ]
+            if item["left_length"] != item["right_length"]:
+                lines.append(f"  Payload length: {item['left_length']} vs {item['right_length']}")
+            for change in item["signal_differences"][:20]:
+                if change["kind"] == "message_name_changed":
+                    lines.append(f"  Message name: {change['left']} -> {change['right']}")
+                elif change["kind"] == "signal_changed":
+                    fields = ", ".join(
+                        f"{name}: {values['left']} -> {values['right']}"
+                        for name, values in change["fields"].items()
+                    )
+                    lines.append(f"  Changed {change['signal']}: {fields}")
+                elif change["kind"] in ("signal_added", "signal_removed"):
+                    lines.append(f"  {change['kind'].replace('_', ' ').title()}: {change['signal']}")
+                elif change["kind"] == "message_length":
+                    lines.append(f"  Payload length: {change['left']} -> {change['right']}")
+        QMessageBox.information(self, "DBC comparison", "\n".join(lines))
 
     def _update_summary(self):
         if not hasattr(self, "summary"):
@@ -1185,6 +1353,18 @@ class ResearchTab(QWidget):
         )
         lines += ["", "Recognized protocol hints (heuristic only):"]
         lines.extend(f"  {name}: {count:,}" for name, count in services.most_common(12))
+        if self.dbc_library.database is not None:
+            coverage = self.dbc_library.decode_coverage(dataset[-20000:])
+            lines += [
+                "",
+                f"Loaded DBC: {self.dbc_library.path.name}",
+                f"DBC frame matches: {coverage['matched_frames']:,} | unmatched: {coverage['unmatched_frames']:,}",
+                "Decoded signal statistics (last 20,000 observed frames):",
+            ]
+            lines.extend(
+                f"  {name}: n={stats['count']} min={stats['min']:.5g} mean={stats['mean']:.5g} max={stats['max']:.5g} {stats.get('unit', '')}"
+                for name, stats in sorted(coverage["signals"].items())
+            )
         if self.reference_frames:
             current_ids = Counter((r["arbitration_id"], r["extended"]) for r in dataset)
             reference_ids = Counter((r["arbitration_id"], r["extended"]) for r in self.reference_frames)
