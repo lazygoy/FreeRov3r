@@ -52,7 +52,10 @@ except ImportError:
     QPdfDocument = QPdfView = None
     HAS_PDF_VIEWER = False
 from .vehicle_history import VehicleHistoryStore
-from .capture_replay import (\n    list_capture_archives, load_capture, compare_captures,\n    build_replay_timeline, filter_capture_frames,\n)
+from .capture_replay import (
+    list_capture_archives, load_capture, compare_captures,
+    build_replay_timeline, filter_capture_frames,
+)
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .research_tab import ResearchTab
