@@ -9,3 +9,4 @@ class CanFrame:
     is_error_frame: bool = False
     channel: str | None = None
     timestamp: float | None = None
+    device_timestamp_us: int | None = None
