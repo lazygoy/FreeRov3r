@@ -103,3 +103,60 @@ def test_marker_window_comparison_handles_missing_timestamps_and_no_change():
     )[0]
     assert result["timed_frame_count"] == 0
     assert result["changes"] == []
+
+
+
+def test_operation_sequence_comparison_aggregates_capture_evidence():
+    from freerov3r.research_tab import compare_operation_sequences
+
+    common_frames = [
+        {"elapsed_seconds": 8.0, "arbitration_id": 0x700, "data": "0102"},
+        {"elapsed_seconds": 9.0, "arbitration_id": 0x700, "data": "0102"},
+        {"elapsed_seconds": 10.5, "arbitration_id": 0x700, "data": "0102"},
+        {"elapsed_seconds": 11.5, "arbitration_id": 0x700, "data": "0102"},
+    ]
+    captures = [
+        {
+            "name": "successful scan",
+            "frames": common_frames + [
+                {"elapsed_seconds": 12.0, "arbitration_id": 0x701, "data": "03 7F 22 31"}
+            ],
+            "markers": [
+                {"elapsed_seconds": 10.0, "operation": "Full module scan"},
+                {"elapsed_seconds": 20.0, "operation": "Read DTCs"},
+            ],
+        },
+        {
+            "name": "failed scan",
+            "frames": common_frames,
+            "markers": [
+                {"elapsed_seconds": 10.0, "operation": "Full module scan"},
+            ],
+        },
+    ]
+
+    result = compare_operation_sequences(captures)
+    assert result["capture_count"] == 2
+    assert result["capture_sequences"][0]["operations"] == [
+        "Full module scan", "Read DTCs"
+    ]
+    scan = next(item for item in result["operations"]
+                if item["operation"] == "Full module scan")
+    repeated = next(item for item in scan["signals"] if item["can_id"] == 0x700)
+    assert repeated["capture_count"] == 2
+    assert repeated["repeatability"] == "Seen in multiple captures"
+    assert repeated["average_before_frames_per_second"] == 1.0
+    assert repeated["average_after_frames_per_second"] == 0.4
+    assert repeated["median_response_delay_seconds"] == 0.5
+
+    one_off = next(item for item in scan["signals"] if item["can_id"] == 0x701)
+    assert one_off["capture_count"] == 1
+    assert one_off["repeatability"] == "Seen in one capture only"
+
+
+def test_operation_sequence_comparison_rejects_nonpositive_windows():
+    import pytest
+    from freerov3r.research_tab import compare_operation_sequences
+
+    with pytest.raises(ValueError):
+        compare_operation_sequences([], after_seconds=0)
