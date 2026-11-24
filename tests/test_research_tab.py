@@ -69,6 +69,7 @@ def test_marker_window_comparison_uses_monotonic_elapsed_time():
 
     frames = [
         {"elapsed_seconds": 7.0, "arbitration_id": 0x100, "data": "0102"},
+        {"elapsed_seconds": 8.0, "arbitration_id": 0x100, "data": "0102"},
         {"elapsed_seconds": 8.5, "arbitration_id": 0x100, "data": "0102"},
         {"elapsed_seconds": 10.0, "arbitration_id": 0x700, "data": "0322f190"},
         {"elapsed_seconds": 11.0, "arbitration_id": 0x700, "data": "0322f190"},
