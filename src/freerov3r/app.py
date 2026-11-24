@@ -2013,7 +2013,7 @@ class VehicleHistoryTab(QWidget):
             return
         QMessageBox.information(
             self, "Backup exported",
-            f"VIN backup saved successfully:\\n{path}"
+            f"VIN backup saved successfully:\n{path}"
         )
 
     def refresh(self):
