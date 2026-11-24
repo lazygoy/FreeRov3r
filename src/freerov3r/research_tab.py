@@ -285,6 +285,12 @@ class ResearchTab(QWidget):
         root.addLayout(controls)
         self.dbc_status = QLabel("DBC: none loaded. Install optional protocols support to decode imported DBC files.")
         self.dbc_status.setWordWrap(True)
+        if self.dbc_library.path is not None:
+            self.dbc_status.setText(
+                f"DBC: {self.dbc_library.path.name} | {self.dbc_library.message_count} messages | "
+                f"{self.dbc_library.signal_count} signals | restored from local library | "
+                f"Status: {self.dbc_library.metadata.get('verification_status', 'unverified')}"
+            )
         root.addWidget(self.dbc_status)
 
         filters = QHBoxLayout()
@@ -603,14 +609,18 @@ class ResearchTab(QWidget):
             if item["left_length"] != item["right_length"]:
                 lines.append(f"  Payload length: {item['left_length']} vs {item['right_length']}")
             for change in item["signal_differences"][:20]:
-                if change["kind"] == "signal_changed":
+                if change["kind"] == "message_name_changed":
+                    lines.append(f"  Message name: {change['left']} -> {change['right']}")
+                elif change["kind"] == "signal_changed":
                     fields = ", ".join(
                         f"{name}: {values['left']} -> {values['right']}"
                         for name, values in change["fields"].items()
                     )
                     lines.append(f"  Changed {change['signal']}: {fields}")
-                else:
+                elif change["kind"] in ("signal_added", "signal_removed"):
                     lines.append(f"  {change['kind'].replace('_', ' ').title()}: {change['signal']}")
+                elif change["kind"] == "message_length":
+                    lines.append(f"  Payload length: {change['left']} -> {change['right']}")
         QMessageBox.information(self, "DBC comparison", "\n".join(lines))
 
     def _update_summary(self):
