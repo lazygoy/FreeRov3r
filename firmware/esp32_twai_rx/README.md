@@ -30,6 +30,17 @@ provides `driver/twai.h`. Select the ESP32-S3 DevKitC-1 board.
 Default CAN speed is 500 kbit/s. To change it, edit the
 `FREEROV3R_CAN_BITRATE` definition to one of:
 
+For simultaneous LR4 HS-CAN and MS-CAN capture, build and upload the firmware
+twice, once for each board:
+
+1. Board connected to OBD-II pins 6/14 (HS-CAN): use `500000`.
+2. Board connected to OBD-II pins 3/11 (MS-CAN): use `125000`.
+
+The boards use the same source and serial protocol. Only the compile-time
+bitrate differs. In FreeRov3r, select **ESP32 dual serial (two CAN buses)** and
+enter the two COM ports in the same order, for example `COM4,COM5`. The first
+port is labeled HS-CAN and the second MS-CAN.
+
 - `125000`
 - `250000`
 - `500000`
