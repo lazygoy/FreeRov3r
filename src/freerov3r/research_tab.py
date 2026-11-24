@@ -173,6 +173,165 @@ def analyze_marker_windows(frames, markers, *, before_seconds=2.0, after_seconds
         })
     return results
 
+
+def compare_operation_sequences(captures, *, before_seconds=2.0, after_seconds=5.0):
+    """Aggregate marker-window CAN evidence for the same operations across captures.
+
+    Counts are normalized to frames/second because the baseline and response
+    windows have different durations. Each capture is analyzed independently;
+    missing monotonic timestamps are ignored rather than guessed.
+    """
+    if before_seconds <= 0 or after_seconds <= 0:
+        raise ValueError("Comparison windows must be positive")
+
+    operation_groups = {}
+    capture_sequences = []
+    for capture_index, capture in enumerate(captures or []):
+        if not isinstance(capture, dict):
+            continue
+        name = str(capture.get("name") or f"Capture {capture_index + 1}")
+        frames = capture.get("frames") or []
+        markers = capture.get("markers") or []
+        valid_markers = []
+        for marker in markers:
+            if not isinstance(marker, dict):
+                continue
+            try:
+                float(marker["elapsed_seconds"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            valid_markers.append(marker)
+
+        capture_sequences.append({
+            "name": name,
+            "operations": [str(m.get("operation") or "Unspecified") for m in valid_markers],
+            "marker_count": len(valid_markers),
+        })
+
+        windows = analyze_marker_windows(
+            frames, valid_markers,
+            before_seconds=before_seconds,
+            after_seconds=after_seconds,
+        )
+        for window in windows:
+            marker = window["marker"]
+            operation = str(marker.get("operation") or "Unspecified")
+            group = operation_groups.setdefault(operation, {
+                "operation": operation,
+                "marker_count": 0,
+                "capture_names": set(),
+                "signals": {},
+            })
+            group["marker_count"] += 1
+            group["capture_names"].add(name)
+
+            try:
+                center = float(marker["elapsed_seconds"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            matching_frames = {}
+            for frame in frames:
+                try:
+                    elapsed = float(frame["elapsed_seconds"])
+                    can_id = int(frame["arbitration_id"])
+                    payload = bytes.fromhex(str(frame.get("data", ""))).hex()
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if center <= elapsed <= center + after_seconds:
+                    key = (can_id, bool(frame.get("extended", False)),
+                           frame.get("channel"), payload)
+                    matching_frames.setdefault(key, []).append(elapsed)
+
+            before_counts = Counter()
+            after_counts = Counter()
+            for change in window["changes"]:
+                key = (change["can_id"], change["extended"],
+                       change["channel"], change["payload"])
+                before_counts[key] = change["before_count"]
+                after_counts[key] = change["after_count"]
+
+            # Include unchanged signatures too; stable background traffic is useful context.
+            for frame in frames:
+                try:
+                    elapsed = float(frame["elapsed_seconds"])
+                    can_id = int(frame["arbitration_id"])
+                    payload = bytes.fromhex(str(frame.get("data", ""))).hex()
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if center - before_seconds <= elapsed <= center + after_seconds:
+                    key = (can_id, bool(frame.get("extended", False)),
+                           frame.get("channel"), payload)
+                    if elapsed < center:
+                        before_counts[key] += 1
+                    else:
+                        after_counts[key] += 1
+
+            for key in set(before_counts) | set(after_counts):
+                can_id, extended, channel, payload = key
+                signal = group["signals"].setdefault(key, {
+                    "can_id": can_id,
+                    "extended": extended,
+                    "channel": channel,
+                    "payload": payload,
+                    "observations": 0,
+                    "capture_names": set(),
+                    "before_rates": [],
+                    "after_rates": [],
+                    "response_delays": [],
+                })
+                signal["observations"] += 1
+                signal["capture_names"].add(name)
+                signal["before_rates"].append(before_counts[key] / before_seconds)
+                signal["after_rates"].append(after_counts[key] / after_seconds)
+                offsets = matching_frames.get(key, [])
+                if offsets:
+                    signal["response_delays"].append(min(offsets) - center)
+
+    operations = []
+    for group in operation_groups.values():
+        signals = []
+        for signal in group["signals"].values():
+            before_rates = signal.pop("before_rates")
+            after_rates = signal.pop("after_rates")
+            delays = sorted(signal.pop("response_delays"))
+            signal["capture_names"] = sorted(signal["capture_names"])
+            signal["capture_count"] = len(signal["capture_names"])
+            signal["average_before_frames_per_second"] = (
+                sum(before_rates) / len(before_rates) if before_rates else 0.0
+            )
+            signal["average_after_frames_per_second"] = (
+                sum(after_rates) / len(after_rates) if after_rates else 0.0
+            )
+            signal["median_response_delay_seconds"] = (
+                delays[len(delays) // 2] if delays else None
+            )
+            signal["repeatability"] = (
+                "Seen in multiple captures" if signal["capture_count"] >= 2
+                else "Seen in one capture only"
+            )
+            signals.append(signal)
+        signals.sort(key=lambda item: (
+            -item["capture_count"], -item["observations"],
+            item["can_id"], item["payload"],
+        ))
+        operations.append({
+            "operation": group["operation"],
+            "marker_count": group["marker_count"],
+            "capture_names": sorted(group["capture_names"]),
+            "capture_count": len(group["capture_names"]),
+            "signals": signals,
+        })
+
+    operations.sort(key=lambda item: item["operation"].casefold())
+    return {
+        "capture_sequences": capture_sequences,
+        "operations": operations,
+        "capture_count": len(capture_sequences),
+        "before_seconds": before_seconds,
+        "after_seconds": after_seconds,
+    }
+
+
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
@@ -287,6 +446,7 @@ class ResearchTab(QWidget):
         self.frames = []
         self.live_preview = []
         self.reference_frames = []
+        self.sequence_captures = []
         self.bookmarks = {}
         self.markers = []
         self.metadata = {}
@@ -356,6 +516,9 @@ class ResearchTab(QWidget):
         self.reference_button = QPushButton("Load comparison capture")
         self.reference_button.clicked.connect(self.load_reference)
         controls.addWidget(self.reference_button)
+        self.sequence_load_button = QPushButton("Load sequence captures")
+        self.sequence_load_button.clicked.connect(self.load_sequence_captures)
+        controls.addWidget(self.sequence_load_button)
         self.save_button = QPushButton("Save session")
         self.save_button.clicked.connect(self.save_session)
         controls.addWidget(self.save_button)
@@ -428,6 +591,8 @@ class ResearchTab(QWidget):
         self.address_map_button.clicked.connect(self.analyze_address_map)
         self.marker_analysis_button = QPushButton("Compare around markers")
         self.marker_analysis_button.clicked.connect(self.analyze_marker_windows)
+        self.sequence_analysis_button = QPushButton("Compare operation sequences")
+        self.sequence_analysis_button.clicked.connect(self.analyze_operation_sequences)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
@@ -436,6 +601,7 @@ class ResearchTab(QWidget):
         footer.addWidget(self.pair_button)
         footer.addWidget(self.address_map_button)
         footer.addWidget(self.marker_analysis_button)
+        footer.addWidget(self.sequence_analysis_button)
         footer.addWidget(self.packet_button)
         footer.addWidget(self.clear_button)
         footer.addStretch(1)
@@ -687,6 +853,98 @@ class ResearchTab(QWidget):
         self.reference_frames = records
         self.refresh_table()
         self.status_label.setText(f"Comparison reference loaded: {Path(path).name} ({len(records):,} frames)")
+
+
+    def load_sequence_captures(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Load operation-sequence captures", "",
+            "Capture files (*.json *.jsonl *.ndjson *.csv *.log *.txt);;All files (*)"
+        )
+        if not paths:
+            return
+        loaded = []
+        failures = []
+        for path in paths:
+            try:
+                metadata, records = load_capture_file(path)
+            except Exception as exc:
+                failures.append(f"{Path(path).name}: {exc}")
+                continue
+            markers = metadata.pop("markers", [])
+            loaded.append({
+                "name": metadata.get("session_name") or Path(path).name,
+                "metadata": metadata,
+                "frames": records,
+                "markers": markers,
+            })
+        self.sequence_captures = loaded
+        message = (
+            f"Loaded {len(loaded)} sequence capture(s); "
+            f"{sum(len(item['markers']) for item in loaded)} action markers."
+        )
+        if failures:
+            message += "\\n\\nCould not load:\\n" + "\\n".join(failures)
+        self.status_label.setText(message.replace("\\n", "\n"))
+
+    def analyze_operation_sequences(self):
+        if not self.sequence_captures:
+            QMessageBox.information(
+                self, "Operation-sequence comparison",
+                "Load two or more saved research captures that contain action markers."
+            )
+            return
+        result = compare_operation_sequences(self.sequence_captures)
+        lines = [
+            f"Captures analyzed: {result['capture_count']}",
+            "Operations are grouped by the marker's operation label.",
+            "Rates are normalized to frames/second; response delay is the first observed matching frame after the marker.",
+            "One-capture observations may be incidental. Repeatability is evidence, not proof of ECU identity or causation.",
+            "",
+            "CAPTURE SEQUENCES",
+        ]
+        for capture in result["capture_sequences"]:
+            sequence = " -> ".join(capture["operations"]) or "(no valid markers)"
+            lines.append(f"  {capture['name']}: {sequence}")
+        lines += ["", "OPERATION COMPARISON"]
+        for operation in result["operations"]:
+            lines.append(
+                f"\\n{operation['operation']} | markers={operation['marker_count']} "
+                f"| captures={operation['capture_count']}"
+            )
+            for signal in operation["signals"][:100]:
+                channel = signal["channel"] if signal["channel"] is not None else "unspecified"
+                delay = signal["median_response_delay_seconds"]
+                delay_text = f"{delay * 1000:.1f} ms" if delay is not None else "not observed"
+                lines.append(
+                    f"  CAN 0x{signal['can_id']:X} "
+                    f"{'EXT' if signal['extended'] else 'STD'} ch={channel} "
+                    f"{signal['payload'].upper() or '(empty)'} | "
+                    f"{signal['capture_count']}/{result['capture_count']} captures | "
+                    f"before={signal['average_before_frames_per_second']:.2f}/s "
+                    f"after={signal['average_after_frames_per_second']:.2f}/s | "
+                    f"median first-frame delay={delay_text} | {signal['repeatability']}"
+                )
+            if not operation["signals"]:
+                lines.append("  No monotonic-timed CAN frames found around these markers.")
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Multi-capture operation-sequence comparison")
+        dialog.resize(1100, 720)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(
+            f"{result['capture_count']} captures · {len(result['operations'])} operation types"
+        )
+        layout.addWidget(summary)
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\\n".join(lines).replace("\\n", "\n"))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Compared {result['capture_count']} captures across {len(result['operations'])} operation types."
+        )
 
     def save_session(self):
         self._flush_pending_frames()
@@ -1137,7 +1395,7 @@ class ResearchTab(QWidget):
     def clear_data(self):
         answer = QMessageBox.question(
             self, "Clear research data",
-            "Clear the working capture, comparison capture and bookmarks? Saved files are not affected.",
+            "Clear the working capture, comparison capture, sequence captures and bookmarks? Saved files are not affected.",
         )
         if answer != QMessageBox.Yes:
             return
@@ -1148,6 +1406,7 @@ class ResearchTab(QWidget):
         self._pending_records.clear()
         self._pending_preview.clear()
         self.reference_frames.clear()
+        self.sequence_captures.clear()
         self.bookmarks.clear()
         self.markers.clear()
         self.metadata = {}
