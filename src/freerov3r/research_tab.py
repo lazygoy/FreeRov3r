@@ -277,6 +277,10 @@ class ResearchTab(QWidget):
         self.load_dbc_button.setToolTip("Import a local DBC file for passive CAN signal decoding. No frames are transmitted.")
         self.load_dbc_button.clicked.connect(self.load_dbc)
         controls.addWidget(self.load_dbc_button)
+        self.compare_dbc_button = QPushButton("Compare DBCs")
+        self.compare_dbc_button.setToolTip("Compare message IDs, frame lengths, signal layouts, scaling and units.")
+        self.compare_dbc_button.clicked.connect(self.compare_dbcs)
+        controls.addWidget(self.compare_dbc_button)
         controls.addStretch(1)
         root.addLayout(controls)
         self.dbc_status = QLabel("DBC: none loaded. Install optional protocols support to decode imported DBC files.")
@@ -551,6 +555,61 @@ class ResearchTab(QWidget):
             "| Imported definition is unverified until matched to this vehicle."
         )
         self.refresh_table()
+
+    def compare_dbcs(self):
+        if self.dbc_library.path is None:
+            QMessageBox.information(self, "Compare DBCs", "Load a DBC definition first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select comparison DBC", "", "DBC files (*.dbc)"
+        )
+        if not path:
+            return
+        try:
+            report = DBCLibrary.compare_files(self.dbc_library.path, path)
+        except DBCUnavailableError as exc:
+            QMessageBox.warning(self, "DBC support unavailable", str(exc))
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "DBC comparison failed", str(exc))
+            return
+
+        lines = [
+            f"Reference: {report['left']}",
+            f"Candidate: {report['right']}",
+            f"Messages: {report['left_message_count']} vs {report['right_message_count']}",
+            f"Shared CAN IDs/formats: {report['shared_message_count']}",
+            f"Only in reference: {len(report['left_only'])}",
+            f"Only in candidate: {len(report['right_only'])}",
+            f"Shared messages with definition differences: {len(report['message_differences'])}",
+            "",
+            "This is a structural comparison only. It does not establish vehicle applicability.",
+        ]
+        for label, key in (("Reference-only messages", "left_only"), ("Candidate-only messages", "right_only")):
+            if report[key]:
+                lines += ["", label + ":"]
+                lines.extend(
+                    f"  0x{item['frame_id']:X} {'EXT' if item['extended'] else 'STD'} {item['name']}"
+                    for item in report[key][:20]
+                )
+        for item in report["message_differences"][:30]:
+            lines += [
+                "",
+                f"0x{item['frame_id']:X} {'EXT' if item['extended'] else 'STD'} "
+                f"{item['left_name']} / {item['right_name']}"
+            ]
+            if item["left_length"] != item["right_length"]:
+                lines.append(f"  Payload length: {item['left_length']} vs {item['right_length']}")
+            for change in item["signal_differences"][:20]:
+                if change["kind"] == "signal_changed":
+                    fields = ", ".join(
+                        f"{name}: {values['left']} -> {values['right']}"
+                        for name, values in change["fields"].items()
+                    )
+                    lines.append(f"  Changed {change['signal']}: {fields}")
+                else:
+                    lines.append(f"  {change['kind'].replace('_', ' ').title()}: {change['signal']}")
+        QMessageBox.information(self, "DBC comparison", "\n".join(lines))
 
     def _update_summary(self):
         if not hasattr(self, "summary"):
