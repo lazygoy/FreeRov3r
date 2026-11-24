@@ -292,3 +292,73 @@ def test_address_summary_ignores_unmatched_and_invalid_pairs():
         {"confidence": "probable", "request": {}, "response": {},
          "request_service": 0x22, "latency_seconds": 0.1},
     ]) == []
+
+
+
+def test_cross_capture_summary_marks_pair_seen_in_multiple_captures():
+    from freerov3r.isotp import summarize_cross_capture_address_pairs
+
+    def transaction(timestamp, service=0x22):
+        request = {
+            "arbitration_id": 0x7E0, "extended": False, "channel": "can0",
+            "started_at": timestamp, "payload": "22f190", "status": "complete",
+        }
+        response = {
+            "arbitration_id": 0x7E8, "extended": False, "channel": "can0",
+            "started_at": timestamp + 0.02, "payload": "62f190", "status": "complete",
+        }
+        return {
+            "confidence": "probable", "request": request, "response": response,
+            "request_service": service, "response_kind": "positive",
+            "latency_seconds": 0.02,
+        }
+
+    result = summarize_cross_capture_address_pairs([
+        {"name": "Read ECU info", "transactions": [transaction(1.0)]},
+        {"name": "Full scan", "transactions": [transaction(5.0, 0x19)]},
+    ])
+    assert len(result) == 1
+    item = result[0]
+    assert item["capture_count"] == 2
+    assert item["pair_count"] == 2
+    assert item["capture_names"] == ["Full scan", "Read ECU info"]
+    assert item["services"] == [0x19, 0x22]
+    assert item["repeatability"] == "Observed in multiple captures"
+    assert "identity unknown" in item["interpretation"]
+
+
+def test_cross_capture_summary_does_not_mix_channels_or_id_formats():
+    from freerov3r.isotp import summarize_cross_capture_address_pairs
+
+    def transaction(channel, extended):
+        request = {"arbitration_id": 0x700, "extended": extended, "channel": channel}
+        response = {"arbitration_id": 0x708, "extended": extended, "channel": channel}
+        return {
+            "confidence": "probable", "request": request, "response": response,
+            "request_service": 0x22, "response_kind": "positive",
+            "latency_seconds": 0.01,
+        }
+
+    result = summarize_cross_capture_address_pairs([
+        {"name": "A", "transactions": [transaction("can0", False)]},
+        {"name": "B", "transactions": [transaction("can1", False), transaction("can0", True)]},
+    ])
+    assert len(result) == 3
+    assert all(item["capture_count"] == 1 for item in result)
+
+
+def test_cross_capture_summary_labels_single_capture_evidence():
+    from freerov3r.isotp import summarize_cross_capture_address_pairs
+
+    request = {"arbitration_id": 0x7E0, "extended": False, "channel": "can0"}
+    response = {"arbitration_id": 0x7E8, "extended": False, "channel": "can0"}
+    pair = {
+        "confidence": "probable", "request": request, "response": response,
+        "request_service": 0x22, "response_kind": "negative", "latency_seconds": 0.1,
+    }
+    result = summarize_cross_capture_address_pairs([
+        {"name": "Only capture", "transactions": [pair]},
+    ])
+    assert result[0]["capture_count"] == 1
+    assert result[0]["repeatability"] == "Observed in one capture only"
+    assert result[0]["negative_count"] == 1
