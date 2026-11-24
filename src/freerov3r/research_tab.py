@@ -367,6 +367,136 @@ def compare_operation_sequences(captures, *, before_seconds=2.0, after_seconds=5
     }
 
 
+
+def summarize_operation_uds_transactions(captures, *, after_seconds=5.0,
+                                          response_window=2.0):
+    """Correlate probable UDS transactions with marked operations across captures.
+
+    Frame monotonic elapsed_seconds are copied into the timestamp field for
+    per-capture ISO-TP reassembly. Wall-clock timestamps are never mixed in.
+    Only complete, probable request/response pairs are included.
+    """
+    if after_seconds <= 0:
+        raise ValueError("Operation window must be positive")
+    if response_window < 0:
+        raise ValueError("Response window must be non-negative")
+
+    groups = {}
+    for capture_index, capture in enumerate(captures or []):
+        if not isinstance(capture, dict):
+            continue
+        capture_name = str(capture.get("name") or f"Capture {capture_index + 1}")
+        frames = []
+        for frame in capture.get("frames") or []:
+            if not isinstance(frame, dict):
+                continue
+            try:
+                elapsed = float(frame["elapsed_seconds"])
+                int(frame["arbitration_id"])
+                bytes.fromhex(str(frame.get("data", "")).replace(" ", ""))
+            except (KeyError, TypeError, ValueError):
+                continue
+            normalized = dict(frame)
+            normalized["timestamp"] = elapsed
+            frames.append(normalized)
+
+        messages = reassemble_isotp(frames)
+        transactions = pair_uds_transactions(
+            messages, response_window=response_window
+        )
+        markers = []
+        for marker in capture.get("markers") or []:
+            if not isinstance(marker, dict):
+                continue
+            try:
+                center = float(marker["elapsed_seconds"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            markers.append((center, str(marker.get("operation") or "Unspecified")))
+
+        for transaction in transactions:
+            if transaction.get("confidence") != "probable":
+                continue
+            request = transaction.get("request") or {}
+            response = transaction.get("response") or {}
+            try:
+                request_time = float(request["started_at"])
+                service = int(transaction["request_service"])
+                request_id = int(request["arbitration_id"])
+                response_id = int(response["arbitration_id"])
+                latency = float(transaction["latency_seconds"])
+                request_payload = bytes.fromhex(request.get("payload", "")).hex()
+                response_payload = bytes.fromhex(response.get("payload", "")).hex()
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            matching_markers = [
+                (center, operation) for center, operation in markers
+                if center <= request_time <= center + after_seconds
+            ]
+            if not matching_markers:
+                continue
+            # If windows overlap, associate with the most recent preceding marker.
+            _, operation = max(matching_markers, key=lambda item: item[0])
+            response_kind = str(transaction.get("response_kind") or "unknown")
+            key = (
+                request_id, response_id, bool(request.get("extended", False)),
+                request.get("channel"), service, request_payload,
+                response_kind, response_payload,
+            )
+            group = groups.setdefault(operation, {
+                "operation": operation,
+                "capture_names": set(),
+                "transactions": {},
+            })
+            item = group["transactions"].setdefault(key, {
+                "request_id": request_id,
+                "response_id": response_id,
+                "extended": bool(request.get("extended", False)),
+                "channel": request.get("channel"),
+                "service": service,
+                "request_payload": request_payload,
+                "response_kind": response_kind,
+                "response_payload": response_payload,
+                "capture_names": set(),
+                "latencies": [],
+                "count": 0,
+            })
+            item["capture_names"].add(capture_name)
+            item["latencies"].append(latency)
+            item["count"] += 1
+            group["capture_names"].add(capture_name)
+
+    results = []
+    for group in groups.values():
+        items = []
+        for item in group["transactions"].values():
+            latencies = sorted(item.pop("latencies"))
+            item["capture_names"] = sorted(item["capture_names"])
+            item["capture_count"] = len(item["capture_names"])
+            item["median_latency_seconds"] = (
+                (latencies[(len(latencies) - 1) // 2] +
+                 latencies[len(latencies) // 2]) / 2
+            )
+            item["repeatability"] = (
+                "Seen in multiple captures" if item["capture_count"] >= 2
+                else "Seen in one capture only"
+            )
+            items.append(item)
+        items.sort(key=lambda item: (
+            -item["capture_count"], item["request_id"], item["service"],
+            item["response_kind"], item["request_payload"],
+        ))
+        names = sorted(group["capture_names"])
+        results.append({
+            "operation": group["operation"],
+            "capture_names": names,
+            "capture_count": len(names),
+            "transactions": items,
+        })
+    results.sort(key=lambda item: item["operation"].casefold())
+    return results
+
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
@@ -981,6 +1111,35 @@ class ResearchTab(QWidget):
                 )
             if not operation["signals"]:
                 lines.append("  No monotonic-timed CAN frames found around these markers.")
+
+        uds_operations = summarize_operation_uds_transactions(
+            self.sequence_captures
+        )
+        lines += ["", "CORRELATED UDS TRANSACTIONS"]
+        lines.append(
+            "Only complete, probable request/response pairs are shown. "
+            "Payloads are raw UDS bytes; identifiers do not prove ECU identity."
+        )
+        if not uds_operations:
+            lines.append("No complete probable UDS transactions were associated with marker windows.")
+        for operation in uds_operations:
+            lines.append(
+                f"  {operation['operation']} | captures={operation['capture_count']}"
+            )
+            for transaction in operation["transactions"][:100]:
+                channel = transaction["channel"] if transaction["channel"] is not None else "unspecified"
+                lines.append(
+                    f"    0x{transaction['request_id']:X} -> "
+                    f"0x{transaction['response_id']:X} "
+                    f"{'EXT' if transaction['extended'] else 'STD'} ch={channel} "
+                    f"SID=0x{transaction['service']:02X} "
+                    f"{transaction['response_kind'].upper()} "
+                    f"REQ={transaction['request_payload'].upper()} "
+                    f"RESP={transaction['response_payload'].upper()} | "
+                    f"{transaction['capture_count']}/{operation['capture_count']} captures | "
+                    f"median latency={transaction['median_latency_seconds'] * 1000:.1f} ms | "
+                    f"{transaction['repeatability']}"
+                )
         dialog = QDialog(self)
         dialog.setWindowTitle("Multi-capture operation-sequence comparison")
         dialog.resize(1100, 720)
