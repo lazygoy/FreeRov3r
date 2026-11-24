@@ -125,7 +125,7 @@ def test_adapter_alert_does_not_mark_receiver_as_fatal_error():
     from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
 
     adapter = Esp32SerialAdapter(port="COM9")
-    adapter.connection = FakeSerial([b"#ALERT,RX_QUEUE_HIGH_WATER\\n"])
+    adapter.connection = FakeSerial([b"#ALERT,RX_QUEUE_HIGH_WATER\n"])
     adapter.receive()
     assert adapter.diagnostics["receiver_state"] == "connected/silent"
 
@@ -158,7 +158,7 @@ def test_received_frame_uses_host_monotonic_timestamp():
 
 
 def test_parse_protocol_v2_preserves_device_timestamp():
-    frame = parse_can_line(b"S,00000123,2,0102,123456789\\n", channel="HS-CAN")
+    frame = parse_can_line(b"S,00000123,2,0102,123456789\n", channel="HS-CAN")
     assert frame is not None
     assert frame.arbitration_id == 0x123
     assert frame.data == bytes.fromhex("0102")
@@ -168,11 +168,11 @@ def test_parse_protocol_v2_preserves_device_timestamp():
 
 
 def test_parse_protocol_v2_rejects_invalid_device_timestamp():
-    assert parse_can_line(b"S,00000123,1,AA,not-a-clock\\n") is None
-    assert parse_can_line(b"S,00000123,1,AA,-1\\n") is None
+    assert parse_can_line(b"S,00000123,1,AA,not-a-clock\n") is None
+    assert parse_can_line(b"S,00000123,1,AA,-1\n") is None
 
 
 def test_legacy_frame_has_no_device_timestamp():
-    frame = parse_can_line(b"S,00000123,1,AA\\n")
+    frame = parse_can_line(b"S,00000123,1,AA\n")
     assert frame is not None
     assert frame.device_timestamp_us is None
