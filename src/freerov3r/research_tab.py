@@ -705,6 +705,7 @@ def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
         "timestamp_clock": "host_monotonic",
+        "device_timestamp_us": getattr(frame, "device_timestamp_us", None),
         "arbitration_id": int(frame.arbitration_id),
         "extended": bool(frame.is_extended_id),
         "data": bytes(frame.data).hex(),
@@ -744,6 +745,13 @@ def _normalize_record(record):
             "channel": record.get("channel"),
             "timestamp_clock": record.get("timestamp_clock", "unknown"),
         }
+        if record.get("device_timestamp_us") is not None:
+            try:
+                device_timestamp_us = int(record["device_timestamp_us"])
+                if device_timestamp_us >= 0:
+                    normalized["device_timestamp_us"] = device_timestamp_us
+            except (TypeError, ValueError):
+                pass
         if record.get("elapsed_seconds") is not None:
             try:
                 normalized["elapsed_seconds"] = float(record["elapsed_seconds"])
@@ -1793,6 +1801,8 @@ class ResearchTab(QWidget):
                 "notes": self.notes.text().strip(),
                 "saved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
                 "capture_timestamp_basis": "host_monotonic",
+                "device_timestamp_basis": "esp_timer_get_time microseconds since each board boot; clocks are independent and unsynchronized",
+                "firmware_protocol": 2,
                 "channel_names": sorted({str(frame.get("channel")) for frame in self.frames if frame.get("channel")}),
                 "channel_frame_counts": dict(Counter(str(frame.get("channel") or "unspecified") for frame in self.frames)),
             },
