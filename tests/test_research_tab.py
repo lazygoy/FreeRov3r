@@ -588,3 +588,36 @@ def test_operation_did_response_variation_distinguishes_repeated_stable_data():
     assert result[0]["distinct_value_count"] == 1
     assert result[0]["data_pattern"] == "Same data in all observed responses"
     assert result[0]["variable_byte_offsets"] == []
+
+
+
+def test_research_tab_receiver_health_panel_displays_adapter_diagnostics(monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from freerov3r.research_tab import ResearchTab
+
+    app = QApplication.instance() or QApplication([])
+    tab = ResearchTab()
+    tab.set_receiver_diagnostics({
+        "connected": True,
+        "port": "COM7",
+        "mode": "receive-only",
+        "frames_received": 125,
+        "invalid_lines": 2,
+        "last_frame_age_seconds": 0.4,
+        "alert_count": 1,
+        "firmware_error_count": 0,
+        "last_status": "MODE,LISTEN_ONLY",
+    })
+
+    assert "connected" in tab.receiver_connection_label.text()
+    assert "COM7" in tab.receiver_connection_label.text()
+    assert "125" in tab.receiver_frame_label.text()
+    assert "2" in tab.receiver_frame_label.text()
+    assert "0.4s ago" in tab.receiver_activity_label.text()
+    assert "1 / 0" in tab.receiver_alert_label.text()
+    assert "MODE,LISTEN_ONLY" in tab.receiver_status_label.text()
+    tab.refresh_timer.stop()
+    tab.close()
+    app.processEvents()
