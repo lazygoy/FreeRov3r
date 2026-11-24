@@ -14,7 +14,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
+    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -277,6 +277,10 @@ class ResearchTab(QWidget):
         self.load_dbc_button.setToolTip("Import a local DBC file for passive CAN signal decoding. No frames are transmitted.")
         self.load_dbc_button.clicked.connect(self.load_dbc)
         controls.addWidget(self.load_dbc_button)
+        self.inspect_dbc_button = QPushButton("Inspect DBC")
+        self.inspect_dbc_button.setToolTip("Browse message IDs and exact signal bit layouts, scaling, units and limits.")
+        self.inspect_dbc_button.clicked.connect(self.inspect_dbc)
+        controls.addWidget(self.inspect_dbc_button)
         self.compare_dbc_button = QPushButton("Compare DBCs")
         self.compare_dbc_button.setToolTip("Compare message IDs, frame lengths, signal layouts, scaling and units.")
         self.compare_dbc_button.clicked.connect(self.compare_dbcs)
@@ -567,6 +571,52 @@ class ResearchTab(QWidget):
             "| Unverified until matched to this vehicle."
         )
         self.refresh_table()
+
+    def inspect_dbc(self):
+        if self.dbc_library.database is None:
+            QMessageBox.information(self, "Inspect DBC", "Load a DBC definition first.")
+            return
+        rows = self.dbc_library.catalog()
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"DBC catalog · {self.dbc_library.path.name}")
+        dialog.resize(1180, 620)
+        layout = QVBoxLayout(dialog)
+        note = QLabel(
+            "Raw definition inventory only. Start bit conventions, scaling and applicability "
+            "must be checked against the target vehicle and capture."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        columns = [
+            ("CAN ID", "frame_id"), ("Fmt", "format"), ("Message", "message"),
+            ("DLC", "length"), ("Signal", "signal"), ("Start", "start_bit"),
+            ("Bits", "bit_length"), ("Byte order", "byte_order"), ("Signed", "signed"),
+            ("Factor", "factor"), ("Offset", "offset"), ("Unit", "unit"),
+            ("Min", "minimum"), ("Max", "maximum"), ("Mux", "multiplexer"),
+            ("Mux signal", "multiplexer_signal"), ("Mux IDs", "multiplexer_ids"),
+            ("Choices", "choices"),
+        ]
+        table = QTableWidget(len(rows), len(columns))
+        table.setHorizontalHeaderLabels([label for label, _ in columns])
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSortingEnabled(True)
+        for row_index, record in enumerate(rows):
+            for column_index, (_, key) in enumerate(columns):
+                value = record.get(key, "")
+                if key == "frame_id":
+                    value = f"0x{int(value):X}"
+                elif value is None:
+                    value = ""
+                table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
 
     def compare_dbcs(self):
         if self.dbc_library.path is None:
