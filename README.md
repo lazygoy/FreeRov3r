@@ -122,7 +122,8 @@ python -m pip install -e ".[protocols]"
 ```
 
 Use **Research → Load DBC** to import a definition. FreeRov3r validates the
-file with `cantools` and stores a local copy under
+file with `cantools` (strict mode first, then an explicitly recorded permissive
+fallback for files with intentional signal overlaps) and stores a local copy under
 `~/.freerov3r/dbc/`. The workspace reports message/signal counts, decoded
 values with units, observed min/mean/max statistics, and matched/unmatched frame counts.
 DBC decoding is passive and does not transmit diagnostic requests.
