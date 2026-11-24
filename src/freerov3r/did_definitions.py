@@ -242,3 +242,57 @@ def decode_uds_did_transactions(transactions, registry, *, vehicle):
             "decoded": decoded,
         })
     return results
+
+
+
+def validate_registry_file(path):
+    """Load and validate a registry file, returning a concise audit summary."""
+    registry = DIDDefinitionRegistry.from_json(path)
+    definitions = sorted(
+        registry._definitions.values(),
+        key=lambda item: (item["vehicle"].casefold(), item["did"]),
+    )
+    return {
+        "definition_count": len(definitions),
+        "vehicles": sorted({item["vehicle"] for item in definitions}),
+        "confidence_counts": {
+            level: sum(item["confidence"] == level for item in definitions)
+            for level in sorted(CONFIDENCE_LEVELS)
+        },
+        "definitions": definitions,
+    }
+
+
+def main(argv=None):
+    """Validate a DID definition JSON file without accessing vehicle hardware."""
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Validate a FreeRov3r source-backed UDS DID definition registry."
+    )
+    parser.add_argument("registry", help="Path to DID definition JSON")
+    args = parser.parse_args(argv)
+    try:
+        summary = validate_registry_file(args.registry)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        print(f"INVALID: {exc}", file=sys.stderr)
+        return 1
+    print(f"VALID: {summary['definition_count']} DID definition(s)")
+    for vehicle in summary["vehicles"]:
+        print(f"Vehicle: {vehicle}")
+    print("Confidence: " + ", ".join(
+        f"{level}={count}"
+        for level, count in summary["confidence_counts"].items()
+    ))
+    for item in summary["definitions"]:
+        print(
+            f"  {item['vehicle']} DID 0x{item['did']:04X}: "
+            f"{item['name']} [{item['confidence']}] "
+            f"source={item['source']['reference']}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
