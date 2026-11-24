@@ -244,13 +244,7 @@ def compare_operation_sequences(captures, *, before_seconds=2.0, after_seconds=5
 
             before_counts = Counter()
             after_counts = Counter()
-            for change in window["changes"]:
-                key = (change["can_id"], change["extended"],
-                       change["channel"], change["payload"])
-                before_counts[key] = change["before_count"]
-                after_counts[key] = change["after_count"]
-
-            # Include unchanged signatures too; stable background traffic is useful context.
+            # Count each frame exactly once, including unchanged background signatures.
             for frame in frames:
                 try:
                     elapsed = float(frame["elapsed_seconds"])
@@ -303,7 +297,7 @@ def compare_operation_sequences(captures, *, before_seconds=2.0, after_seconds=5
                 sum(after_rates) / len(after_rates) if after_rates else 0.0
             )
             signal["median_response_delay_seconds"] = (
-                delays[len(delays) // 2] if delays else None
+                ((delays[(len(delays) - 1) // 2] + delays[len(delays) // 2]) / 2) if delays else None
             )
             signal["repeatability"] = (
                 "Seen in multiple captures" if signal["capture_count"] >= 2
@@ -919,7 +913,7 @@ class ResearchTab(QWidget):
                     f"  CAN 0x{signal['can_id']:X} "
                     f"{'EXT' if signal['extended'] else 'STD'} ch={channel} "
                     f"{signal['payload'].upper() or '(empty)'} | "
-                    f"{signal['capture_count']}/{result['capture_count']} captures | "
+                    f"{signal['capture_count']}/{operation['capture_count']} captures containing this operation | "
                     f"before={signal['average_before_frames_per_second']:.2f}/s "
                     f"after={signal['average_after_frames_per_second']:.2f}/s | "
                     f"median first-frame delay={delay_text} | {signal['repeatability']}"
