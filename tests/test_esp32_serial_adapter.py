@@ -38,3 +38,54 @@ def test_ignore_status_lines_boot_messages_and_malformed_frames():
     assert parse_can_line(b"00000123,3,0102\n") is None
     assert parse_can_line(b"S,20000000,1,00\n") is None
     assert parse_can_line(b"S,00000123,9,000000000000000000\n") is None
+
+
+
+class FakeSerial:
+    def __init__(self, lines):
+        self.lines = iter(lines)
+        self.timeout = 0.2
+        self.is_open = True
+
+    def readline(self):
+        return next(self.lines, b"")
+
+    def close(self):
+        self.is_open = False
+
+
+def test_adapter_diagnostics_track_status_alerts_errors_and_frames():
+    from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
+
+    adapter = Esp32SerialAdapter(port="COM9")
+    adapter.connection = FakeSerial([
+        b"#MODE,LISTEN_ONLY\n",
+        b"#ALERT,RX_QUEUE_HIGH_WATER\n",
+        b"#ERROR,BUS_OFF\n",
+        b"S,00000123,2,0102\n",
+    ])
+
+    assert adapter.receive() is None
+    assert adapter.receive() is None
+    assert adapter.receive() is None
+    frame = adapter.receive()
+
+    assert frame is not None
+    diagnostics = adapter.diagnostics
+    assert diagnostics["connected"] is True
+    assert diagnostics["frames_received"] == 1
+    assert diagnostics["status_lines"] == 3
+    assert diagnostics["alert_count"] == 1
+    assert diagnostics["firmware_error_count"] == 1
+    assert diagnostics["last_frame_age_seconds"] is not None
+    assert diagnostics["last_status_age_seconds"] is not None
+    assert diagnostics["last_error"] is None
+
+
+def test_adapter_diagnostics_report_no_frame_age_before_first_frame():
+    from freerov3r.hardware.esp32_serial_adapter import Esp32SerialAdapter
+
+    diagnostics = Esp32SerialAdapter().diagnostics
+    assert diagnostics["frames_received"] == 0
+    assert diagnostics["last_frame_age_seconds"] is None
+    assert diagnostics["status_lines"] == 0
