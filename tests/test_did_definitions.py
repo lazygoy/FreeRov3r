@@ -138,3 +138,35 @@ def test_capture_decoder_only_decodes_paired_single_did_positive_reads():
     assert result[0]["did"] == 0xF190
     assert result[0]["decoded"]["fields"][0]["value"] == "1234"
     assert result[0]["response_payload"] == "62f1901234ff9c"
+
+
+
+def test_validate_registry_file_reports_counts_and_vehicle(tmp_path):
+    import json
+    from freerov3r.did_definitions import validate_registry_file
+
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps({"definitions": [definition()]}), encoding="utf-8")
+    summary = validate_registry_file(path)
+    assert summary["definition_count"] == 1
+    assert summary["vehicles"] == ["Land Rover L319 5.0 petrol"]
+    assert summary["confidence_counts"]["unverified"] == 1
+
+
+def test_registry_cli_rejects_invalid_definition_file(tmp_path, capsys):
+    from freerov3r.did_definitions import main
+
+    path = tmp_path / "invalid.json"
+    path.write_text('{"definitions": [{"did": "F190"}]}', encoding="utf-8")
+    assert main([str(path)]) == 1
+    assert "INVALID:" in capsys.readouterr().err
+
+
+def test_registry_cli_accepts_empty_template(tmp_path, capsys):
+    import json
+    from freerov3r.did_definitions import main
+
+    path = tmp_path / "empty.json"
+    path.write_text(json.dumps({"schema_version": 1, "definitions": []}), encoding="utf-8")
+    assert main([str(path)]) == 0
+    assert "VALID: 0 DID definition(s)" in capsys.readouterr().out
