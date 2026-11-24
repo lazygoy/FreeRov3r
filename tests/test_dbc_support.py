@@ -100,3 +100,23 @@ def test_dbc_dependency_error_is_actionable(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", blocked_import)
     with pytest.raises(DBCUnavailableError, match="protocols"):
         DBCLibrary._cantools()
+
+
+def test_real_cantools_dbc_decode_when_optional_dependency_is_installed(tmp_path):
+    pytest.importorskip("cantools")
+    source = tmp_path / "minimal.dbc"
+    source.write_text(
+        'VERSION "FreeRov3r test"\n'
+        'NS_ :\n'
+        'BS_ :\n'
+        'BU_: ECU\n'
+        'BO_ 291 EngineData: 2 ECU\n'
+        ' SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" ECU\n',
+        encoding="utf-8",
+    )
+    library = DBCLibrary(tmp_path / "library")
+    library.import_file(source)
+    result = library.decode(0x123, bytes.fromhex("7017"), extended=False)
+    assert result is not None
+    assert result.message_name == "EngineData"
+    assert result.decoded["EngineSpeed"] == 1500.0
