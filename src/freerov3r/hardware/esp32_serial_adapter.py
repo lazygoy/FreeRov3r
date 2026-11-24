@@ -56,8 +56,9 @@ def parse_can_line(raw, channel=None):
 class Esp32SerialAdapter(CanAdapter):
     ACTIVE_FRAME_WINDOW_SECONDS = 2.5
 
-    def __init__(self, port="COM3", baudrate=921600, timeout=0.2):
+    def __init__(self, port="COM3", baudrate=921600, timeout=0.2, channel_name=None):
         self.port, self.baudrate, self.timeout = port, baudrate, timeout
+        self.channel_name = channel_name or port
         self.connection = None
         self.frames_received = 0
         self.invalid_lines = 0
@@ -156,7 +157,7 @@ class Esp32SerialAdapter(CanAdapter):
                 self.last_error = status[1:][:120]
             return None
 
-        frame = parse_can_line(raw, channel=self.port)
+        frame = parse_can_line(raw, channel=self.channel_name)
         if frame is None:
             self.invalid_lines += 1
             self.last_error = status[:120] if status else "Unreadable serial input"
