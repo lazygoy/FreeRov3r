@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from freerov3r.isotp import pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs
+from freerov3r.isotp import (\n    pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,\n    summarize_cross_capture_address_pairs,\n)
 
 
 UDS_SERVICES = {
@@ -811,6 +811,89 @@ class ResearchTab(QWidget):
         dialog.exec()
         self.status_label.setText(
             f"CAN address analysis complete: {len(candidates):,} candidate ID groups; ECU identities remain unknown"
+        )
+
+
+    def analyze_cross_captures(self):
+        """Validate whether probable CAN address pairs recur in both captures."""
+        self._flush_pending_frames()
+        if not self.frames or not self.reference_frames:
+            QMessageBox.information(
+                self, "Cross-capture validation",
+                "Load a working capture and a comparison capture first."
+            )
+            return
+
+        working_messages = reassemble_isotp(self.frames)
+        reference_messages = reassemble_isotp(self.reference_frames)
+        working_pairs = pair_uds_transactions(working_messages)
+        reference_pairs = pair_uds_transactions(reference_messages)
+        working_name = (
+            self.metadata.get("session_name")
+            or Path(self.metadata.get("imported_from", "Working capture")).name
+            or "Working capture"
+        )
+        reference_name = (
+            self.reference_metadata.get("session_name")
+            or Path(self.reference_metadata.get("imported_from", "Reference capture")).name
+            or "Reference capture"
+        )
+        summaries = summarize_cross_capture_address_pairs([
+            {"name": working_name, "transactions": working_pairs},
+            {"name": reference_name, "transactions": reference_pairs},
+        ])
+        repeated = [item for item in summaries if item["capture_count"] >= 2]
+        lines = [
+            f"Working capture: {working_name} ({len(self.frames):,} CAN frames; "
+            f"{sum(p['confidence'] == 'probable' for p in working_pairs):,} probable pairs)",
+            f"Reference capture: {reference_name} ({len(self.reference_frames):,} CAN frames; "
+            f"{sum(p['confidence'] == 'probable' for p in reference_pairs):,} probable pairs)",
+            f"Address pairs repeated in both captures: {len(repeated):,}",
+            f"Distinct candidate pairs observed: {len(summaries):,}",
+            "",
+            "Each capture was decoded and paired independently. No transaction was paired across files.",
+            "Repeatability strengthens an observed ID relationship; it does not identify a physical ECU.",
+            "",
+        ]
+        for item in summaries:
+            channel = item["channel"] if item["channel"] is not None else "unspecified"
+            services = ", ".join(f"0x{sid:02X}" for sid in item["services"])
+            lines.append(
+                f'Request 0x{item["request_id"]:X} → responder candidate 0x{item["response_id"]:X} '
+                f'{"EXT" if item["extended"] else "STD"} channel={channel}'
+            )
+            lines.append(
+                f'  {item["repeatability"]}; captures={item["capture_count"]}/2; '
+                f'pairs={item["pair_count"]}; per-capture={item["per_capture_pair_counts"]}'
+            )
+            lines.append(
+                f'  services={services or "none"}; positive={item["positive_count"]}; '
+                f'negative={item["negative_count"]}; average latency='
+                f'{item["average_latency_seconds"] * 1000:.2f} ms'
+            )
+            lines.append(f'  Interpretation: {item["interpretation"]}')
+        if not summaries:
+            lines.append("No probable UDS request/response pairs were found in either capture.")
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cross-capture CAN address validation")
+        dialog.resize(1050, 680)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(
+            f"{len(repeated):,} repeated ID relationships · {len(summaries):,} total candidates"
+        )
+        layout.addWidget(summary)
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\n".join(lines))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Cross-capture validation complete: {len(repeated):,} repeated ID relationships; "
+            "physical ECU identities remain unknown"
         )
 
     def build_analysis_packet(self):
