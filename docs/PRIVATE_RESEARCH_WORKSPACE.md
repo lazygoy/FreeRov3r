@@ -36,6 +36,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Multi-capture operation-sequence alignment against the first loaded capture, reporting missing, inserted or substituted marker steps, alongside per-operation CAN traffic repeatability and timing.
 - Per-operation UDS transaction correlation: reassembles each capture independently using monotonic elapsed time, pairs probable requests and responses, and compares raw request/response payloads, response kind, repeatability and latency across captures.
 - Observed UDS identifier summary for ReadDataByIdentifier (0x22), WriteDataByIdentifier (0x2E), InputOutputControlByIdentifier (0x2F) and RoutineControl (0x31), aggregating DIDs, routine IDs, routine-control subfunctions, outcomes and cross-capture repeatability without guessing vehicle-specific meanings.
+- DID response-data comparison: compares raw positive single-DID ReadDataByIdentifier payloads across marked operations and captures, reporting distinct values, data lengths and differing byte offsets. Multi-DID responses are deliberately skipped until record boundaries can be established from a trusted vehicle-specific definition.
 - JSON session save and Markdown handoff packet for REA / ChatGPT.
 
 ## Safety and interpretation limits
