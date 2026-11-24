@@ -60,7 +60,7 @@ my_vehicle = "my_package.freerov3r:VehicleProfileFactory"
 
 The entry point must resolve to a zero-argument factory returning a
 `freerov3r.vehicle_profiles.registry.VehicleProfile` instance. The registry
-currently loads the built-in LR3 and LR4 packages separately.
+loads the shared L319 workspace plus the separate LR3 and LR4 variant packages.
 
 The profile currently supplies metadata and declared capabilities. Registering
 a profile does not automatically implement its ECU addresses, diagnostic
