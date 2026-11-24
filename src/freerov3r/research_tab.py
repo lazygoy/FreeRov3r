@@ -543,16 +543,20 @@ def summarize_operation_uds_identifiers(operation_summaries):
                 tail = request[1:]
                 if len(tail) < 2:
                     continue
-                did = int.from_bytes(tail[:2], "big")
-                identifiers.append({
-                    "kind": "DID",
-                    "identifier": did,
-                    "label": f"DID 0x{did:04X}",
-                    "access": access,
-                    "subfunction": None,
-                    "routine_control_type": None,
-                    "routine_control_name": None,
-                })
+                # ReadDataByIdentifier can request several DIDs in one message.
+                # Write and I/O-control requests have one DID followed by data.
+                offsets = range(0, len(tail) - 1, 2) if service == 0x22 else (0,)
+                for offset in offsets:
+                    did = int.from_bytes(tail[offset:offset + 2], "big")
+                    identifiers.append({
+                        "kind": "DID",
+                        "identifier": did,
+                        "label": f"DID 0x{did:04X}",
+                        "access": access,
+                        "subfunction": None,
+                        "routine_control_type": None,
+                        "routine_control_name": None,
+                    })
             elif service == 0x31 and len(request) >= 4:
                 raw_subfunction = request[1]
                 routine_id = int.from_bytes(request[2:4], "big")
@@ -1275,7 +1279,7 @@ class ResearchTab(QWidget):
             "DIDs and routine IDs are raw observed identifiers; meanings are not inferred.",
         ]
         if not identifiers:
-            lines.append("No decodable ReadDataByIdentifier or RoutineControl identifiers observed.")
+            lines.append("No decodable DID or RoutineControl identifiers observed.")
         for item in identifiers:
             detail = (
                 f"{item['routine_control_name']} "
