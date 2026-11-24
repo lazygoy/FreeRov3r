@@ -386,3 +386,100 @@ def summarize_ecu_address_pairs(transactions):
         summaries,
         key=lambda item: (-item["pair_count"], item["request_id"], item["response_id"]),
     )
+
+
+
+def summarize_cross_capture_address_pairs(captures):
+    """Compare probable UDS CAN-ID pairs independently observed in captures.
+
+    Each capture is a mapping with a display name and its own transaction list.
+    Transactions are never paired across capture boundaries. A relationship
+    repeated in multiple captures is stronger repeatability evidence, not proof
+    of ECU identity or physical network topology.
+    """
+    groups = {}
+    for capture in captures:
+        if not isinstance(capture, dict):
+            continue
+        name = str(capture.get("name") or "Unnamed capture")
+        transactions = capture.get("transactions") or []
+        seen_in_capture = set()
+        for pair in transactions:
+            if pair.get("confidence") != "probable":
+                continue
+            request = pair.get("request") or {}
+            response = pair.get("response") or {}
+            try:
+                request_id = int(request["arbitration_id"])
+                response_id = int(response["arbitration_id"])
+                latency = float(pair["latency_seconds"])
+                service = int(pair["request_service"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if request_id == response_id or latency < 0:
+                continue
+            key = (
+                request_id,
+                response_id,
+                bool(request.get("extended", False)),
+                request.get("channel"),
+            )
+            group = groups.setdefault(key, {
+                "request_id": request_id,
+                "response_id": response_id,
+                "extended": bool(request.get("extended", False)),
+                "channel": request.get("channel"),
+                "capture_names": [],
+                "per_capture_pair_counts": {},
+                "pair_count": 0,
+                "positive_count": 0,
+                "negative_count": 0,
+                "services": set(),
+                "latencies": [],
+            })
+            group["pair_count"] += 1
+            group["positive_count"] += pair.get("response_kind") == "positive"
+            group["negative_count"] += pair.get("response_kind") == "negative"
+            group["services"].add(service)
+            group["latencies"].append(latency)
+            group["per_capture_pair_counts"][name] = (
+                group["per_capture_pair_counts"].get(name, 0) + 1
+            )
+            seen_in_capture.add(key)
+        for key in seen_in_capture:
+            group = groups[key]
+            if name not in group["capture_names"]:
+                group["capture_names"].append(name)
+
+    summaries = []
+    for group in groups.values():
+        latencies = group.pop("latencies")
+        services = sorted(group.pop("services"))
+        group["services"] = services
+        group["unique_service_count"] = len(services)
+        group["capture_names"].sort()
+        group["capture_count"] = len(group["capture_names"])
+        group["average_latency_seconds"] = sum(latencies) / len(latencies)
+        group["min_latency_seconds"] = min(latencies)
+        group["max_latency_seconds"] = max(latencies)
+        group["repeatability"] = (
+            "Observed in multiple captures"
+            if group["capture_count"] >= 2
+            else "Observed in one capture only"
+        )
+        group["interpretation"] = (
+            "Repeatable candidate responder CAN ID; ECU identity unknown"
+            if group["capture_count"] >= 2
+            else "Single-capture candidate responder CAN ID; ECU identity unknown"
+        )
+        summaries.append(group)
+
+    return sorted(
+        summaries,
+        key=lambda item: (
+            -item["capture_count"],
+            -item["pair_count"],
+            item["request_id"],
+            item["response_id"],
+        ),
+    )
