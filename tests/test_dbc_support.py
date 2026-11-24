@@ -73,7 +73,7 @@ def test_dbc_coverage_reports_numeric_signal_statistics(tmp_path, monkeypatch):
     source = tmp_path / "sample.dbc"
     source.write_text("test", encoding="utf-8")
     library = DBCLibrary(tmp_path / "library")
-    monkeypatch.setattr(library, "_cantools", lambda: FakeCantools)
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
     library.load_file(source)
     coverage = library.decode_coverage([
         {"arbitration_id": 0x123, "extended": False, "data": "0102"},
