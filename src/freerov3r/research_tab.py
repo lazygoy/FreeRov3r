@@ -1461,7 +1461,7 @@ class ResearchTab(QWidget):
         except (OSError, ValueError, TypeError) as exc:
             QMessageBox.warning(
                 self, "DID definition registry",
-                f"Could not load the definition file:\\n{exc}"
+                f"Could not load the definition file:\n{exc}"
             )
             return
 
@@ -1540,7 +1540,7 @@ class ResearchTab(QWidget):
         ))
         output = QPlainTextEdit()
         output.setReadOnly(True)
-        output.setPlainText("\\n".join(lines))
+        output.setPlainText("\n".join(lines))
         layout.addWidget(output, 1)
         close_button = QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
