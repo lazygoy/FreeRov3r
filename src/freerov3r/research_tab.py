@@ -19,7 +19,10 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from freerov3r.isotp import (\n    pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,\n    summarize_cross_capture_address_pairs,\n)
+from freerov3r.isotp import (
+    pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
+    summarize_cross_capture_address_pairs,
+)
 
 
 UDS_SERVICES = {
