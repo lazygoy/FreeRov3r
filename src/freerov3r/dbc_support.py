@@ -116,9 +116,8 @@ class DBCLibrary:
         if len(payload) != int(message.length):
             return None
         try:
-            values = self.database.decode_message(
-                message.frame_id, payload, decode_choices=False,
-                allow_truncated=False, allow_excess=False,
+            values = message.decode(
+                payload, decode_choices=False, allow_truncated=False
             )
         except Exception:
             # Malformed or incompatible payloads are not decoded as valid signals.
@@ -135,11 +134,15 @@ class DBCLibrary:
         unmatched = 0
         values = {}
         for record in records:
-            result = self.decode(
-                record.get("arbitration_id", -1),
-                bytes.fromhex(record.get("data", "")),
-                record.get("extended", False),
-            )
+            try:
+                payload = bytes.fromhex(record.get("data", ""))
+                result = self.decode(
+                    record.get("arbitration_id", -1),
+                    payload,
+                    record.get("extended", False),
+                )
+            except (TypeError, ValueError):
+                result = None
             if result is None:
                 unmatched += 1
                 continue
