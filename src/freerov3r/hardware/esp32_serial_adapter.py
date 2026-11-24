@@ -48,6 +48,7 @@ def parse_can_line(raw, channel=None):
             data=data,
             is_extended_id=is_extended,
             channel=channel,
+            timestamp=time.monotonic(),
         )
     except (UnicodeDecodeError, ValueError, TypeError):
         return None
