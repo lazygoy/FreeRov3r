@@ -539,7 +539,10 @@ class ResearchTab(QWidget):
         )
         if result is None:
             return ""
-        return "; ".join(f"{name}={value}" for name, value in result.decoded.items())
+        return "; ".join(
+            f"{name}={value} {result.units.get(name, '')}".rstrip()
+            for name, value in result.decoded.items()
+        )
 
     def load_dbc(self):
         path, _ = QFileDialog.getOpenFileName(
