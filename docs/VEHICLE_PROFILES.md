@@ -23,8 +23,15 @@ return no data; available values depend on the vehicle and ECU.
 
 ## Built-in package
 
-The first manufacturer family is **Land Rover L319**, split into two distinct
-packages:
+The first manufacturer family is **Land Rover L319**. A shared L319 workspace
+is the default while vehicle identity is unknown; a VIN decode identifying a
+different make/model switches to generic OBD-II/CAN support. The LR3 and LR4
+variant packages remain available when the VIN or user selection identifies
+the specific generation.
+
+The family workspace exposes the common L319 workspaces without claiming that
+variant-specific wiring, module fitment or service procedures are interchangeable.
+The variant packages are:
 
 - **LR3 / Discovery 3:** North American model years 2005–2009. Generic OBD-II/CAN
   features are available; LR3-specific wiring and module definitions are not
@@ -36,7 +43,10 @@ packages:
 VIN classification uses the Land Rover WMI, Discovery model-range character and
 model-year code. The result is a probable match and must be reviewed; VIN
 decoding alone does not prove installed equipment, engine, market or
-configuration. LR3 VINs must never activate the LR4 wiring and module data.
+configuration. LR3 users can open the shared workspaces, but the current wiring
+reference remains explicitly labeled as a 2010 LR4 baseline and is not evidence
+of LR3 fitment. Workspace visibility does not certify module presence or
+procedure compatibility.
 
 ## Third-party package registration
 
