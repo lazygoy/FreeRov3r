@@ -6,8 +6,9 @@ from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 
 
 class FakeSignal:
-    def __init__(self, name):
+    def __init__(self, name, unit=""):
         self.name = name
+        self.unit = unit
 
 
 class FakeMessage:
@@ -15,7 +16,7 @@ class FakeMessage:
     is_extended_frame = False
     name = "EngineData"
     length = 2
-    signals = [FakeSignal("EngineSpeed"), FakeSignal("CoolantTemp")]
+    signals = [FakeSignal("EngineSpeed", "rpm"), FakeSignal("CoolantTemp", "degC")]
 
     def decode(self, payload, **kwargs):
         assert len(payload) == 2
@@ -129,6 +130,7 @@ def test_real_cantools_dbc_decode_when_optional_dependency_is_installed(tmp_path
     assert result is not None
     assert result.message_name == "EngineData"
     assert result.decoded["EngineSpeed"] == 1500.0
+    assert result.units["EngineSpeed"] == "rpm"
 
 
 
