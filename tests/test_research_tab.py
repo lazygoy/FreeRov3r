@@ -472,3 +472,99 @@ def test_operation_uds_identifier_summary_distinguishes_did_access_modes():
     modes = {item["access"] for item in result}
     assert modes == {"Read", "Write", "I/O control"}
     assert len(result) == 3
+
+
+
+def test_operation_did_response_variation_reports_raw_variable_byte_offsets():
+    from freerov3r.research_tab import summarize_operation_did_response_variation
+
+    result = summarize_operation_did_response_variation([{
+        "operation": "Read module identity",
+        "transactions": [
+            {
+                "service": 0x22,
+                "request_payload": "22f190",
+                "response_payload": "62f190123456",
+                "response_kind": "positive",
+                "capture_names": ["baseline", "repeat"],
+                "count": 2,
+            },
+            {
+                "service": 0x22,
+                "request_payload": "22f190",
+                "response_payload": "62f190123499",
+                "response_kind": "positive",
+                "capture_names": ["changed"],
+                "count": 1,
+            },
+        ],
+    }])
+
+    assert len(result) == 1
+    item = result[0]
+    assert item["did"] == 0xF190
+    assert item["capture_count"] == 3
+    assert item["total_count"] == 3
+    assert item["distinct_value_count"] == 2
+    assert item["value_lengths"] == [3]
+    assert item["variable_byte_offsets"] == [2]
+    assert item["data_pattern"] == "Byte values vary"
+
+
+def test_operation_did_response_variation_skips_multidid_and_unmatched_responses():
+    from freerov3r.research_tab import summarize_operation_did_response_variation
+
+    result = summarize_operation_did_response_variation([{
+        "operation": "Read several identifiers",
+        "transactions": [
+            {
+                "service": 0x22,
+                "request_payload": "22f190f187",
+                "response_payload": "62f1900102f1870304",
+                "response_kind": "positive",
+                "capture_names": ["multi"],
+            },
+            {
+                "service": 0x22,
+                "request_payload": "22f190",
+                "response_payload": "7f2231",
+                "response_kind": "negative",
+                "capture_names": ["negative"],
+            },
+            {
+                "service": 0x22,
+                "request_payload": "22f190",
+                "response_payload": "62f1870102",
+                "response_kind": "positive",
+                "capture_names": ["wrong-did"],
+            },
+        ],
+    }])
+    assert result == []
+
+
+def test_operation_did_response_variation_reports_length_variants():
+    from freerov3r.research_tab import summarize_operation_did_response_variation
+
+    result = summarize_operation_did_response_variation([{
+        "operation": "Read variable record",
+        "transactions": [
+            {
+                "service": 0x22,
+                "request_payload": "22f1a0",
+                "response_payload": "62f1a00102",
+                "response_kind": "positive",
+                "capture_names": ["short"],
+            },
+            {
+                "service": 0x22,
+                "request_payload": "22f1a0",
+                "response_payload": "62f1a0010203",
+                "response_kind": "positive",
+                "capture_names": ["long"],
+            },
+        ],
+    }])
+    assert result[0]["value_lengths"] == [2, 3]
+    assert result[0]["data_pattern"] == "Variable-length data"
+    assert result[0]["variable_byte_offsets"] == []
