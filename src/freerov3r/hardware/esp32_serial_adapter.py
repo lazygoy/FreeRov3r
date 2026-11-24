@@ -1,9 +1,10 @@
 """Serial line adapter for the FreeRov3r ESP32 Classical-CAN firmware.
 
-Expected line format: arbitration_id_hex,DLC,HEXDATA
-Example: 00000123,2,0102
-Only Classical CAN frames (0..8 data bytes) are accepted. This adapter is
-receive-only; it does not send frames or configure ECU services.
+Current line format: S-or-E,arbitration_id_hex,DLC,HEXDATA
+Examples: S,00000123,2,0102 and E,18DAF110,8,032201F190000000
+
+The legacy three-field format remains accepted for older firmware. This
+adapter only receives frames; it never sends serial commands or CAN traffic.
 """
 import serial
 
@@ -12,23 +13,38 @@ from ..models import CanFrame
 
 
 def parse_can_line(raw, channel=None):
-    """Parse one firmware line. Return None for boot text or malformed input."""
+    """Parse one firmware frame line; return None for status/noise/malformed input."""
     try:
         text = raw.decode("ascii", errors="strict") if isinstance(raw, bytes) else str(raw)
-        parts = text.strip().split(",")
-        if len(parts) != 3:
+        text = text.strip()
+        if not text or text.startswith("#"):
             return None
-        arbitration_id = int(parts[0], 16)
-        dlc = int(parts[1], 10)
-        data = bytes.fromhex(parts[2])
+
+        parts = text.split(",")
+        if len(parts) == 4 and parts[0].upper() in {"S", "E"}:
+            is_extended = parts[0].upper() == "E"
+            id_text, dlc_text, data_text = parts[1:]
+        elif len(parts) == 3:
+            # Backward compatibility with the original prototype protocol.
+            id_text, dlc_text, data_text = parts
+            is_extended = int(id_text, 16) > 0x7FF
+        else:
+            return None
+
+        arbitration_id = int(id_text, 16)
+        dlc = int(dlc_text, 10)
+        data = bytes.fromhex(data_text)
         if not 0 <= arbitration_id <= 0x1FFFFFFF:
+            return None
+        if not is_extended and arbitration_id > 0x7FF:
             return None
         if not 0 <= dlc <= 8 or len(data) != dlc:
             return None
+
         return CanFrame(
             arbitration_id=arbitration_id,
             data=data,
-            is_extended_id=arbitration_id > 0x7FF,
+            is_extended_id=is_extended,
             channel=channel,
         )
     except (UnicodeDecodeError, ValueError, TypeError):
@@ -36,16 +52,17 @@ def parse_can_line(raw, channel=None):
 
 
 class Esp32SerialAdapter(CanAdapter):
-    def __init__(self, port="COM3", baudrate=115200, timeout=0.2):
+    def __init__(self, port="COM3", baudrate=921600, timeout=0.2):
         self.port, self.baudrate, self.timeout = port, baudrate, timeout
         self.connection = None
         self.frames_received = 0
         self.invalid_lines = 0
         self.last_error = None
+        self.last_status = None
 
     @property
     def description(self):
-        return f"FreeRov3r ESP32 serial: {self.port} @ {self.baudrate}"
+        return f"FreeRov3r ESP32 serial: {self.port} @ {self.baudrate} (listen-only)"
 
     @property
     def connected(self):
@@ -60,10 +77,13 @@ class Esp32SerialAdapter(CanAdapter):
             "frames_received": self.frames_received,
             "invalid_lines": self.invalid_lines,
             "last_error": self.last_error,
+            "last_status": self.last_status,
+            "mode": "receive-only",
         }
 
     def open(self):
         self.last_error = None
+        self.last_status = None
         self.connection = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
 
     def close(self):
@@ -78,13 +98,22 @@ class Esp32SerialAdapter(CanAdapter):
         raw = self.connection.readline()
         if not raw:
             return None
+
+        # Firmware metadata and alerts are diagnostic lines, not malformed frames.
+        try:
+            status = raw.decode("ascii", errors="strict").strip()
+        except UnicodeDecodeError:
+            status = ""
+        if status.startswith("#"):
+            self.last_status = status[1:][:120]
+            if status.startswith("#ERROR,") or status.startswith("#ALERT,"):
+                self.last_error = status[1:][:120]
+            return None
+
         frame = parse_can_line(raw, channel=self.port)
         if frame is None:
             self.invalid_lines += 1
-            try:
-                self.last_error = raw.decode("ascii", errors="replace").strip()[:120]
-            except Exception:
-                self.last_error = "Unreadable serial input"
+            self.last_error = status[:120] if status else "Unreadable serial input"
             return None
         self.frames_received += 1
         self.last_error = None
