@@ -742,6 +742,7 @@ def _normalize_record(record):
             "extended": extended,
             "data": payload.hex(),
             "channel": record.get("channel"),
+            "timestamp_clock": record.get("timestamp_clock", "unknown"),
         }
         if record.get("elapsed_seconds") is not None:
             try:
