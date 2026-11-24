@@ -82,7 +82,7 @@ void loop() {
   if (twai_receive(&msg, pdMS_TO_TICKS(20)) == ESP_OK) {
     // Remote frames have no application payload and are not part of the
     // current Classical-CAN data-frame capture format.
-    if (!msg.rtr && !msg.rtr) {
+    if (!msg.rtr) {
       printFrame(msg);
     }
   }
