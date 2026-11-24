@@ -319,6 +319,7 @@ class DBCLibrary:
         matched = 0
         unmatched = 0
         values = {}
+        signal_units = {}
         for record in records:
             try:
                 payload = bytes.fromhex(record.get("data", ""))
@@ -336,6 +337,7 @@ class DBCLibrary:
             for name, value in result.decoded.items():
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     values.setdefault(name, []).append(float(value))
+                    signal_units.setdefault(name, result.units.get(name, ""))
         stats = {
             name: {
                 "count": len(samples),
@@ -344,6 +346,7 @@ class DBCLibrary:
                 "mean": sum(samples) / len(samples),
                 "first": samples[0],
                 "last": samples[-1],
+                "unit": signal_units.get(name, ""),
             }
             for name, samples in values.items() if samples
         }
