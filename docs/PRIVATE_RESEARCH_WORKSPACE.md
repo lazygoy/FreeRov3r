@@ -34,6 +34,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Frame bookmarks and annotations.
 - Capture comparison by CAN identifier traffic counts.\n- Monotonic-time action markers and before/after payload-frequency comparison (2-second baseline, 5-second response window by default). Frames without a matching monotonic elapsed-time field are excluded rather than mixing unrelated clocks.
 - Multi-capture operation-sequence alignment against the first loaded capture, reporting missing, inserted or substituted marker steps, alongside per-operation CAN traffic repeatability and timing.
+- Per-operation UDS transaction correlation: reassembles each capture independently using monotonic elapsed time, pairs probable requests and responses, and compares raw request/response payloads, response kind, repeatability and latency across captures.
 - JSON session save and Markdown handoff packet for REA / ChatGPT.
 
 ## Safety and interpretation limits
