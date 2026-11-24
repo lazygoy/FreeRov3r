@@ -851,6 +851,24 @@ class ResearchTab(QWidget):
         intro_layout.addWidget(self.status_label)
         root.addWidget(intro)
 
+        receiver_box = QGroupBox("CAN RECEIVER HEALTH")
+        receiver_layout = QHBoxLayout(receiver_box)
+        self.receiver_connection_label = QLabel("Connection: not selected")
+        self.receiver_frame_label = QLabel("Frames: 0")
+        self.receiver_activity_label = QLabel("Last frame: never")
+        self.receiver_alert_label = QLabel("Alerts / errors: 0 / 0")
+        self.receiver_status_label = QLabel("Firmware: no status received")
+        for label in (
+            self.receiver_connection_label,
+            self.receiver_frame_label,
+            self.receiver_activity_label,
+            self.receiver_alert_label,
+            self.receiver_status_label,
+        ):
+            label.setWordWrap(True)
+            receiver_layout.addWidget(label, 1)
+        root.addWidget(receiver_box)
+
         session_box = QGroupBox("RESEARCH SESSION")
         session_form = QFormLayout(session_box)
         self.session_name = QLineEdit("LAUNCH Creader Elite V2.0 capture")
@@ -1018,6 +1036,29 @@ class ResearchTab(QWidget):
         self.count_label = QLabel("0 displayed · 0 recorded")
         footer.addWidget(self.count_label)
         root.addLayout(footer)
+
+    def set_receiver_diagnostics(self, diagnostics=None):
+        """Refresh the receiver-health strip from an adapter diagnostics snapshot."""
+        data = diagnostics or {}
+        connected = bool(data.get("connected", False))
+        port = data.get("port") or "not selected"
+        mode = data.get("mode") or "unknown mode"
+        self.receiver_connection_label.setText(
+            f"Connection: {'connected' if connected else 'disconnected'} · {port} · {mode}"
+        )
+        self.receiver_frame_label.setText(
+            f"Frames: {int(data.get('frames_received', 0)):,} · invalid lines: "
+            f"{int(data.get('invalid_lines', 0)):,}"
+        )
+        age = data.get("last_frame_age_seconds")
+        activity = "never" if age is None else f"{float(age):.1f}s ago"
+        self.receiver_activity_label.setText(f"Last frame: {activity}")
+        self.receiver_alert_label.setText(
+            f"Alerts / firmware errors: {int(data.get('alert_count', 0)):,} / "
+            f"{int(data.get('firmware_error_count', 0)):,}"
+        )
+        status = data.get("last_status") or "no status received"
+        self.receiver_status_label.setText(f"Firmware: {status}")
 
     def set_context(self, vin=None, interface=None):
         self.vin_label.setText(f"VIN: {vin or 'not set'}  |  Interface: {interface or 'not connected'}")
