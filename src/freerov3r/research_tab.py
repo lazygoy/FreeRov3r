@@ -1040,6 +1040,40 @@ class ResearchTab(QWidget):
     def set_receiver_diagnostics(self, diagnostics=None):
         """Refresh the receiver-health strip from an adapter diagnostics snapshot."""
         data = diagnostics or {}
+        channels = data.get("channels") or []
+        if channels:
+            channel_states = " | ".join(
+                f"{item.get('channel', 'CAN')}: {item.get('receiver_state', 'unknown')} "
+                f"({item.get('port') or 'no port'})"
+                for item in channels
+            )
+            self.receiver_connection_label.setText(
+                f"Receivers: {channel_states} · {data.get('mode', 'dual receive-only')}"
+            )
+            self.receiver_frame_label.setText(
+                f"Combined frames: {int(data.get('frames_received', 0)):,} · "
+                f"invalid lines: {int(data.get('invalid_lines', 0)):,}"
+            )
+            activity = []
+            for item in channels:
+                age = item.get("last_frame_age_seconds")
+                label = "never" if age is None else f"{float(age):.1f}s ago"
+                activity.append(f"{item.get('channel', 'CAN')}: {label}")
+            self.receiver_activity_label.setText("Last frames: " + " | ".join(activity))
+            self.receiver_alert_label.setText(
+                f"Alerts / firmware errors: {int(data.get('alert_count', 0)):,} / "
+                f"{int(data.get('firmware_error_count', 0)):,}"
+            )
+            errors = [
+                f"{item.get('channel', 'CAN')}: {item['last_error']}"
+                for item in channels if item.get("last_error")
+            ]
+            self.receiver_status_label.setText(
+                "Receiver errors: " + " | ".join(errors) if errors
+                else "Firmware: per-channel status available"
+            )
+            return
+
         connected = bool(data.get("connected", False))
         port = data.get("port") or "not selected"
         mode = data.get("mode") or "unknown mode"
