@@ -53,8 +53,7 @@ except ImportError:
     HAS_PDF_VIEWER = False
 from .vehicle_history import VehicleHistoryStore
 from .capture_replay import (
-    list_capture_archives, load_capture, compare_captures,
-    build_replay_timeline, filter_capture_frames,
+    list_capture_archives, load_capture, compare_captures, build_replay_timeline,
 )
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
