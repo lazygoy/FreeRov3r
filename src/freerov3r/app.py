@@ -3932,7 +3932,7 @@ class MainWindow(QMainWindow):
         if event_data.get("kind") == "sensor":
             archived = event_data["sample"]
             metadata = dict(archived.get("metadata") or {})
-            metadata["vin"] = self.settings.get("current_vin")
+            metadata["vin"] = event_data.get("vin") or self.settings.get("current_vin")
             metadata["replay"] = True
             metadata["archived_source"] = archived.get("source")
             sample = SensorSample(
