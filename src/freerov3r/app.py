@@ -2918,7 +2918,9 @@ class MainWindow(QMainWindow):
         self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
         self.channel_edit.setPlaceholderText("COM port or CAN channel")
         self.channel_edit.setToolTip(
-            "Choose a detected serial port for ESP32/SLCAN, or type a CAN channel such as can0."
+            "Choose a detected serial port for ESP32/SLCAN, or type a CAN channel such as can0. "
+            "For dual ESP32 capture, enter two different COM ports separated by a comma; "
+            "first is HS-CAN, second is MS-CAN."
         )
         controls.addWidget(self.channel_edit)
 
@@ -3455,6 +3457,15 @@ class MainWindow(QMainWindow):
             adapter = SimulatedVehicleAdapter(channel=channel or "L319-DEMO")
         elif interface == "esp32":
             adapter = Esp32SerialAdapter(port=channel)
+        elif interface == "esp32_dual":
+            ports = [part.strip() for part in channel.split(",") if part.strip()]
+            if len(ports) != 2 or ports[0].casefold() == ports[1].casefold():
+                QMessageBox.warning(
+                    self, "Dual ESP32 connection",
+                    "Enter two different serial ports, for example COM4,COM5."
+                )
+                return
+            adapter = Esp32DualSerialAdapter(ports, channel_names=("HS-CAN", "MS-CAN"))
         elif interface == "elm327":
             adapter = Elm327SerialAdapter(port=channel)
         elif interface == "elm327_obd":
