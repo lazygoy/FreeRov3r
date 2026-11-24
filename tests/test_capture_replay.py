@@ -145,3 +145,16 @@ def test_replay_timeline_filters_frames_without_dropping_sensor_samples():
     timeline = build_replay_timeline(capture, can_id="100")
     assert [event["kind"] for event in timeline] == ["frame", "sensor"]
     assert timeline[0]["frame"]["arbitration_id"] == 100
+
+
+def test_loaded_capture_and_timeline_preserve_archive_vin(tmp_path):
+    vin = "SALXXXXXXXXXXXX1"
+    folder = tmp_path / "vehicles" / vin / "captures"
+    folder.mkdir(parents=True)
+    path = _capture(folder / "capture_test.json", [
+        {"timestamp": 1.0, "arbitration_id": 100, "extended": False, "data": "01"}
+    ], [{"timestamp": 1.1, "sensor_id": "rpm", "value": 900, "unit": "rpm"}])
+    capture = load_capture(path)
+    timeline = build_replay_timeline(capture)
+    assert capture["vin"] == vin
+    assert {event["vin"] for event in timeline} == {vin}
