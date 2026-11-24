@@ -534,17 +534,25 @@ def summarize_operation_uds_identifiers(operation_summaries):
                 continue
 
             identifiers = []
-            if service == 0x22:
+            if service in (0x22, 0x2E, 0x2F):
+                access = {
+                    0x22: "Read",
+                    0x2E: "Write",
+                    0x2F: "I/O control",
+                }[service]
                 tail = request[1:]
-                for offset in range(0, len(tail) - 1, 2):
-                    did = int.from_bytes(tail[offset:offset + 2], "big")
-                    identifiers.append({
-                        "kind": "DID",
-                        "identifier": did,
-                        "label": f"DID 0x{did:04X}",
-                        "subfunction": None,
-                        "routine_control_type": None,
-                    })
+                if len(tail) < 2:
+                    continue
+                did = int.from_bytes(tail[:2], "big")
+                identifiers.append({
+                    "kind": "DID",
+                    "identifier": did,
+                    "label": f"DID 0x{did:04X}",
+                    "access": access,
+                    "subfunction": None,
+                    "routine_control_type": None,
+                    "routine_control_name": None,
+                })
             elif service == 0x31 and len(request) >= 4:
                 raw_subfunction = request[1]
                 routine_id = int.from_bytes(request[2:4], "big")
@@ -553,8 +561,14 @@ def summarize_operation_uds_identifiers(operation_summaries):
                     "kind": "Routine ID",
                     "identifier": routine_id,
                     "label": f"Routine 0x{routine_id:04X}",
+                    "access": "Routine control",
                     "subfunction": raw_subfunction,
                     "routine_control_type": control_type,
+                    "routine_control_name": {
+                        0x01: "StartRoutine",
+                        0x02: "StopRoutine",
+                        0x03: "RequestRoutineResults",
+                    }.get(control_type, "Unrecognized routine-control type"),
                 })
             else:
                 continue
@@ -564,7 +578,7 @@ def summarize_operation_uds_identifiers(operation_summaries):
             for identifier in identifiers:
                 key = (
                     operation_name, identifier["kind"], identifier["identifier"],
-                    identifier["subfunction"],
+                    identifier["access"], identifier["subfunction"],
                 )
                 item = aggregates.setdefault(key, {
                     "operation": operation_name,
@@ -599,6 +613,7 @@ def summarize_operation_uds_identifiers(operation_summaries):
         results.append(item)
     results.sort(key=lambda item: (
         item["operation"].casefold(), item["kind"], item["identifier"],
+        item["access"],
         item["subfunction"] if item["subfunction"] is not None else -1,
     ))
     return results
@@ -1263,9 +1278,10 @@ class ResearchTab(QWidget):
             lines.append("No decodable ReadDataByIdentifier or RoutineControl identifiers observed.")
         for item in identifiers:
             detail = (
-                f"routineControlType=0x{item['routine_control_type']:02X} "
-                f"(raw subfunction 0x{item['subfunction']:02X})"
-                if item["kind"] == "Routine ID" else "read request"
+                f"{item['routine_control_name']} "
+                f"(type 0x{item['routine_control_type']:02X}, "
+                f"raw subfunction 0x{item['subfunction']:02X})"
+                if item["kind"] == "Routine ID" else f"{item['access']} request"
             )
             lines.append(
                 f"  {item['operation']} | {item['label']} | {detail} | "
