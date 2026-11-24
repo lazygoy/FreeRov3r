@@ -39,6 +39,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - DID response-data comparison: compares raw positive single-DID ReadDataByIdentifier payloads across marked operations and captures, reporting distinct values, data lengths and differing byte offsets. Multi-DID responses are deliberately skipped until record boundaries can be established from a trusted vehicle-specific definition.
 - Source-backed DID response decoding: load a JSON definition registry, select its exact vehicle key, and decode only paired positive single-DID 0x22 transactions. The Research tab displays raw request/response bytes, decoded fields, confidence and source provenance. Multi-DID, negative, unmatched and unknown definitions remain uninterpreted.
 - Registry validation CLI: run `python -m freerov3r.did_definitions path/to/registry.json` to validate the JSON structure and print definition counts, vehicle keys, confidence counts and source references. `examples/did_definitions.example.json` is an intentionally empty starter template; it contains no invented vehicle definitions.
+- Passive DBC signal decoding: import a local `.dbc` file into `~/.freerov3r/dbc`, inspect its message/signal bit layouts, compare it structurally with another DBC, and decode matching captured CAN frames. Decoded values include units and declared-range checks; imported definitions remain unverified for the selected vehicle until independently validated. The optional `cantools` dependency is installed with `pip install -e ".[protocols]"`.
 - JSON session save and Markdown handoff packet for REA / ChatGPT.
 
 ## Safety and interpretation limits
@@ -59,6 +60,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Multi-network capture and bus selection.
 - Additional configurable timing windows and deeper payload-delta analysis.
 - LAUNCH-specific protocol decoding.
+- DBC signal definitions verified against captured LR4 5.0 traffic and independent physical measurements.
 
 Keep raw captures unchanged. Derived interpretations should remain separate and be marked as confirmed, probable, or unknown.
 
