@@ -2046,6 +2046,41 @@ class ResearchTab(QWidget):
                     f"negative={item['negative_count']}; "
                     f"other={item['unknown_count']}"
                 )
+        registry = getattr(self, "did_registry", None)
+        if registry is not None:
+            did_results = decode_uds_did_transactions(
+                transactions, registry,
+                vehicle=self.did_vehicle_key.text().strip(),
+            )
+            lines += [
+                "",
+                "## Source-backed DID decoding",
+                f"Definition file: {getattr(self, 'did_registry_path', '')}",
+                f"Vehicle key: {self.did_vehicle_key.text().strip()}",
+                "Only paired positive single-DID reads are decoded; raw payloads and provenance are retained.",
+            ]
+            for item in did_results:
+                decoded = item["decoded"]
+                lines.append(
+                    f"- DID 0x{item['did']:04X}: REQ={item['request_payload'].upper()} "
+                    f"RESP={item['response_payload'].upper()} status={decoded['status']}"
+                )
+                if decoded["status"] == "decoded":
+                    definition = decoded["definition"]
+                    source = definition["source"]
+                    lines.append(
+                        f"  - {definition['name']} | {definition['confidence']} | "
+                        f"{source['title']} | {source['reference']} | {source['url']}"
+                    )
+                    for field in decoded["fields"]:
+                        lines.append(
+                            f"  - +{field['offset']} {field['name']}: "
+                            f"{field['value'] if field['status'] == 'decoded' else 'TRUNCATED'} "
+                            f"[{field['raw_hex'].upper()}] {field['unit']}"
+                        )
+                elif decoded["status"] == "unknown_definition":
+                    lines.append(f"  - Raw data: {decoded.get('data', '').upper()}")
+
         lines += ["", "## Bookmarks"]
         lines.extend(f"- {key}: {note}" for key, note in self.bookmarks.items())
         if self.reference_frames:
