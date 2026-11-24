@@ -109,3 +109,37 @@ point-by-point temporal alignment.
 Archived captures can be reviewed on a merged timestamp timeline containing both CAN frames and recorded sensor samples. The Vehicle History replay panel supports seeking through that timeline and display-only filters for CAN arbitration ID (decimal or `0x` hexadecimal), standard/extended frame format, and payload hex content. Filtering does not modify the archived JSON capture.
 
 During playback, CAN frames flow through the local monitor and decoder while archived sensor samples are restored to the graph workspace with replay provenance and the selected VIN. Replay remains offline: it does not open an adapter or transmit frames. Stop live listening before starting replay. Scrubbing previews the selected event; playback is required to feed events into the workspaces.
+
+
+### DBC signal decoding and comparison
+
+The Research workspace can import a local `.dbc` file and decode matching
+received CAN frames into physical signal values. Install the optional protocol
+dependencies with:
+
+```powershell
+python -m pip install -e ".[protocols]"
+```
+
+Use **Research → Load DBC** to import a definition. FreeRov3r validates the
+file with `cantools` (strict mode first, then an explicitly recorded permissive
+fallback for files with intentional signal overlaps) and stores a local copy under
+`~/.freerov3r/dbc/`. The workspace reports message/signal counts, decoded
+values with units, observed min/mean/max statistics, matched/unmatched frame counts,
+and per-message checks against any min/max limits declared by the DBC. These range
+checks are consistency clues, not independent proof that the DBC is correct.
+DBC decoding is passive and does not transmit diagnostic requests.
+
+An imported DBC is a signal-layout hypothesis until its source, vehicle
+applicability, CAN bus, arbitration ID, frame format, payload length, scaling,
+endianness, and signal behavior are independently checked. A matching CAN ID
+alone does not prove that a definition belongs to the selected vehicle.
+Definitions from other vehicles can be useful for comparison and reverse
+engineering, but must not be labeled as verified LR3/LR4 data. The DBC format
+primer in the [Open Vehicles documentation](https://docs.openvehicles.com/en/latest/components/vehicle_dbc/docs/dbc-primer.html)
+is a useful reference for message and signal syntax. DBC files describe
+passive decoding; they do not define diagnostic requests or authorize CAN
+transmission. Imported files remain local and are not automatically uploaded. FreeRov3r records each imported file's SHA-256, original filename, import timestamp, and unverified status in a local metadata sidecar, and restores the last-used DBC at startup. Use **Inspect DBC** to browse every message and signal's CAN ID/format, payload length, start bit, bit length, byte order, signedness, factor, offset, unit, declared limits, multiplexing and enumerated choices. This is a raw definition inventory, not proof that the definitions apply to the selected vehicle. Use **Compare DBCs** to compare two definitions by message ID/format, payload length, signal position, bit length, byte order, signedness, scaling, offset, and units. This comparison identifies structural differences only; it does not rank a definition as correct.
+
+
+See [DBC research sources and evidence notes](docs/dbc-research-sources.md) for candidate repositories, L319-specific leads, and the evidence grading checklist used before promoting any definition into a verified vehicle profile.
