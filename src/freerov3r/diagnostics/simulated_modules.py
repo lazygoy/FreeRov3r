@@ -129,10 +129,12 @@ class SimulatedModuleNetwork:
             saved_modules = data.get("modules")
             if not isinstance(saved_modules, list):
                 return False
+
             saved_by_code = {
                 item.get("code"): item for item in saved_modules
                 if isinstance(item, dict) and isinstance(item.get("code"), str)
             }
+            restored_state = {}
             for module in self.modules:
                 saved = saved_by_code.get(module.code)
                 if saved is None:
@@ -150,8 +152,16 @@ class SimulatedModuleNetwork:
                         status=str(item.get("status", "Stored")),
                         severity=str(item.get("severity", "Information")),
                     ))
-                module.dtcs = restored
-                module.last_scan = saved.get("last_scan")
+                last_scan = saved.get("last_scan")
+                if last_scan is not None and not isinstance(last_scan, str):
+                    return False
+                restored_state[module.code] = (restored, last_scan)
+
+            # Apply only after the complete file has passed validation.
+            for code, (dtcs, last_scan) in restored_state.items():
+                module = self._by_code[code]
+                module.dtcs = dtcs
+                module.last_scan = last_scan
             return True
         except (OSError, ValueError, TypeError):
             return False
