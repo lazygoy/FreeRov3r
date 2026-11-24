@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions\n\nfrom freerov3r.isotp import (
+from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
+
+from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
     summarize_cross_capture_address_pairs,
 )
@@ -966,7 +968,9 @@ class ResearchTab(QWidget):
         self.marker_analysis_button.clicked.connect(self.analyze_marker_windows)
         self.sequence_analysis_button = QPushButton("Compare operation sequences")
         self.sequence_analysis_button.clicked.connect(self.analyze_operation_sequences)
-        self.did_decode_button = QPushButton("Decode DID responses")\n        self.did_decode_button.clicked.connect(self.decode_did_responses)\n        self.packet_button = QPushButton("Copy REA analysis packet")
+        self.did_decode_button = QPushButton("Decode DID responses")
+        self.did_decode_button.clicked.connect(self.decode_did_responses)
+        self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
         self.clear_button.clicked.connect(self.clear_data)
