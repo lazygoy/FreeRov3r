@@ -3841,7 +3841,10 @@ class MainWindow(QMainWindow):
                 ecu="REPLAY CAPTURE" if replayed else ("SIMULATED ECU" if simulated else None),
                 signal=f"Mode 01 PID {pid:02X}",
                 metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
-                         "vin": self.capture_vin or "UNASSIGNED"},
+                         "vin": (
+                             self.settings.get("current_vin") if replayed
+                             else (self.capture_vin or "UNASSIGNED")
+                         )},
             ))
             known = any(
                 self.graph_tab.sensor_list.item(i).text().endswith(f"({sensor_id})")
