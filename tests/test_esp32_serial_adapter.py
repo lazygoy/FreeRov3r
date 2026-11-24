@@ -155,3 +155,24 @@ def test_received_frame_uses_host_monotonic_timestamp():
     assert frame is not None
     assert before <= frame.timestamp <= after
     assert frame.channel == "MS-CAN"
+
+
+def test_parse_protocol_v2_preserves_device_timestamp():
+    frame = parse_can_line(b"S,00000123,2,0102,123456789\\n", channel="HS-CAN")
+    assert frame is not None
+    assert frame.arbitration_id == 0x123
+    assert frame.data == bytes.fromhex("0102")
+    assert frame.channel == "HS-CAN"
+    assert frame.device_timestamp_us == 123456789
+    assert frame.timestamp is not None
+
+
+def test_parse_protocol_v2_rejects_invalid_device_timestamp():
+    assert parse_can_line(b"S,00000123,1,AA,not-a-clock\\n") is None
+    assert parse_can_line(b"S,00000123,1,AA,-1\\n") is None
+
+
+def test_legacy_frame_has_no_device_timestamp():
+    frame = parse_can_line(b"S,00000123,1,AA\\n")
+    assert frame is not None
+    assert frame.device_timestamp_us is None
