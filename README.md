@@ -125,7 +125,9 @@ Use **Research → Load DBC** to import a definition. FreeRov3r validates the
 file with `cantools` (strict mode first, then an explicitly recorded permissive
 fallback for files with intentional signal overlaps) and stores a local copy under
 `~/.freerov3r/dbc/`. The workspace reports message/signal counts, decoded
-values with units, observed min/mean/max statistics, and matched/unmatched frame counts.
+values with units, observed min/mean/max statistics, matched/unmatched frame counts,
+and per-message checks against any min/max limits declared by the DBC. These range
+checks are consistency clues, not independent proof that the DBC is correct.
 DBC decoding is passive and does not transmit diagnostic requests.
 
 An imported DBC is a signal-layout hypothesis until its source, vehicle
