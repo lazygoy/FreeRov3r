@@ -618,6 +618,14 @@ def test_research_tab_receiver_health_panel_displays_adapter_diagnostics(monkeyp
     assert "0.4s ago" in tab.receiver_activity_label.text()
     assert "1 / 0" in tab.receiver_alert_label.text()
     assert "MODE,LISTEN_ONLY" in tab.receiver_status_label.text()
+    tab.set_receiver_diagnostics({
+        "connected": False,
+        "port": "COM7",
+        "mode": "receive-only",
+        "last_error": "Port access denied",
+    })
+    assert "ERROR: Port access denied" in tab.receiver_status_label.text()
+    assert "disconnected" in tab.receiver_connection_label.text()
     tab.refresh_timer.stop()
     tab.close()
     app.processEvents()
