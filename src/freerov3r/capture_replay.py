@@ -39,8 +39,11 @@ def load_capture(path):
             payload = bytes.fromhex(str(item.get("data", "")))
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Frame {index + 1} contains invalid CAN data: {exc}") from exc
+        extended = bool(item.get("extended", False))
         if arbitration_id < 0 or arbitration_id > 0x1FFFFFFF:
             raise ValueError(f"Frame {index + 1} has an invalid arbitration ID.")
+        if not extended and arbitration_id > 0x7FF:
+            raise ValueError(f"Frame {index + 1} uses an extended ID but is marked standard.")
         if len(payload) > 64:
             raise ValueError(f"Frame {index + 1} exceeds the 64-byte CAN FD payload limit.")
         if timestamp < 0:
@@ -48,7 +51,7 @@ def load_capture(path):
         frames.append({
             "timestamp": timestamp,
             "arbitration_id": arbitration_id,
-            "extended": bool(item.get("extended", False)),
+            "extended": extended,
             "data": payload.hex(),
             "channel": item.get("channel"),
         })
