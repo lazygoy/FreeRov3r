@@ -32,7 +32,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Candidate CAN responder-address aggregation by request/response ID pair, channel and frame format, including pair counts, observed services, positive/negative response counts and average latency.\n- Cross-capture validation that independently decodes and pairs two captures, then reports which candidate ID relationships recur in both, with per-capture counts and service evidence.
 - A Research-tab action to inspect reassembled messages, plus ISO-TP results in the REA analysis packet.
 - Frame bookmarks and annotations.
-- Capture comparison by CAN identifier traffic counts.
+- Capture comparison by CAN identifier traffic counts.\n- Monotonic-time action markers and before/after payload-frequency comparison (2-second baseline, 5-second response window by default). Frames without a matching monotonic elapsed-time field are excluded rather than mixing unrelated clocks.
 - JSON session save and Markdown handoff packet for REA / ChatGPT.
 
 ## Safety and interpretation limits
@@ -51,7 +51,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Extended/mixed ISO-TP addressing and more advanced transaction grouping.
 - Validation against independently verified vehicle-specific evidence, such as trusted wiring documentation or a known module-specific operation. Cross-capture repeatability alone still does not establish ECU identity.
 - Multi-network capture and bus selection.
-- Timing-aligned operation markers and capture comparison by sequence.
+- Configurable timing windows, multi-marker sequence comparison and deeper payload-delta analysis.
 - LAUNCH-specific protocol decoding.
 
 Keep raw captures unchanged. Derived interpretations should remain separate and be marked as confirmed, probable, or unknown.
