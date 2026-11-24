@@ -53,7 +53,7 @@ Provide a local workbench for studying traffic observed while the LAUNCH Creader
 - Extended/mixed ISO-TP addressing and more advanced transaction grouping.
 - Validation against independently verified vehicle-specific evidence, such as trusted wiring documentation or a known module-specific operation. Cross-capture repeatability alone still does not establish ECU identity.
 - Multi-network capture and bus selection.
-- Configurable timing windows and deeper payload-delta analysis. Multi-capture operation-sequence comparison is available: load several marked sessions, compare matching operation labels, normalize frame rates by window duration, and report repeatability plus median first-frame delay.
+- Additional configurable timing windows and deeper payload-delta analysis.
 - LAUNCH-specific protocol decoding.
 
 Keep raw captures unchanged. Derived interpretations should remain separate and be marked as confirmed, probable, or unknown.
