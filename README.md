@@ -75,3 +75,13 @@ intact.
 GitHub Actions runs Python compilation and the test suite on Python 3.10 and
 3.12 for pushes to `main` and feature branches, and for pull requests targeting
 `main`.
+
+
+### VIN backup export
+
+The Vehicle History workspace can export a selected VIN as a ZIP backup. The
+bundle contains that vehicle's event history, available capture JSON archives,
+and saved simulated module state. It excludes other VINs and includes a
+manifest identifying the export schema and synthetic-data limitation. Choose
+a specific VIN; the combined "All vehicles" view cannot be exported as a
+vehicle backup.
