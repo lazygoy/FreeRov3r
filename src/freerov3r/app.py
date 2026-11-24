@@ -3924,11 +3924,36 @@ class MainWindow(QMainWindow):
         self._refresh_workspace_header()
         return True
 
-    def on_replay_frame(self, frame_data):
-        """Feed one archived frame through the normal monitor/decoder path, never the adapter."""
+    def on_replay_frame(self, event_data):
+        """Feed an archived CAN frame or sensor sample into local workspaces only."""
         if self.receiver and self.receiver.isRunning():
             self.show_toast("Stop live listening before replaying an archive", "warning")
             return
+        if event_data.get("kind") == "sensor":
+            archived = event_data["sample"]
+            metadata = dict(archived.get("metadata") or {})
+            metadata["vin"] = self.settings.get("current_vin")
+            metadata["replay"] = True
+            metadata["archived_source"] = archived.get("source")
+            sample = SensorSample(
+                timestamp=float(archived["timestamp"]),
+                sensor_id=str(archived["sensor_id"]),
+                name=str(archived.get("name") or archived["sensor_id"]),
+                value=float(archived["value"]),
+                unit=str(archived.get("unit") or ""),
+                source="replay",
+                ecu=archived.get("ecu") or "REPLAY CAPTURE",
+                signal=archived.get("signal"),
+                quality=archived.get("quality") or "valid",
+                metadata=metadata,
+            )
+            self.sensor_capture.add(sample)
+            self.graph_tab.refresh_sensor_list()
+            self.sensor_log.appendPlainText(
+                f"{sample.name}: {sample.value:.3f} {sample.unit} [{sample.sensor_id}] (replay)"
+            )
+            return
+        frame_data = event_data.get("frame", event_data)
         frame = can.Message(
             timestamp=float(frame_data["timestamp"]),
             arbitration_id=int(frame_data["arbitration_id"]),
@@ -3965,18 +3990,16 @@ class MainWindow(QMainWindow):
             sensor_id = f"obd_{pid:02X}"
             simulated = self.active_interface == "simulator"
             replayed = self._replay_active
-            self.sensor_capture.add(SensorSample(
-                timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
-                value=value, unit=unit,
-                source="replay" if replayed else ("simulated" if simulated else "ecu"),
-                ecu="REPLAY CAPTURE" if replayed else ("SIMULATED ECU" if simulated else None),
-                signal=f"Mode 01 PID {pid:02X}",
-                metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
-                         "vin": (
-                             self.settings.get("current_vin") if replayed
-                             else (self.capture_vin or "UNASSIGNED")
-                         )},
-            ))
+            if not replayed:
+                self.sensor_capture.add(SensorSample(
+                    timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
+                    value=value, unit=unit,
+                    source="simulated" if simulated else "ecu",
+                    ecu="SIMULATED ECU" if simulated else None,
+                    signal=f"Mode 01 PID {pid:02X}",
+                    metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
+                             "vin": self.capture_vin or "UNASSIGNED"},
+                ))
             known = any(
                 self.graph_tab.sensor_list.item(i).text().endswith(f"({sensor_id})")
                 for i in range(self.graph_tab.sensor_list.count())
