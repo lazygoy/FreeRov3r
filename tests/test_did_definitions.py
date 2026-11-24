@@ -76,7 +76,7 @@ def test_decoder_marks_short_fields_as_truncated():
 @pytest.mark.parametrize("bad", [
     {"did": "xyz"},
     {"did": 0x10000},
-    {"did": 0xF190, "vehicle": "LR4", "name": "bad"},
+    {"did": 0xF190, "vehicle": "LR4", "name": "bad", "source": {}},
 ])
 def test_definition_requires_valid_did_and_source_provenance(bad):
     value = definition()
