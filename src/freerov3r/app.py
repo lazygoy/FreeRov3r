@@ -2168,8 +2168,9 @@ class VehicleHistoryTab(QWidget):
         if self.replay_index >= len(self.replay_capture["frames"]):
             self.replay_index = 0
         self.play_capture_btn.setText("Pause")
-        if self.replay_state_callback:
-            self.replay_state_callback(True)
+        if self.replay_state_callback and self.replay_state_callback(True) is False:
+            self.play_capture_btn.setText("Play")
+            return
         self.replay_timer.start(1)
 
     def _replay_step(self):
@@ -3786,8 +3787,12 @@ class MainWindow(QMainWindow):
 
     def on_replay_state(self, active):
         """Mark offline archive playback without changing the selected adapter."""
+        if active and self.receiver and self.receiver.isRunning():
+            self.show_toast("Stop live listening before replaying an archive", "warning")
+            return False
         self._replay_active = bool(active)
         self._refresh_workspace_header()
+        return True
 
     def on_replay_frame(self, frame_data):
         """Feed one archived frame through the normal monitor/decoder path, never the adapter."""
