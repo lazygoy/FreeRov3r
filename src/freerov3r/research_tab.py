@@ -1058,6 +1058,9 @@ class ResearchTab(QWidget):
             f"{int(data.get('firmware_error_count', 0)):,}"
         )
         status = data.get("last_status") or "no status received"
+        error = data.get("last_error")
+        if error:
+            status = f"ERROR: {error}"
         self.receiver_status_label.setText(f"Firmware: {status}")
 
     def set_context(self, vin=None, interface=None):
