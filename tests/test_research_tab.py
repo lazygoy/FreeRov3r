@@ -160,3 +160,80 @@ def test_operation_sequence_comparison_rejects_nonpositive_windows():
 
     with pytest.raises(ValueError):
         compare_operation_sequences([], after_seconds=0)
+
+
+
+def test_operation_sequence_comparison_reports_order_differences():
+    from freerov3r.research_tab import compare_operation_sequences
+
+    captures = [
+        {
+            "name": "reference",
+            "frames": [],
+            "markers": [
+                {"elapsed_seconds": 1, "operation": "Connect"},
+                {"elapsed_seconds": 2, "operation": "Scan"},
+                {"elapsed_seconds": 3, "operation": "Read DTCs"},
+            ],
+        },
+        {
+            "name": "missing step",
+            "frames": [],
+            "markers": [
+                {"elapsed_seconds": 1, "operation": "Connect"},
+                {"elapsed_seconds": 2, "operation": "Read DTCs"},
+            ],
+        },
+        {
+            "name": "extra step",
+            "frames": [],
+            "markers": [
+                {"elapsed_seconds": 1, "operation": "Connect"},
+                {"elapsed_seconds": 2, "operation": "Scan"},
+                {"elapsed_seconds": 3, "operation": "Clear filters"},
+                {"elapsed_seconds": 4, "operation": "Read DTCs"},
+            ],
+        },
+    ]
+
+    result = compare_operation_sequences(captures)
+    comparisons = {item["capture_name"]: item
+                   for item in result["sequence_comparisons"]}
+
+    missing = comparisons["missing step"]
+    assert not missing["matches_reference"]
+    assert missing["changes"] == [{
+        "change_type": "delete",
+        "reference_index": 1,
+        "capture_index": 1,
+        "reference_operations": ["Scan"],
+        "capture_operations": [],
+    }]
+
+    extra = comparisons["extra step"]
+    assert not extra["matches_reference"]
+    assert extra["changes"] == [{
+        "change_type": "insert",
+        "reference_index": 2,
+        "capture_index": 2,
+        "reference_operations": [],
+        "capture_operations": ["Clear filters"],
+    }]
+
+
+def test_operation_sequence_comparison_identical_order_has_no_changes():
+    from freerov3r.research_tab import compare_operation_sequences
+
+    captures = [
+        {"name": "one", "frames": [], "markers": [
+            {"elapsed_seconds": 1, "operation": "Connect"},
+            {"elapsed_seconds": 2, "operation": "Scan"},
+        ]},
+        {"name": "two", "frames": [], "markers": [
+            {"elapsed_seconds": 1, "operation": "Connect"},
+            {"elapsed_seconds": 2, "operation": "Scan"},
+        ]},
+    ]
+    result = compare_operation_sequences(captures)
+    assert result["sequence_comparisons"][0]["matches_reference"] is True
+    assert result["sequence_comparisons"][0]["changes"] == []
