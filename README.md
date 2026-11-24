@@ -85,3 +85,20 @@ and saved simulated module state. It excludes other VINs and includes a
 manifest identifying the export schema and synthetic-data limitation. Choose
 a specific VIN; the combined "All vehicles" view cannot be exported as a
 vehicle backup.
+
+
+### Offline capture replay and session comparison
+
+The Vehicle History workspace lists capture archives for the selected VIN. Load
+a capture to inspect its recorded CAN frames, then use Play/Pause, Stop and the
+speed selector to step through the archived traffic in timestamp order. This is
+a local display replay: it does not connect to an adapter, transmit CAN frames,
+or alter the original archive.
+
+Choose two different archives to compare frame counts by arbitration ID,
+payload-byte frequencies, and matching sensor IDs/units. Sensor comparison
+reports sample counts, minimum, maximum, mean, first and last values, plus the
+difference between session means where both sessions contain the same signal
+and unit. Comparison tables can be exported to CSV. Different capture clocks
+are not assumed to be synchronized, so the comparison does not claim
+point-by-point temporal alignment.
