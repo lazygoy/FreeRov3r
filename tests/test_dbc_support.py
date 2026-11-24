@@ -9,6 +9,16 @@ class FakeSignal:
     def __init__(self, name, unit=""):
         self.name = name
         self.unit = unit
+        self.start = 0 if name == "EngineSpeed" else 16
+        self.length = 16 if name == "EngineSpeed" else 8
+        self.byte_order = "little_endian"
+        self.is_signed = False
+        self.scale = 0.25
+        self.offset = 0
+        self.is_multiplexer = False
+        self.multiplexer_signal = None
+        self.multiplexer_ids = None
+        self.choices = None
         self.minimum = 0
         self.maximum = 6000 if name == "EngineSpeed" else 120
 
@@ -214,3 +224,32 @@ def test_dbc_import_falls_back_to_permissive_mode_for_overlapping_signals(tmp_pa
     assert library.metadata["validation_mode"] == "permissive"
     restored = DBCLibrary(tmp_path / "library")
     assert restored.metadata["validation_mode"] == "permissive"
+
+
+
+def test_dbc_catalog_exposes_signal_layout_and_scaling(tmp_path, monkeypatch):
+    source = tmp_path / "sample.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    library.load_file(source)
+
+    rows = library.catalog()
+    assert len(rows) == 2
+    engine_speed = rows[0]
+    assert engine_speed["frame_id"] == 0x123
+    assert engine_speed["format"] == "STD"
+    assert engine_speed["message"] == "EngineData"
+    assert engine_speed["signal"] == "EngineSpeed"
+    assert engine_speed["start_bit"] == 0
+    assert engine_speed["bit_length"] == 16
+    assert engine_speed["byte_order"] == "little_endian"
+    assert engine_speed["factor"] == 0.25
+    assert engine_speed["unit"] == "rpm"
+    assert engine_speed["minimum"] == 0
+    assert engine_speed["maximum"] == 6000
+
+
+def test_dbc_catalog_is_empty_without_loaded_database(tmp_path):
+    library = DBCLibrary(tmp_path / "library")
+    assert library.catalog() == []
