@@ -181,5 +181,5 @@ def test_dbc_comparison_rejects_non_dbc_paths(tmp_path):
     right = tmp_path / "right.dbc"
     left.write_text("x", encoding="utf-8")
     right.write_text("x", encoding="utf-8")
-    with pytest.raises(ValueError, match="\.dbc"):
+    with pytest.raises(ValueError, match=r"\.dbc"):
         DBCLibrary.compare_files(left, right)
