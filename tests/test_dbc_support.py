@@ -119,7 +119,7 @@ def test_real_cantools_dbc_decode_when_optional_dependency_is_installed(tmp_path
         'NS_ :\n'
         'BS_ :\n'
         'BU_: ECU\n'
-        'BO_ 291 EngineData: 2 ECU\n'
+        'BO_ 291 EngineData: 3 ECU\n'
         ' SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" ECU\n',
         encoding="utf-8",
     )
