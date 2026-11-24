@@ -2773,6 +2773,18 @@ class MainWindow(QMainWindow):
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
         vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
         self.history_store.record(vehicle_vin, event_type, summary, details)
+        if vehicle_vin and vehicle_vin != "UNASSIGNED" and event_type in {
+            "module_scan", "full_module_scan", "dtc_cleared",
+            "module_dtcs_cleared", "all_dtcs_cleared",
+        }:
+            network = self.module_networks.get(vehicle_vin)
+            if network is not None:
+                safe_vin = "".join(
+                    char for char in vehicle_vin if char.isalnum() or char in "-_"
+                )
+                network.save_state(
+                    SETTINGS_DIR / "vehicles" / safe_vin / "simulated_modules.json"
+                )
         if hasattr(self, "history_tab"):
             self.history_tab.refresh()
         if hasattr(self, "solutions_tab"):
@@ -3338,7 +3350,16 @@ class MainWindow(QMainWindow):
                 )
 
         if vin and hasattr(self, "modules_tab"):
-            network = self.module_networks.setdefault(vin, SimulatedModuleNetwork())
+            if vin not in self.module_networks:
+                network = SimulatedModuleNetwork()
+                safe_vin = "".join(
+                    char for char in vin if char.isalnum() or char in "-_"
+                )
+                network.load_state(
+                    SETTINGS_DIR / "vehicles" / safe_vin / "simulated_modules.json"
+                )
+                self.module_networks[vin] = network
+            network = self.module_networks[vin]
             self.modules_tab.set_network(network)
             if hasattr(self, "network_tab"):
                 self.network_tab.set_network(network)
