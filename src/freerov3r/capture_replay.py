@@ -109,6 +109,28 @@ def compare_captures(left, right):
         for arbitration_id, extended in identifiers
     ]
 
+    left_payloads = Counter(
+        (f["arbitration_id"], f["extended"], f["data"].upper()) for f in left_frames
+    )
+    right_payloads = Counter(
+        (f["arbitration_id"], f["extended"], f["data"].upper()) for f in right_frames
+    )
+    payload_keys = sorted(set(left_payloads) | set(right_payloads))
+    payloads = [
+        {
+            "arbitration_id": arbitration_id,
+            "extended": extended,
+            "data": payload,
+            "left_count": left_payloads[(arbitration_id, extended, payload)],
+            "right_count": right_payloads[(arbitration_id, extended, payload)],
+            "delta": (
+                right_payloads[(arbitration_id, extended, payload)]
+                - left_payloads[(arbitration_id, extended, payload)]
+            ),
+        }
+        for arbitration_id, extended, payload in payload_keys
+    ]
+
     left_sensors = _sensor_stats(left["sensor_samples"])
     right_sensors = _sensor_stats(right["sensor_samples"])
     sensor_keys = sorted(set(left_sensors) | set(right_sensors))
@@ -127,5 +149,6 @@ def compare_captures(left, right):
         "left_duration": left.get("duration_seconds", 0.0),
         "right_duration": right.get("duration_seconds", 0.0),
         "frame_ids": frame_ids,
+        "payloads": payloads,
         "sensors": sensors,
     }
