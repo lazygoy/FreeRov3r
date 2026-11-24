@@ -15,6 +15,7 @@
  */
 #include <Arduino.h>
 #include "driver/twai.h"
+#include "esp_timer.h"
 
 static constexpr gpio_num_t CAN_TX_PIN = GPIO_NUM_5;
 static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_4;
@@ -35,7 +36,7 @@ static const twai_timing_config_t timing = TWAI_TIMING_CONFIG_1MBITS();
 #error "Unsupported FREEROV3R_CAN_BITRATE. Use 125000, 250000, 500000, or 1000000."
 #endif
 
-static void printFrame(const twai_message_t &msg) {
+static void printFrame(const twai_message_t &msg, int64_t deviceTimestampUs) {
   // Explicit S/E flag preserves extended-frame information even when the
   // numeric arbitration ID happens to fit inside the 11-bit range.
   Serial.printf("%c,%08lX,%u,", msg.extd ? 'E' : 'S',
@@ -43,7 +44,7 @@ static void printFrame(const twai_message_t &msg) {
   for (uint8_t i = 0; i < msg.data_length_code; ++i) {
     Serial.printf("%02X", msg.data[i]);
   }
-  Serial.write('\n');
+  Serial.printf(",%llu\n", (unsigned long long)deviceTimestampUs);
 }
 
 void setup() {
@@ -71,19 +72,24 @@ void setup() {
     while (true) delay(1000);
   }
 
-  Serial.println("#FREEROV3R_CAN_RX,1");
+  Serial.println("#FREEROV3R_CAN_RX,2");
+  Serial.println("#PROTOCOL,2");
   Serial.println("#MODE,LISTEN_ONLY");
   Serial.printf("#BITRATE,%u\n", (unsigned)FREEROV3R_CAN_BITRATE);
-  Serial.println("#FORMAT,S-or-E,ID,DLC,HEXDATA");
+  Serial.println("#FORMAT,S-or-E,ID,DLC,HEXDATA,DEVICE_TIME_US");
 }
 
 void loop() {
   twai_message_t msg;
   if (twai_receive(&msg, pdMS_TO_TICKS(20)) == ESP_OK) {
+    // Sample the ESP32-local monotonic clock immediately after TWAI delivery.
+    // This clock is relative to this board's boot and is not synchronized
+    // with another ESP32 or the host PC.
+    const int64_t deviceTimestampUs = esp_timer_get_time();
     // Remote frames have no application payload and are not part of the
     // current Classical-CAN data-frame capture format.
     if (!msg.rtr) {
-      printFrame(msg);
+      printFrame(msg, deviceTimestampUs);
     }
   }
 
