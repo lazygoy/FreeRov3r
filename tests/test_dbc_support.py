@@ -156,3 +156,30 @@ def test_real_cantools_compares_signal_layout_and_scaling(tmp_path):
     assert any(item["kind"] == "signal_changed" for item in changes)
     assert any(item["kind"] == "signal_added" for item in changes)
     assert report["identical_shared_definitions"] is False
+
+
+
+def test_dbc_import_persists_last_selection_and_provenance(tmp_path, monkeypatch):
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    source = tmp_path / "external.dbc"
+    source.write_text("test", encoding="utf-8")
+    library_dir = tmp_path / "library"
+    first = DBCLibrary(library_dir)
+    imported = first.import_file(source)
+    assert first.metadata["verification_status"] == "unverified"
+    assert first.metadata["source_file"] == "external.dbc"
+    assert len(first.metadata["sha256"]) == 64
+
+    restored = DBCLibrary(library_dir)
+    assert restored.path == imported
+    assert restored.message_count == 1
+    assert restored.metadata["sha256"] == first.metadata["sha256"]
+
+
+def test_dbc_comparison_rejects_non_dbc_paths(tmp_path):
+    left = tmp_path / "left.txt"
+    right = tmp_path / "right.dbc"
+    left.write_text("x", encoding="utf-8")
+    right.write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="\.dbc"):
+        DBCLibrary.compare_files(left, right)
