@@ -61,13 +61,27 @@ class DBCLibrary:
             ) from exc
         return cantools
 
+    @classmethod
+    def _load_database(cls, path):
+        """Prefer strict validation, then permit overlap-tolerant DBCs with a warning flag."""
+        cantools = cls._cantools()
+        try:
+            return cantools.database.load_file(str(path), strict=True), "strict"
+        except Exception as strict_error:
+            try:
+                database = cantools.database.load_file(str(path), strict=False)
+            except Exception:
+                raise strict_error
+            if not database.messages:
+                raise strict_error
+            return database, "permissive"
+
     def import_file(self, source_path):
         """Validate a DBC with cantools, then copy it into the local library."""
         source = Path(source_path)
         if not source.is_file() or source.suffix.lower() != ".dbc":
             raise ValueError("Select an existing .dbc file.")
-        cantools = self._cantools()
-        database = cantools.database.load_file(str(source), strict=True)
+        database, validation_mode = self._load_database(source)
         if not database.messages:
             raise ValueError("The DBC contains no CAN messages.")
 
@@ -88,6 +102,7 @@ class DBCLibrary:
             "source_origin": "Not recorded",
             "vehicle_applicability": "Unverified",
             "verification_status": "unverified",
+            "validation_mode": validation_mode,
             "imported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         metadata_path = self.metadata_dir / f"{destination.name}.json"
@@ -100,7 +115,7 @@ class DBCLibrary:
         source = Path(path)
         if not source.is_file() or source.suffix.lower() != ".dbc":
             raise ValueError("Select an existing .dbc file.")
-        database = self._cantools().database.load_file(str(source), strict=True)
+        database, validation_mode = self._load_database(source)
         if not database.messages:
             raise ValueError("The DBC contains no CAN messages.")
         index = {}
@@ -127,8 +142,10 @@ class DBCLibrary:
                 "source_origin": "Not recorded",
                 "vehicle_applicability": "Unverified",
                 "verification_status": "unverified",
+                "validation_mode": validation_mode,
                 "imported_at": None,
             }
+        self.metadata["validation_mode"] = validation_mode
         self.active_state_path.write_text(
             json.dumps({"path": str(source.resolve())}, indent=2), encoding="utf-8"
         )
@@ -162,9 +179,8 @@ class DBCLibrary:
         for path in (left_path, right_path):
             if not path.is_file() or path.suffix.lower() != ".dbc":
                 raise ValueError(f"Select an existing .dbc file: {path}")
-        cantools = cls._cantools()
-        left_db = cantools.database.load_file(str(left_path), strict=True)
-        right_db = cantools.database.load_file(str(right_path), strict=True)
+        left_db, left_validation = cls._load_database(left_path)
+        right_db, right_validation = cls._load_database(right_path)
 
         def index_messages(database):
             indexed = {}
@@ -194,6 +210,8 @@ class DBCLibrary:
         report = {
             "left": left_path.name,
             "right": right_path.name,
+            "left_validation_mode": left_validation,
+            "right_validation_mode": right_validation,
             "left_message_count": len(left_messages),
             "right_message_count": len(right_messages),
             "shared_message_count": len(shared),
