@@ -210,6 +210,8 @@ class Receiver(QThread):
                 if frame is not None:
                     self.frame_received.emit(frame)
         except Exception as exc:
+            if hasattr(self.adapter, "last_error"):
+                self.adapter.last_error = str(exc)
             self.status.emit(f"Adapter error: {exc}")
         finally:
             try:
@@ -2427,6 +2429,8 @@ class MainWindow(QMainWindow):
         self.sensor_capture = SensorCapture()
         self.history_store = VehicleHistoryStore(SETTINGS_DIR / "vehicle_history.json")
         self.receiver = None
+        self.active_adapter = None
+        self._last_receiver_diagnostics = {}
         self.capture_started_at = None
         self.capture_start_frames = 0
         self.capture_start_sample_index = 0
@@ -3423,6 +3427,8 @@ class MainWindow(QMainWindow):
             self.capture_started_at = None
             self.capture_vin = None
             self.receiver = None
+            self.active_adapter = None
+            self.research_tab.set_receiver_diagnostics(self._last_receiver_diagnostics)
             self.connect_btn.setText("Start listening")
             self.status.setText("Disconnected")
             self._refresh_workspace_header()
@@ -3454,6 +3460,9 @@ class MainWindow(QMainWindow):
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
         self.active_interface = interface
+        self.active_adapter = adapter
+        self._last_receiver_diagnostics = {}
+        self.research_tab.set_receiver_diagnostics({})
         self.capture_vin = self.settings.get("current_vin")
         self.research_tab.set_context(self.capture_vin, interface)
         self.capture_started_at = time.time()
@@ -3526,7 +3535,20 @@ class MainWindow(QMainWindow):
                 self.graph_tab.refresh_sensor_list()
             self.sensor_log.appendPlainText(f"{name}: {value:.2f} {unit} [{sensor_id}]")
 
+    def _update_receiver_health(self):
+        """Publish live ESP32 adapter diagnostics to the Research workspace."""
+        adapter = self.active_adapter
+        diagnostics = getattr(adapter, "diagnostics", None) if adapter is not None else None
+        if isinstance(diagnostics, dict):
+            self._last_receiver_diagnostics = diagnostics
+            self.research_tab.set_receiver_diagnostics(diagnostics)
+        elif adapter is None:
+            self.research_tab.set_receiver_diagnostics(self._last_receiver_diagnostics)
+        else:
+            self.research_tab.set_receiver_diagnostics({})
+
     def _update_rate(self):
+        self._update_receiver_health()
         now = time.monotonic()
         elapsed = now - self.last_rate_time
         if elapsed >= 0.5:
