@@ -61,3 +61,19 @@ def test_invalid_or_unknown_state_keeps_safe_seeded_defaults(tmp_path):
     path.write_text('{"schema_version": 99, "modules": []}', encoding="utf-8")
     assert not network.load_state(path)
     assert {dtc.code for dtc in network.get_module("ECM").dtcs} == {"P0420", "P0113"}
+
+
+
+def test_invalid_state_does_not_partially_modify_network(tmp_path):
+    path = tmp_path / "partial.json"
+    path.write_text(
+        '{"schema_version": 1, "modules": ['
+        '{"code": "ECM", "dtcs": []},'
+        '{"code": "TCM", "dtcs": [{"description": "missing code"}]}'
+        ']}',
+        encoding="utf-8",
+    )
+    network = SimulatedModuleNetwork()
+    assert not network.load_state(path)
+    assert {dtc.code for dtc in network.get_module("ECM").dtcs} == {"P0420", "P0113"}
+    assert {dtc.code for dtc in network.get_module("TCM").dtcs} == {"P0705"}
