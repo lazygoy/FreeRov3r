@@ -910,6 +910,10 @@ class ResearchTab(QWidget):
         self.load_dbc_button.setToolTip("Import a local DBC for passive CAN signal decoding. No frames are transmitted.")
         self.load_dbc_button.clicked.connect(self.load_dbc)
         dbc_controls.addWidget(self.load_dbc_button)
+        self.dbc_evidence_button = QPushButton("DBC Evidence")
+        self.dbc_evidence_button.setToolTip("Record the source, target vehicle, physical bus and evidence grade for the loaded DBC.")
+        self.dbc_evidence_button.clicked.connect(self.edit_dbc_evidence)
+        dbc_controls.addWidget(self.dbc_evidence_button)
         self.inspect_dbc_button = QPushButton("Inspect DBC")
         self.inspect_dbc_button.clicked.connect(self.inspect_dbc)
         dbc_controls.addWidget(self.inspect_dbc_button)
@@ -1221,6 +1225,89 @@ class ResearchTab(QWidget):
             "| Unverified until matched to this vehicle."
         )
         self.refresh_table()
+
+    def edit_dbc_evidence(self):
+        if self.dbc_library.database is None:
+            QMessageBox.information(self, "DBC evidence", "Load a DBC definition first.")
+            return
+        metadata = self.dbc_library.metadata
+        dialog = QDialog(self)
+        dialog.setWindowTitle("DBC source and vehicle evidence")
+        dialog.resize(680, 520)
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        source = QLineEdit(metadata.get("source_origin", ""))
+        source.setPlaceholderText("Source URL, repository path or documentation reference")
+        vehicle = QLineEdit(metadata.get("vehicle_applicability", ""))
+        vehicle.setPlaceholderText("Year, model, engine, market and generation")
+        bus = QLineEdit(metadata.get("bus_name", ""))
+        bus.setPlaceholderText("Physical network / bus, if known")
+        grade = QComboBox()
+        for value, label in (
+            ("A", "A · Captured and independently checked"),
+            ("B", "B · Exact vehicle source, capture-consistent"),
+            ("C", "C · Related platform or incomplete source"),
+            ("D", "D · Generic / unknown provenance"),
+        ):
+            grade.addItem(label, value)
+        grade.setCurrentIndex(max(0, grade.findData(metadata.get("evidence_grade", "D"))))
+        status = QComboBox()
+        for value, label in (
+            ("unverified", "Unverified"),
+            ("provisional", "Provisional candidate"),
+            ("verified", "Verified"),
+        ):
+            status.addItem(label, value)
+        status.setCurrentIndex(max(0, status.findData(metadata.get("verification_status", "unverified"))))
+        notes = QPlainTextEdit()
+        notes.setPlainText(metadata.get("verification_notes", ""))
+        notes.setPlaceholderText(
+            "Record capture conditions, known physical values, controlled state changes "
+            "and the independent cross-check used."
+        )
+        form.addRow("Source reference", source)
+        form.addRow("Vehicle applicability", vehicle)
+        form.addRow("Physical bus / network", bus)
+        form.addRow("Evidence grade", grade)
+        form.addRow("Verification status", status)
+        form.addRow("Evidence / cross-check notes", notes)
+        layout.addLayout(form)
+        guidance = QLabel(
+            "Verified is restricted to grade A evidence with a source, exact vehicle, "
+            "physical bus and documented known-value cross-check."
+        )
+        guidance.setWordWrap(True)
+        layout.addWidget(guidance)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(dialog.reject)
+        save = QPushButton("Save evidence")
+        save.clicked.connect(dialog.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        layout.addLayout(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        try:
+            metadata = self.dbc_library.update_metadata(
+                source_origin=source.text(),
+                vehicle_applicability=vehicle.text(),
+                bus_name=bus.text(),
+                evidence_grade=grade.currentData(),
+                verification_status=status.currentData(),
+                verification_notes=notes.toPlainText(),
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "DBC evidence not saved", str(exc))
+            return
+        self.dbc_status.setText(
+            f"DBC: {self.dbc_library.path.name} | {self.dbc_library.message_count} messages | "
+            f"{self.dbc_library.signal_count} signals | Grade {metadata['evidence_grade']} | "
+            f"Status: {metadata['verification_status']} | "
+            f"Vehicle: {metadata['vehicle_applicability']}"
+        )
+        self._update_summary()
 
     def inspect_dbc(self):
         if self.dbc_library.database is None:
@@ -2272,7 +2359,11 @@ class ResearchTab(QWidget):
                 f"- Messages / signals: {self.dbc_library.message_count} / {self.dbc_library.signal_count}",
                 f"- Source file: {self.dbc_library.metadata.get('source_file', 'unknown')}",
                 f"- Source origin: {self.dbc_library.metadata.get('source_origin', 'not recorded')}",
+                f"- Vehicle applicability: {self.dbc_library.metadata.get('vehicle_applicability', 'unverified')}",
+                f"- Physical bus: {self.dbc_library.metadata.get('bus_name', 'not recorded')}",
+                f"- Evidence grade: {self.dbc_library.metadata.get('evidence_grade', 'unknown')}",
                 f"- Verification: {self.dbc_library.metadata.get('verification_status', 'unverified')}",
+                f"- Evidence notes: {self.dbc_library.metadata.get('verification_notes', 'none')}",
                 f"- SHA-256: {self.dbc_library.metadata.get('sha256', 'unknown')}",
                 f"- Matched / unmatched frames: {coverage['matched_frames']} / {coverage['unmatched_frames']}",
                 "- Provenance: user-imported DBC; applicability to the selected vehicle is not assumed.",
