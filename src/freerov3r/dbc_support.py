@@ -24,6 +24,7 @@ class DBCDecodeResult:
     message_name: str
     frame_id: int
     units: dict = field(default_factory=dict)
+    limits: dict = field(default_factory=dict)
 
 
 class DBCLibrary:
@@ -310,16 +311,29 @@ class DBCLibrary:
             message_name=message.name,
             frame_id=int(message.frame_id),
             units={signal.name: str(signal.unit or "") for signal in message.signals},
+            limits={
+                signal.name: {
+                    "minimum": signal.minimum,
+                    "maximum": signal.maximum,
+                }
+                for signal in message.signals
+            },
         )
 
     def decode_coverage(self, records):
-        """Summarize observed frame coverage against the currently loaded DBC."""
+        """Audit observed capture frames and decoded signals against a loaded DBC."""
         if self.database is None:
-            return {"matched_frames": 0, "unmatched_frames": len(records), "signals": {}}
+            return {
+                "matched_frames": 0,
+                "unmatched_frames": len(records),
+                "signals": {},
+                "messages": {},
+            }
         matched = 0
         unmatched = 0
         values = {}
         signal_units = {}
+        message_values = {}
         for record in records:
             try:
                 payload = bytes.fromhex(record.get("data", ""))
@@ -334,20 +348,75 @@ class DBCLibrary:
                 unmatched += 1
                 continue
             matched += 1
+            message_key = (
+                f"0x{result.frame_id:X} "
+                f"{'EXT' if record.get('extended', False) else 'STD'} "
+                f"{result.message_name}"
+            )
+            per_message = message_values.setdefault(message_key, {})
             for name, value in result.decoded.items():
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    values.setdefault(name, []).append(float(value))
-                    signal_units.setdefault(name, result.units.get(name, ""))
-        stats = {
-            name: {
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    continue
+                numeric_value = float(value)
+                values.setdefault(name, []).append(numeric_value)
+                signal_units.setdefault(name, result.units.get(name, ""))
+                signal_stats = per_message.setdefault(name, {
+                    "values": [],
+                    "unit": result.units.get(name, ""),
+                    "minimum": result.limits.get(name, {}).get("minimum"),
+                    "maximum": result.limits.get(name, {}).get("maximum"),
+                    "out_of_range_count": 0,
+                })
+                signal_stats["values"].append(numeric_value)
+                lower = signal_stats["minimum"]
+                upper = signal_stats["maximum"]
+                if (
+                    (lower is not None and numeric_value < lower)
+                    or (upper is not None and numeric_value > upper)
+                ):
+                    signal_stats["out_of_range_count"] += 1
+
+        def summarize(samples, unit="", minimum=None, maximum=None, out_of_range_count=0):
+            return {
                 "count": len(samples),
                 "min": min(samples),
                 "max": max(samples),
                 "mean": sum(samples) / len(samples),
                 "first": samples[0],
                 "last": samples[-1],
-                "unit": signal_units.get(name, ""),
+                "unit": unit,
+                "declared_minimum": minimum,
+                "declared_maximum": maximum,
+                "out_of_range_count": out_of_range_count,
+                "distinct_values": len(set(samples)),
             }
+
+        stats = {
+            name: summarize(samples, unit=signal_units.get(name, ""))
             for name, samples in values.items() if samples
         }
-        return {"matched_frames": matched, "unmatched_frames": unmatched, "signals": stats}
+        messages = {
+            message_name: {
+                "frame_count": max(
+                    (len(signal["values"]) for signal in signal_map.values()),
+                    default=0,
+                ),
+                "signals": {
+                    name: summarize(
+                        signal["values"],
+                        unit=signal["unit"],
+                        minimum=signal["minimum"],
+                        maximum=signal["maximum"],
+                        out_of_range_count=signal["out_of_range_count"],
+                    )
+                    for name, signal in signal_map.items()
+                },
+            }
+            for message_name, signal_map in message_values.items()
+        }
+        return {
+            "matched_frames": matched,
+            "unmatched_frames": unmatched,
+            "signals": stats,
+            "messages": messages,
+        }
