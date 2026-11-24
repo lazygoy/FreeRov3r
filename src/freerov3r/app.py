@@ -32,6 +32,7 @@ from .diagnostics.vehicle_identification import identify_vehicle, validate_vin, 
 from .vehicle_profiles.registry import VehicleProfileRegistry
 from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
+from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter
 from .diagnostics.obd2 import OBD_PIDS, decode_mode01
 from .session import CaptureSession
@@ -296,7 +297,8 @@ class VehicleSetupWizard(QDialog):
         self._interfaces = [
             ("virtual", "Virtual CAN (no hardware)", "freerov3r"),
             ("simulator", "Simulated vehicle (demo)", "L319-DEMO"),
-            ("esp32", "Recommended ESP32 CAN interface", "COM3"),
+            ("esp32", "ESP32 single CAN channel", "COM3"),
+            ("esp32_dual", "ESP32 dual CAN channels (two boards)", "COM3,COM4"),
             ("elm327", "ELM327 raw CAN monitor", ""),
             ("elm327_obd", "ELM327 active OBD-II polling", ""),
             ("socketcan", "SocketCAN", "can0"),
@@ -318,7 +320,7 @@ class VehicleSetupWizard(QDialog):
         detect_row.addStretch()
         connection_layout.addLayout(detect_row)
         self.interface_status = QLabel(
-            "ESP32 is the recommended raw-CAN interface, but its current firmware is receive-only. "
+            "ESP32 interfaces are receive-only. Dual mode requires two different COM ports, entered as COMx,COMy (HS-CAN first, MS-CAN second). "
             "Bluetooth/serial ELM327 supports either passive CAN monitoring or read-only Mode 01 polling. "
             "Wi-Fi adapter support is not implemented yet."
         )
@@ -2902,7 +2904,8 @@ class MainWindow(QMainWindow):
         self.backend = QComboBox()
         self.backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
-        self.backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
+        self.backend.addItem("ESP32 serial adapter (single CAN)", ("esp32", "COM3"))
+        self.backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
         self.backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
         self.backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.backend.addItem("SocketCAN", ("socketcan", "can0"))
@@ -3092,7 +3095,8 @@ class MainWindow(QMainWindow):
         self.settings_backend = QComboBox()
         self.settings_backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
         self.settings_backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
-        self.settings_backend.addItem("ESP32 serial adapter", ("esp32", "COM3"))
+        self.settings_backend.addItem("ESP32 serial adapter (single CAN)", ("esp32", "COM3"))
+        self.settings_backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
         self.settings_backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
         self.settings_backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.settings_backend.addItem("SocketCAN", ("socketcan", "can0"))
