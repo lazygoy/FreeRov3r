@@ -3393,6 +3393,9 @@ class MainWindow(QMainWindow):
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
             self.receiver.stop()
+            diagnostics = getattr(self.active_adapter, "diagnostics", None)
+            if isinstance(diagnostics, dict):
+                self._last_receiver_diagnostics = diagnostics
             elapsed = max(0.0, time.time() - (self.capture_started_at or time.time()))
             capture_samples = self.sensor_capture.samples[self.capture_start_sample_index:]
             capture_frames = self.session.frames[self.capture_start_frame_index:]
