@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -254,7 +255,7 @@ def test_archive_registry_preserves_each_file_identity(tmp_path):
     # matching manifests, then obtain the registry input from the real verifier.
     second_relative = "original/tcm.bin"
     second_bytes = second_source.read_bytes()
-    second_hash = __import__("hashlib").sha256(second_bytes).hexdigest()
+    second_hash = hashlib.sha256(second_bytes).hexdigest()
     for root in (internal, removable):
         archive = root / "FreeRov3r/recovery"
         second_target = archive / second_relative
