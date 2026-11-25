@@ -75,20 +75,87 @@ def test_same_or_nested_destinations_are_rejected(tmp_path):
         create_dual_backup(source, root, root / "usb")
 
 
-def test_manifest_path_traversal_is_rejected(tmp_path):
+def test_manifest_path_traversal_is_rejected_even_when_manifests_match(tmp_path):
     source = tmp_path / "stock.bin"
     source.write_bytes(b"firmware")
     internal = tmp_path / "internal"
     removable = tmp_path / "usb"
     create_dual_backup(source, internal, removable)
 
-    manifest_path = internal / "FreeRov3r/recovery" / MANIFEST_NAME
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["files"][0]["path"] = "../../outside.bin"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    for root in (internal, removable):
+        manifest_path = root / "FreeRov3r/recovery" / MANIFEST_NAME
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"][0]["path"] = "../../outside.bin"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    with pytest.raises(ArchiveError, match="manifests do not match"):
+    with pytest.raises(ArchiveError, match="relative"):
         verify_dual_backup(
             internal / "FreeRov3r/recovery",
             removable / "FreeRov3r/recovery",
+        )
+
+
+def test_manifest_rejects_non_hex_sha256(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    for root in (internal, removable):
+        manifest_path = root / "FreeRov3r/recovery" / MANIFEST_NAME
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"][0]["sha256"] = "z" * 64
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ArchiveError, match="SHA-256"):
+        verify_dual_backup(
+            internal / "FreeRov3r/recovery",
+            removable / "FreeRov3r/recovery",
+        )
+
+
+def test_archive_rejects_symlinked_file_parent(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    archive = internal / "FreeRov3r/recovery"
+    original = archive / "original"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    original.rename(archive / "original_saved")
+    original.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ArchiveError, match="Symbolic links"):
+        verify_dual_backup(
+            archive,
+            removable / "FreeRov3r/recovery",
+        )
+
+
+def test_windows_absolute_and_backslash_paths_are_rejected(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    for unsafe in (r"C:\outside.bin", r"..\\outside.bin"):
+        with pytest.raises(ArchiveError, match="relative"):
+            create_dual_backup(
+                source,
+                tmp_path / "internal",
+                tmp_path / "usb",
+                relative_file_path=unsafe,
+            )
+
+
+def test_non_json_metadata_is_reported_as_archive_error(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    with pytest.raises(ArchiveError, match="JSON-serializable"):
+        create_dual_backup(
+            source,
+            tmp_path / "internal",
+            tmp_path / "usb",
+            metadata={"not_json": object()},
         )
