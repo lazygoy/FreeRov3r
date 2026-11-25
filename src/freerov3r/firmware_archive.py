@@ -375,6 +375,24 @@ def create_dual_backup_bundle(
         raise ArchiveError(f"Unable to complete dual-location recovery bundle: {exc}") from exc
 
 
+def _unlisted_archive_files(archive: Path, expected_paths: set[str]) -> list[str]:
+    """Find files and symlinked directories not represented in the manifest."""
+    unexpected = []
+    for current, directories, files in os.walk(archive, followlinks=False):
+        current_path = Path(current)
+        for directory in list(directories):
+            candidate = current_path / directory
+            if candidate.is_symlink():
+                unexpected.append(candidate.relative_to(archive).as_posix())
+                directories.remove(directory)
+        for filename in files:
+            candidate = current_path / filename
+            relative = candidate.relative_to(archive).as_posix()
+            if candidate.is_symlink() or relative not in expected_paths:
+                unexpected.append(relative)
+    return sorted(unexpected)
+
+
 def verify_dual_backup(
     internal_archive: str | Path,
     removable_archive: str | Path,
@@ -387,6 +405,16 @@ def verify_dual_backup(
     removable_manifest = _read_manifest(removable)
     if internal_manifest != removable_manifest:
         raise ArchiveError("Internal and removable archive manifests do not match.")
+
+    expected_paths = {
+        _safe_relative_path(entry["path"]).as_posix()
+        for entry in internal_manifest["files"]
+    }
+    expected_paths.add(MANIFEST_NAME)
+    unexpected_files = {
+        "internal": _unlisted_archive_files(internal, expected_paths),
+        "removable": _unlisted_archive_files(removable, expected_paths),
+    }
 
     file_results = []
     for entry in internal_manifest["files"]:
@@ -418,9 +446,14 @@ def verify_dual_backup(
         })
 
     return {
-        "verified": bool(file_results) and all(item["verified"] for item in file_results),
+        "verified": (
+            bool(file_results)
+            and all(item["verified"] for item in file_results)
+            and not any(unexpected_files.values())
+        ),
         "internal_archive": str(internal),
         "removable_archive": str(removable),
         "files": file_results,
+        "unexpected_files": unexpected_files,
         "manifest": internal_manifest,
     }
