@@ -140,7 +140,7 @@ def test_marker_signal_summary_markdown_table_uses_real_line_breaks_and_sanitize
 
     table = format_dbc_marker_signal_summary_table([{
         "marker_index": 1,
-        "marker": {"operation": "Idle check\\nsecond line"},
+        "marker": {"operation": "Idle check\nsecond line"},
         "signals": [{
             "channel": "HS-CAN",
             "can_id": 0x123,
@@ -151,6 +151,6 @@ def test_marker_signal_summary_markdown_table_uses_real_line_breaks_and_sanitize
         }],
     }])
 
-    assert "\\n|---:" in table
+    assert "\n|---:" in table
     assert "Idle check second line" in table
-    assert "\\\\n" not in table
+    assert "\\n" not in table
