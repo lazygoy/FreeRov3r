@@ -264,6 +264,45 @@ def build_dbc_signal_series(library, records, markers=None):
     return {"signals": signals, "markers": plotted_markers}
 
 
+def format_dbc_marker_signal_summary_table(marker_results):
+    """Render marker signal summaries as a compact, human-readable Markdown table."""
+    def cell(value):
+        return str(value).replace("|", "\\|").replace("\\n", " ").replace("\\r", " ")
+
+    def number(value):
+        if value is None:
+            return "n/a"
+        try:
+            return f"{float(value):.4f}"
+        except (TypeError, ValueError, OverflowError):
+            return "n/a"
+
+    lines = [
+        "| Marker | Operation | Channel | CAN ID | Message | Signal | Unit | Before n | Before mean | Before min | Before max | After n | After mean | After min | After max | Mean Δ | First after (s) |",
+        "|---:|---|---|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for marker_result in marker_results or []:
+        marker = marker_result.get("marker") or {}
+        marker_index = marker_result.get("marker_index", "")
+        operation = cell(marker.get("operation") or "Unspecified")
+        for signal in marker_result.get("signals", []):
+            can_id = signal.get("can_id")
+            can_id_text = f"0x{int(can_id):X}" if can_id is not None else "n/a"
+            lines.append("| " + " | ".join((
+                cell(marker_index), operation, cell(signal.get("channel") or "unspecified"),
+                can_id_text, cell(signal.get("message") or ""), cell(signal.get("signal") or ""),
+                cell(signal.get("unit") or ""), str(signal.get("before_sample_count", 0)),
+                number(signal.get("before_mean")), number(signal.get("before_min")),
+                number(signal.get("before_max")), str(signal.get("after_sample_count", 0)),
+                number(signal.get("after_mean")), number(signal.get("after_min")),
+                number(signal.get("after_max")), number(signal.get("mean_delta")),
+                number(signal.get("first_after_marker_seconds")),
+            )) + " |")
+    if len(lines) == 2:
+        lines.append("| No decoded numeric signal samples in the selected marker windows. |" + " |" * 16)
+    return "\\n".join(lines)
+
+
 def summarize_dbc_marker_signal_changes(series_data, markers, *, before_seconds=2.0, after_seconds=5.0):
     """Summarize decoded numeric signal changes around each scanner marker.
 
