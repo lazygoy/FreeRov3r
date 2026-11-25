@@ -106,6 +106,25 @@ def _safe_relative_path(value: str | Path) -> Path:
     return relative
 
 
+
+
+def _validate_manifest_paths(paths: list[Path]) -> None:
+    """Reject duplicate, overlapping, and reserved manifest file paths."""
+    seen: set[tuple[str, ...]] = set()
+    reserved = MANIFEST_NAME.casefold()
+    for path in paths:
+        parts = tuple(part.casefold() for part in path.parts)
+        if parts == (reserved,):
+            raise ArchiveError("Recovery file path conflicts with the reserved manifest filename.")
+        if parts in seen:
+            raise ArchiveError(f"Recovery manifest contains a duplicate archive path: {path}")
+        if any(
+            parts[:len(existing)] == existing or existing[:len(parts)] == parts
+            for existing in seen
+        ):
+            raise ArchiveError(f"Recovery manifest contains conflicting archive paths: {path}")
+        seen.add(parts)
+
 def _archive_target(root: Path, relative: Path) -> Path:
     """Return a contained target while rejecting symlinks in every path component."""
     if root.is_symlink():
@@ -137,6 +156,7 @@ def _read_manifest(archive: Path) -> dict[str, Any]:
         or not isinstance(data.get("files"), list)
     ):
         raise ArchiveError(f"Unsupported or malformed archive manifest: {manifest_path}")
+    manifest_paths: list[Path] = []
     for entry in data["files"]:
         if not isinstance(entry, dict):
             raise ArchiveError(f"Malformed file entry in archive manifest: {manifest_path}")
@@ -147,6 +167,8 @@ def _read_manifest(archive: Path) -> dict[str, Any]:
             raise ArchiveError(f"Invalid SHA-256 entry for {relative}")
         if isinstance(size, bool) or not isinstance(size, int) or size < 0:
             raise ArchiveError(f"Invalid file size entry for {relative}")
+        manifest_paths.append(relative)
+    _validate_manifest_paths(manifest_paths)
     return data
 
 
@@ -184,6 +206,7 @@ def create_dual_backup(
 
     subdir = _safe_relative_path(archive_subdir)
     file_relative = _safe_relative_path(relative_file_path or Path("original") / source.name)
+    _validate_manifest_paths([file_relative])
     internal_archive = internal / subdir
     removable_archive = removable / subdir
     internal_target = _archive_target(internal_archive, file_relative)
@@ -275,6 +298,8 @@ def create_dual_backup_bundle(
             item.get("relative_file_path") or Path("original") / source.name
         )
         relative_parts = tuple(part.casefold() for part in relative.parts)
+        if relative_parts == (MANIFEST_NAME.casefold(),):
+            raise ArchiveError("Recovery file path conflicts with the reserved manifest filename.")
         if relative_parts in seen_paths:
             raise ArchiveError(f"Recovery bundle contains a duplicate archive path: {relative}")
         if any(
