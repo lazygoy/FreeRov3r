@@ -54,11 +54,11 @@ except ImportError:
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
+from .asset_loader import load_asset_pixmap
 from .research_tab import ResearchTab
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
-ASSET_DIR = Path(__file__).resolve().parent / "assets"
 
 DEFAULT_SETTINGS = {
     "interface": "virtual",
@@ -2653,7 +2653,7 @@ class MainWindow(QMainWindow):
         # Reuse the exact photographic banner shown by the startup splash.
         self.welcome_banner = ResponsiveBanner()
         self.welcome_banner.set_source_pixmap(
-            QPixmap(str(ASSET_DIR / "brand_banner.jpg"))
+            load_asset_pixmap("brand_banner.svg")
         )
         wlayout.addWidget(self.welcome_banner)
 
@@ -2994,7 +2994,7 @@ class MainWindow(QMainWindow):
             QSizePolicy.Expanding, QSizePolicy.Fixed
         )
 
-        splash_source = QPixmap(str(ASSET_DIR / "brand_banner.jpg"))
+        splash_source = load_asset_pixmap("brand_banner.svg")
         if not splash_source.isNull():
             banner_width = max(1, dialog_width - 64)
             scaled_banner = splash_source.scaled(

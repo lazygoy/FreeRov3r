@@ -2,6 +2,8 @@ name: Windows installer
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     tags: ["v*"]
@@ -42,6 +44,14 @@ jobs:
           --collect-all isotp --collect-all udsoncan --collect-all cantools
           --add-data "src/freerov3r/assets;freerov3r/assets"
           packaging/launcher.py
+
+      - name: Verify bundled artwork
+        run: |
+          $assets = @("brand_badge.svg", "brand_banner.svg", "brand_splash.svg")
+          foreach ($asset in $assets) {
+            $matches = Get-ChildItem -Path "dist/FreeRov3r" -Filter $asset -File -Recurse
+            if (-not $matches) { throw "PyInstaller did not bundle required artwork: $asset" }
+          }
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
