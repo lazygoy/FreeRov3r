@@ -52,15 +52,16 @@ def test_audit_classifies_matches_unknown_ids_lengths_and_invalid_records(tmp_pa
         {"arbitration_id": 0x124, "extended": False, "channel": "HS-CAN", "data": "0102"},
         {"arbitration_id": 0x123, "extended": False, "channel": "HS-CAN", "data": "01"},
         {"arbitration_id": 0x123, "extended": False, "data": "not-hex"},
+        [],
     ])
     assert report["matched_frames"] == 1
     assert report["unmatched_frames"] == 2
-    assert report["invalid_records"] == 1
+    assert report["invalid_records"] == 2
     assert report["coverage_percent"] == 100 / 3
     assert report["unmatched_reasons"] == {
         "no_matching_id_and_format": 1,
         "payload_length_mismatch": 1,
-        "invalid_record": 1,
+        "invalid_record": 2,
     }
     assert report["message_frame_counts"] == {"0x123 STD EngineData": 1}
     assert report["signal_coverage"]["signals_with_numeric_samples"] == 1
