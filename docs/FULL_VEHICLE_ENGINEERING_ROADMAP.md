@@ -112,43 +112,55 @@ Do not infer ECU type, programming support, or calibration compatibility from en
 
 Firmware preservation is a first-class project requirement, not an optional convenience. FreeRov3r must prioritize protecting the original state of every module before firmware editing or programming is enabled.
 
-### Dedicated recovery media
+### Dual-location recovery archive
 
-Before a user can begin an ECU firmware modification workflow, the application should prompt them to connect and designate a removable USB storage device as the vehicle's recovery archive. The application should:
+Before a user can begin an ECU firmware modification workflow, the application should require two independently stored copies of the recovery archive:
 
-- Let the user explicitly select the target device and show its model, capacity, available space, and filesystem.
+1. A user-designated removable USB drive.
+2. A designated internal-drive location on the computer.
+
+The application should treat both as required recovery destinations, not as alternatives. It should display each destination's device/location, capacity or available space, and verification status. If either destination is unavailable, lacks space, is not writable, or fails verification, the application must not mark the backup as protected and must block programming.
+
+For each destination, the application should:
+- Let the user explicitly select the target and show its identity, capacity, available space, and filesystem where applicable.
 - Never silently format, repartition, erase, or repurpose a drive. Any destructive storage operation requires a separate, explicit confirmation and a clear explanation.
-- Check that the device is writable and has adequate free space for the expected firmware, metadata, logs, and recovery assets. Where practical, perform a write/read verification test in a dedicated test folder.
-- Create a predictable archive structure organized by VIN, module identity, hardware/software revision, and acquisition date.
-- Store original firmware reads, calibration files, module configuration/coding, identification records, DTC/baseline reports, operation logs, tool versions, protocol notes, and recovery instructions.
-- Record cryptographic hashes (for example SHA-256), file sizes, acquisition method, source module identity, timestamps, and verification results in a manifest.
-- Verify every archived file after writing by reading it back and recomputing its hash.
-- Recheck archive integrity before using any backup for restoration or recovery.
-- Warn users that removable media can fail, be lost, or be corrupted. Require a second independent copy of critical originals and recovery assets before permitting a high-risk programming operation.
-- Allow a user to export and inspect the manifest and recovery inventory without proprietary application software.
+- Check that the destination is writable and has adequate free space for the expected firmware, metadata, logs, and recovery assets.
+- Perform a write/read verification test in a dedicated test folder where practical, then remove only that test file.
+- Write the archive, close the files, reopen and read them from that destination, and recompute their SHA-256 hashes.
+- Compare the verified hashes and file sizes across the internal and removable copies. Both copies must match the manifest and one another.
+- Recheck both copies before any programming operation, and report missing, unreadable, altered, or mismatched files clearly.
+- Keep originals immutable. Never overwrite an archived original with a modified file.
+
+The application should create a predictable archive structure organized by VIN, module identity, hardware/software revision, and acquisition date. Store original firmware reads, calibration files, module configuration/coding, identification records, DTC/baseline reports, operation logs, tool versions, protocol notes, and recovery instructions. Record hashes, file sizes, acquisition method, source module identity, timestamps, and verification results in an exportable manifest.
+
+A file is not considered backed up merely because a copy operation completed. It is protected only after both destinations have been independently reopened and read successfully, their hashes have been recomputed, and the results match. The application should provide a clear backup report showing the status of each file on each destination.
+
+The removable and internal copies reduce the risk of a single storage-device failure, but they are not a substitute for a genuinely independent second backup where the consequences justify it. The application should warn users that both copies can still be lost through theft, fire, malware, accidental deletion, or correlated hardware failure. Require an additional independent copy of critical originals and recovery assets before high-risk programming where practical.
 
 The USB archive is a designated recovery repository, not proof that recovery is possible. Some modules cannot be fully read through the normal diagnostic interface, and some recovery methods require boot-mode access, bench tools, security credentials, or manufacturer-specific procedures. FreeRov3r must state exactly what was and was not acquired.
 
 ### Mandatory operation gates
 
-**Before editing a firmware/calibration working copy:**
+**Before editing a firmware/calibration working copy offline:**
 1. Identify the exact target module and software/hardware revision.
 2. Preserve an untouched original source file or module read, when obtainable.
-3. Store it in the designated archive and verify its hash.
+3. Store the original in both designated destinations and verify that each copy can be reopened and read, with matching SHA-256 hashes.
 4. Create a separate working copy. Never edit the only original.
 5. Record the source-to-working-copy relationship and all subsequent changes.
 
+Offline analysis and editing of a separate working copy may proceed once the original is safely preserved in both locations. This is distinct from authorizing a write to the vehicle.
+
 **Before writing modified firmware to a vehicle module:**
-1. Confirm the original backup is present, readable, and hash-verified.
-2. Confirm a second independent copy exists.
+1. Confirm that both the internal and removable original backups are present, readable, and hash-verified against the manifest and each other.
+2. Confirm that the additional independent copy required for this risk level exists.
 3. Confirm the exact module/file compatibility and required checksum/signature handling.
 4. Confirm a module-specific recovery method, compatible recovery hardware, required credentials/tools, and recovery instructions.
 5. Confirm that the recovery method is documented and has been validated for the target hardware/software revision. If recovery is unknown or unverified, block the write and explain why.
 6. Confirm stable power, communications, and environmental preconditions.
-7. Require a final explicit user confirmation showing the target module, source and modified file hashes, expected changes, risks, and recovery method.
+7. Re-read and verify both original backup copies immediately before programming.
+8. Require a final explicit user confirmation showing the target module, source and modified file hashes, backup status for both destinations, expected changes, risks, and recovery method.
 
-A user may still perform read-only diagnostics, capture traffic, inspect files, and conduct offline research without recovery media. The hard gate applies to firmware modification workflows and especially to writing/programming a module. No bypass should silently waive missing backups or an unknown recovery path.
-
+A user may still perform read-only diagnostics, capture traffic, inspect files, and conduct offline research without recovery media. The hard gate applies to firmware modification workflows and especially to writing/programming a module. No bypass should silently waive missing, unreadable, mismatched, or unverified backups or an unknown recovery path.
 
 ## Current implementation boundary
 
