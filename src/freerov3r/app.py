@@ -735,6 +735,19 @@ class SensorGraphTab(QWidget):
             self.auto_scale.toggled.connect(self.update_chart)
             right.addWidget(self.auto_scale)
 
+            point_row = QHBoxLayout()
+            point_row.addWidget(QLabel("Points per signal:"))
+            self.plot_point_limit = QSpinBox()
+            self.plot_point_limit.setRange(100, 10000)
+            self.plot_point_limit.setSingleStep(100)
+            self.plot_point_limit.setValue(2000)
+            self.plot_point_limit.setToolTip(
+                "Maximum recent samples drawn for each signal. The underlying capture is retained separately."
+            )
+            self.plot_point_limit.valueChanged.connect(self.update_chart)
+            point_row.addWidget(self.plot_point_limit)
+            right.addLayout(point_row)
+
             scale_row = QHBoxLayout()
             scale_row.addWidget(QLabel("Y min:"))
             self.ymin = QLineEdit("-10")
@@ -883,6 +896,7 @@ class SensorGraphTab(QWidget):
 
         for sensor_id, samples in grouped.items():
             samples.sort(key=lambda sample: sample.timestamp)
+            samples = samples[-self.plot_point_limit.value():]
             raw_values = [sample.value for sample in samples]
             if independent:
                 plotted_values, low, high = normalize_values(raw_values)
@@ -3604,7 +3618,13 @@ class MainWindow(QMainWindow):
             if isinstance(diagnostics, dict):
                 self._last_receiver_diagnostics = diagnostics
             elapsed = max(0.0, time.time() - (self.capture_started_at or time.time()))
-            capture_samples = self.sensor_capture.samples[self.capture_start_sample_index:]
+            capture_samples = self.sensor_capture.samples_since(self.capture_start_sample_index)
+            capture_samples_dropped = max(
+                0,
+                self.sensor_capture.total_samples_added
+                - self.capture_start_sample_index
+                - len(capture_samples),
+            )
             capture_frames = self.session.frames[self.capture_start_frame_index:]
             archive_path = self.history_store.archive_capture(
                 self.capture_vin,
@@ -3612,6 +3632,7 @@ class MainWindow(QMainWindow):
                     "interface": self.active_interface,
                     "started_at": self.capture_started_at,
                     "duration_seconds": round(elapsed, 2),
+                    "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
                     "frames": [
                         {"timestamp": frame.timestamp, "arbitration_id": frame.arbitration_id,
                          "extended": frame.is_extended_id, "data": frame.data.hex(),
@@ -3630,7 +3651,9 @@ class MainWindow(QMainWindow):
             self.record_vehicle_event(
                 "capture_completed", "CAN capture stopped",
                 {"interface": self.active_interface, "frames": len(capture_frames),
-                 "sensor_samples": len(capture_samples), "duration_seconds": round(elapsed, 2),
+                 "sensor_samples": len(capture_samples),
+                 "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
+                 "duration_seconds": round(elapsed, 2),
                  "archive_file": str(archive_path)},
                 vin=self.capture_vin or "UNASSIGNED",
             )
@@ -3686,7 +3709,7 @@ class MainWindow(QMainWindow):
         self.research_tab.set_context(self.capture_vin, interface)
         self.capture_started_at = time.time()
         self.capture_start_frames = 0
-        self.capture_start_sample_index = len(self.sensor_capture.samples)
+        self.capture_start_sample_index = self.sensor_capture.total_samples_added
         self.capture_start_frame_index = len(self.session.frames)
         self.record_vehicle_event(
             "capture_started", "CAN capture started",

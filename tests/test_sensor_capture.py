@@ -34,3 +34,26 @@ def test_jsonl_and_markdown_exports_use_real_line_breaks(tmp_path):
     report = report_path.read_text(encoding="utf-8")
     assert "\\n" not in report
     assert "# FreeRov3r sensor capture analysis\n\n" in report
+
+
+
+def test_sensor_capture_bounds_memory_and_tracks_absolute_sample_indexes():
+    capture = SensorCapture(max_samples=3)
+    for index in range(5):
+        capture.add(SensorSample(
+            float(index), "rpm", "Engine speed", 800 + index,
+            "rpm", "ecu",
+        ))
+
+    assert len(capture.samples) == 3
+    assert capture.total_samples_added == 5
+    assert capture.dropped_samples == 2
+    assert [sample.value for sample in capture.samples_since(3)] == [803, 804]
+    assert [sample.value for sample in capture.samples_since(0)] == [802, 803, 804]
+
+
+def test_sensor_capture_rejects_zero_capacity():
+    import pytest
+
+    with pytest.raises(ValueError, match="max_samples"):
+        SensorCapture(max_samples=0)
