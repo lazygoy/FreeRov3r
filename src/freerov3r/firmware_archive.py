@@ -8,15 +8,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 
 MANIFEST_NAME = "freerov3r-recovery-manifest.json"
 CHUNK_SIZE = 1024 * 1024
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ArchiveError(Exception):
@@ -33,17 +35,20 @@ def sha256_file(path: str | Path) -> str:
 
 
 def _distinct_destinations(internal_root: Path, removable_root: Path) -> None:
-    internal = internal_root.resolve()
-    removable = removable_root.resolve()
+    try:
+        internal = internal_root.resolve()
+        removable = removable_root.resolve()
+    except OSError as exc:
+        raise ArchiveError(f"Cannot resolve archive destinations: {exc}") from exc
     if internal == removable or internal in removable.parents or removable in internal.parents:
         raise ArchiveError("Internal and removable archive locations must be separate, non-nested destinations.")
 
 
 def _test_writable(root: Path) -> None:
-    root.mkdir(parents=True, exist_ok=True)
-    if not root.is_dir():
-        raise ArchiveError(f"Archive destination is not a directory: {root}")
     try:
+        root.mkdir(parents=True, exist_ok=True)
+        if not root.is_dir():
+            raise ArchiveError(f"Archive destination is not a directory: {root}")
         with tempfile.NamedTemporaryFile(prefix=".freerov3r-write-test-", dir=root, delete=True) as handle:
             handle.write(b"FreeRov3r archive write/read test")
             handle.flush()
@@ -56,20 +61,64 @@ def _test_writable(root: Path) -> None:
 
 
 def _safe_relative_path(value: str | Path) -> Path:
-    relative = Path(value)
-    if relative.is_absolute() or not relative.parts or any(part in ("..", "") for part in relative.parts):
+    raw = str(value)
+    windows_path = PureWindowsPath(raw)
+    relative = Path(raw)
+    if (
+        not raw
+        or "\x00" in raw
+        or "\\" in raw
+        or relative.is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or not relative.parts
+        or any(part in ("..", "") for part in relative.parts)
+    ):
         raise ArchiveError("Archive file paths must be relative and cannot escape the archive directory.")
     return relative
 
 
+def _archive_target(root: Path, relative: Path) -> Path:
+    """Return a contained target while rejecting symlinks in every path component."""
+    if root.is_symlink():
+        raise ArchiveError(f"Archive directory cannot be a symbolic link: {root}")
+    try:
+        resolved_root = root.resolve()
+        candidate = root / relative
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise ArchiveError(f"Symbolic links are not allowed in archive paths: {current}")
+        if not candidate.resolve().is_relative_to(resolved_root):
+            raise ArchiveError("Archive file path resolves outside the archive directory.")
+    except OSError as exc:
+        raise ArchiveError(f"Cannot safely resolve archive path: {exc}") from exc
+    return candidate
+
+
 def _read_manifest(archive: Path) -> dict[str, Any]:
-    manifest_path = archive / MANIFEST_NAME
+    manifest_path = _archive_target(archive, Path(MANIFEST_NAME))
     try:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ArchiveError(f"Cannot read archive manifest at {manifest_path}: {exc}") from exc
-    if data.get("format") != "freerov3r-recovery-archive-v1" or not isinstance(data.get("files"), list):
+    if (
+        not isinstance(data, dict)
+        or data.get("format") != "freerov3r-recovery-archive-v1"
+        or not isinstance(data.get("files"), list)
+    ):
         raise ArchiveError(f"Unsupported or malformed archive manifest: {manifest_path}")
+    for entry in data["files"]:
+        if not isinstance(entry, dict):
+            raise ArchiveError(f"Malformed file entry in archive manifest: {manifest_path}")
+        relative = _safe_relative_path(entry.get("path", ""))
+        digest = entry.get("sha256")
+        size = entry.get("size_bytes")
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+            raise ArchiveError(f"Invalid SHA-256 entry for {relative}")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise ArchiveError(f"Invalid file size entry for {relative}")
     return data
 
 
@@ -107,10 +156,10 @@ def create_dual_backup(
     file_relative = _safe_relative_path(relative_file_path or Path("original") / source.name)
     internal_archive = internal / subdir
     removable_archive = removable / subdir
-    internal_target = internal_archive / file_relative
-    removable_target = removable_archive / file_relative
-    internal_manifest = internal_archive / MANIFEST_NAME
-    removable_manifest = removable_archive / MANIFEST_NAME
+    internal_target = _archive_target(internal_archive, file_relative)
+    removable_target = _archive_target(removable_archive, file_relative)
+    internal_manifest = _archive_target(internal_archive, Path(MANIFEST_NAME))
+    removable_manifest = _archive_target(removable_archive, Path(MANIFEST_NAME))
 
     for target in (internal_target, removable_target, internal_manifest, removable_manifest):
         if target.exists():
@@ -129,13 +178,17 @@ def create_dual_backup(
         "created_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "files": [entry],
     }
-    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    try:
+        manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ArchiveError(f"Archive metadata must be JSON-serializable: {exc}") from exc
 
     try:
-        for target in (internal_target, removable_target):
+        for root, target in ((internal_archive, internal_target), (removable_archive, removable_target)):
             target.parent.mkdir(parents=True, exist_ok=True)
+            target = _archive_target(root, file_relative)
             temporary = target.with_name(target.name + ".freerov3r-tmp")
-            if temporary.exists():
+            if temporary.exists() or temporary.is_symlink():
                 raise ArchiveError(f"Temporary archive path already exists: {temporary}")
             shutil.copyfile(source, temporary)
             if temporary.stat().st_size != source_size or sha256_file(temporary) != source_hash:
@@ -143,8 +196,12 @@ def create_dual_backup(
                 raise ArchiveError(f"Read-back verification failed while copying to {target.parent}")
             temporary.replace(target)
 
-        for manifest_path in (internal_manifest, removable_manifest):
-            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        for archive, manifest_path in (
+            (internal_archive, internal_manifest),
+            (removable_archive, removable_manifest),
+        ):
+            archive.mkdir(parents=True, exist_ok=True)
+            manifest_path = _archive_target(archive, Path(MANIFEST_NAME))
             with manifest_path.open("xb") as handle:
                 handle.write(manifest_bytes)
                 handle.flush()
@@ -173,14 +230,12 @@ def verify_dual_backup(
 
     file_results = []
     for entry in internal_manifest["files"]:
-        relative = _safe_relative_path(entry.get("path", ""))
-        expected_hash = entry.get("sha256")
-        expected_size = entry.get("size_bytes")
-        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
-            raise ArchiveError(f"Invalid SHA-256 entry for {relative}")
+        relative = _safe_relative_path(entry["path"])
+        expected_hash = entry["sha256"]
+        expected_size = entry["size_bytes"]
         copies = {}
         for label, root in (("internal", internal), ("removable", removable)):
-            path = root / relative
+            path = _archive_target(root, relative)
             try:
                 actual_size = path.stat().st_size
                 actual_hash = sha256_file(path)
