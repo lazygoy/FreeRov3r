@@ -128,7 +128,7 @@ class Elm327ObdAdapter(CanAdapter):
         response = self._command(f"01{pid:02X}")
         self.requests_sent += 1
         now = time.time()
-        for raw_line in response.replace(">", "\\n").replace("\\r", "\\n").splitlines():
+        for raw_line in response.replace(">", "\n").replace("\r", "\n").splitlines():
             line = raw_line.strip()
             if not line or line.upper() in {"SEARCHING...", "NO DATA", "STOPPED", "OK"}:
                 continue
