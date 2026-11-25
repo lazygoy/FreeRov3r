@@ -6,6 +6,7 @@ address pattern alone.
 """
 from collections import defaultdict
 
+from .can_timing_analysis import analyze_message_periodicity
 from ..isotp import pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs
 
 
@@ -50,6 +51,12 @@ def discover_modules(frames, *, response_window=2.0):
         if data and data not in item["sample_payloads"] and len(item["sample_payloads"]) < 5:
             item["sample_payloads"].append(data)
 
+    timing_report = analyze_message_periodicity(records)
+    timing_by_key = {
+        (item["can_id"], item["extended"], item.get("channel")): item
+        for item in timing_report["nodes"]
+    }
+
     messages = reassemble_isotp(records)
     complete_messages = [item for item in messages if item.get("status") == "complete"]
     transactions = pair_uds_transactions(
@@ -77,6 +84,7 @@ def discover_modules(frames, *, response_window=2.0):
 
     nodes = []
     for key, item in observed.items():
+        item["timing"] = timing_by_key.get(key)
         candidate = responders.get(key)
         if candidate:
             item.update({
@@ -117,6 +125,7 @@ def discover_modules(frames, *, response_window=2.0):
         "transmission_performed": False,
         "frame_count": len(records),
         "valid_observed_id_count": len(observed),
+        "timing_analysis": timing_report,
         "isotp_message_count": len(messages),
         "complete_isotp_message_count": len(complete_messages),
         "probable_uds_transaction_count": len(transactions),
