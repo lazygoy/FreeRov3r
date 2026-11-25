@@ -303,6 +303,27 @@ def test_dual_backup_bundle_rejects_duplicate_archive_paths(tmp_path):
 
     assert not (tmp_path / "internal/FreeRov3r/recovery").exists()
 
+
+def test_dual_backup_bundle_rejects_file_directory_path_conflicts(tmp_path):
+    from freerov3r.firmware_archive import create_dual_backup_bundle
+
+    first = tmp_path / "first.bin"
+    second = tmp_path / "second.bin"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
+    with pytest.raises(ArchiveError, match="conflicting archive paths"):
+        create_dual_backup_bundle(
+            [
+                {"source_file": first, "relative_file_path": "original/module"},
+                {"source_file": second, "relative_file_path": "original/module/child.bin"},
+            ],
+            tmp_path / "internal",
+            tmp_path / "usb",
+        )
+
+    assert not (tmp_path / "internal/FreeRov3r/recovery").exists()
+
 def test_archive_registry_rejects_malformed_register(tmp_path):
     from freerov3r.archive_registry import ArchiveRegistryError, load_archive_records
 
