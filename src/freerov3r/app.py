@@ -691,6 +691,13 @@ class SensorGraphTab(QWidget):
         self.vehicle_vin = None
         self.recording = False
         self.record_start = None
+        self.last_sample_time = {}
+        self.activity_phase = True
+        self.synced_obd_sensor_ids = set()
+        self.selection_changed_callback = None
+        self.favorites_changed_callback = None
+        self.navigate_to_obd_callback = None
+        self.parent_settings = {}
 
         layout = QVBoxLayout(self)
         if not HAS_CHARTS:
@@ -768,6 +775,29 @@ class SensorGraphTab(QWidget):
         right.addWidget(refresh_btn)
         controls.addLayout(right, 1)
         layout.addLayout(controls)
+        favorite_row = QHBoxLayout()
+        favorite_row.addWidget(QLabel("Shared sensor group:"))
+        self.favorite_combo = QComboBox()
+        favorite_row.addWidget(self.favorite_combo, 1)
+        self.load_group_btn = QPushButton("Load")
+        self.load_group_btn.clicked.connect(self.load_favorite_group)
+        favorite_row.addWidget(self.load_group_btn)
+        save_group_btn = QPushButton("Save graph selection as…")
+        save_group_btn.clicked.connect(self.save_favorite_group)
+        favorite_row.addWidget(save_group_btn)
+        self.delete_group_btn = QPushButton("Delete")
+        self.delete_group_btn.clicked.connect(self.delete_favorite_group)
+        favorite_row.addWidget(self.delete_group_btn)
+        self.open_obd_btn = QPushButton("Open OBD-II")
+        self.open_obd_btn.clicked.connect(lambda: self.navigate_to_obd_callback() if self.navigate_to_obd_callback else None)
+        favorite_row.addWidget(self.open_obd_btn)
+        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
+        layout.addLayout(favorite_row)
+        self.activity_timer = QTimer(self)
+        self.activity_timer.setInterval(350)
+        self.activity_timer.timeout.connect(self._update_activity_indicators)
+        self.activity_timer.start()
+        self.refresh_favorite_groups()
 
         if HAS_CHARTS:
             info = QLabel(
@@ -806,7 +836,9 @@ class SensorGraphTab(QWidget):
                 continue
             if sample.sensor_id not in seen:
                 seen.add(sample.sensor_id)
-                item = QListWidgetItem(f"{sample.name} ({sample.sensor_id})")
+                item = QListWidgetItem(f"● {sample.name} ({sample.sensor_id})")
+                item.setData(Qt.UserRole, sample.sensor_id)
+                item.setData(Qt.UserRole + 1, sample.name)
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked if sample.sensor_id in self.hidden_sensor_ids else Qt.Checked)
                 self.sensor_list.addItem(item)
@@ -822,13 +854,130 @@ class SensorGraphTab(QWidget):
         self.vehicle_vin = vin
         self.refresh_sensor_list()
 
+    def _sensor_id(self, item):
+        return item.data(Qt.UserRole) or item.text().split("(")[-1].rstrip(")")
+
+    def selected_sensor_ids(self):
+        return {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())
+                if self.sensor_list.item(i).checkState() == Qt.Checked}
+
+    def set_selected_sensor_ids(self, sensor_ids):
+        selected = {str(value).lower() for value in sensor_ids}
+        self.synced_obd_sensor_ids = {value for value in selected if value.startswith("obd_")}
+        known = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
+        known.update(f"obd_{int(pid, 16):02X}" for pid, _name, _unit in OBD_PIDS)
+        self.hidden_sensor_ids.update(known - selected)
+        self.hidden_sensor_ids.difference_update(selected)
+        self.sensor_list.blockSignals(True)
+        for i in range(self.sensor_list.count()):
+            item = self.sensor_list.item(i)
+            item.setCheckState(Qt.Checked if self._sensor_id(item) in selected else Qt.Unchecked)
+        self.sensor_list.blockSignals(False)
+        self.update_chart()
+
+    def mark_sample(self, sensor_id):
+        self.last_sample_time[str(sensor_id)] = time.monotonic()
+        self._update_activity_indicators()
+
+    def _update_activity_indicators(self):
+        now = time.monotonic()
+        self.activity_phase = not self.activity_phase
+        for i in range(self.sensor_list.count()):
+            item = self.sensor_list.item(i)
+            sensor_id = self._sensor_id(item)
+            active = now - self.last_sample_time.get(sensor_id, 0) <= 5.0
+            item.setText(f"{'●' if active else '○'} {item.data(Qt.UserRole + 1)} ({sensor_id})")
+            item.setForeground(QColor("#39d98a") if active and self.activity_phase else
+                               QColor("#27885b") if active else QColor("#77818c"))
+            item.setToolTip("Live data arriving" if active else "No recent samples")
+
+    def refresh_favorite_groups(self, selected_name=None):
+        groups = self.parent_settings.get("obd_pid_favorites", {})
+        self.favorite_combo.blockSignals(True)
+        self.favorite_combo.clear()
+        self.favorite_combo.addItem("Choose saved group…", None)
+        if isinstance(groups, dict):
+            for name in sorted(groups, key=str.casefold):
+                self.favorite_combo.addItem(name, name)
+        if selected_name:
+            index = self.favorite_combo.findData(selected_name)
+            if index >= 0:
+                self.favorite_combo.setCurrentIndex(index)
+        self.favorite_combo.blockSignals(False)
+        enabled = self.favorite_combo.currentData() is not None
+        self.load_group_btn.setEnabled(enabled)
+        self.delete_group_btn.setEnabled(enabled)
+
+    def _favorite_selection_changed(self, *_):
+        enabled = self.favorite_combo.currentData() is not None
+        self.load_group_btn.setEnabled(enabled)
+        self.delete_group_btn.setEnabled(enabled)
+
+    def _group_sensor_ids(self, values):
+        result = set()
+        for value in values if isinstance(values, (list, tuple, set)) else []:
+            text = str(value).strip().lower()
+            if text.startswith("obd_"):
+                result.add(text)
+            else:
+                try:
+                    result.add(f"obd_{int(text, 16):02X}")
+                except ValueError:
+                    result.add(text)
+        return result
+
+    def load_favorite_group(self):
+        name = self.favorite_combo.currentData()
+        groups = self.parent_settings.get("obd_pid_favorites", {})
+        if name and isinstance(groups, dict):
+            selected = self._group_sensor_ids(groups.get(name, []))
+            self.set_selected_sensor_ids(selected)
+            if self.selection_changed_callback:
+                self.selection_changed_callback(selected)
+
+    def save_favorite_group(self):
+        selected = self.selected_sensor_ids()
+        visible_ids = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
+        selected.update(self.synced_obd_sensor_ids - visible_ids)
+        if not selected:
+            QMessageBox.information(self, "No sensors selected", "Select at least one sensor before saving a group.")
+            return
+        name, accepted = QInputDialog.getText(self, "Save sensor group", "Group name:")
+        name = name.strip()
+        if not accepted or not name:
+            return
+        groups = dict(self.parent_settings.get("obd_pid_favorites", {}))
+        groups[name] = sorted(selected)
+        self.parent_settings["obd_pid_favorites"] = groups
+        save_settings(self.parent_settings)
+        self.refresh_favorite_groups(name)
+        if self.favorites_changed_callback:
+            self.favorites_changed_callback(name)
+
+    def delete_favorite_group(self):
+        name = self.favorite_combo.currentData()
+        if name:
+            groups = dict(self.parent_settings.get("obd_pid_favorites", {}))
+            groups.pop(name, None)
+            self.parent_settings["obd_pid_favorites"] = groups
+            save_settings(self.parent_settings)
+            self.refresh_favorite_groups()
+            if self.favorites_changed_callback:
+                self.favorites_changed_callback()
+
     def _on_sensor_item_changed(self, item):
-        sensor_id = item.text().split("(")[-1].rstrip(")")
+        sensor_id = self._sensor_id(item)
         if item.checkState() == Qt.Checked:
             self.hidden_sensor_ids.discard(sensor_id)
         else:
             self.hidden_sensor_ids.add(sensor_id)
         self.update_chart()
+        if self.selection_changed_callback:
+            visible_ids = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
+            selected_ids = self.selected_sensor_ids()
+            selected_ids.update(self.synced_obd_sensor_ids - visible_ids)
+            self.synced_obd_sensor_ids = {value for value in selected_ids if value.startswith("obd_")}
+            self.selection_changed_callback(selected_ids)
 
     def toggle_record(self):
         self.recording = not self.recording
@@ -855,7 +1004,7 @@ class SensorGraphTab(QWidget):
         if not color.isValid():
             return
         for item in items:
-            sensor_id = item.text().split("(")[-1].rstrip(")")
+            sensor_id = self._sensor_id(item)
             self.color_map[sensor_id] = color
         self.update_chart()
 
@@ -865,7 +1014,7 @@ class SensorGraphTab(QWidget):
         self.chart.removeAllSeries()
         self.series_map.clear()
         selected_ids = {
-            self.sensor_list.item(i).text().split("(")[-1].rstrip(")")
+            self._sensor_id(self.sensor_list.item(i))
             for i in range(self.sensor_list.count())
             if self.sensor_list.item(i).checkState() == Qt.Checked
         }
@@ -968,6 +1117,12 @@ class OBDTab(QWidget):
         self.settings = settings if settings is not None else {}
         self.pid_rows = {}
         self._loading_group = False
+        self._syncing_selection = False
+        self.selection_changed_callback = None
+        self.favorites_changed_callback = None
+        self.navigate_to_graph_callback = None
+        self.last_sample_time = {}
+        self.activity_phase = True
         layout = QVBoxLayout(self)
 
         note = QLabel(
@@ -1012,9 +1167,9 @@ class OBDTab(QWidget):
         favorite_row.addWidget(self.delete_group_btn)
         layout.addLayout(favorite_row)
 
-        self.table = QTableWidget(len(OBD_PIDS), 6)
+        self.table = QTableWidget(len(OBD_PIDS), 7)
         self.table.setHorizontalHeaderLabels(
-            ["Poll", "PID", "Category", "Sensor", "Unit", "Value"]
+            ["Poll", "PID", "Category", "Sensor", "Unit", "Value", "Live"]
         )
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         for row, (pid, desc, unit) in enumerate(OBD_PIDS):
@@ -1032,13 +1187,23 @@ class OBDTab(QWidget):
             self.table.setItem(row, 3, QTableWidgetItem(desc))
             self.table.setItem(row, 4, QTableWidgetItem(unit))
             self.table.setItem(row, 5, QTableWidgetItem("—"))
+            live_item = QTableWidgetItem("○")
+            live_item.setTextAlignment(Qt.AlignCenter)
+            live_item.setToolTip("No recent samples")
+            self.table.setItem(row, 6, live_item)
             self.pid_rows[pid_int] = row
         self.table.setColumnWidth(0, 48)
         self.table.setColumnWidth(1, 58)
         self.table.setColumnWidth(2, 110)
         self.table.setColumnWidth(4, 65)
         self.table.setColumnWidth(5, 85)
+        self.table.setColumnWidth(6, 48)
         self.table.setAlternatingRowColors(True)
+        self.table.itemChanged.connect(self._on_table_item_changed)
+        self.activity_timer = QTimer(self)
+        self.activity_timer.setInterval(350)
+        self.activity_timer.timeout.connect(self._update_activity_indicators)
+        self.activity_timer.start()
         self.table.setSortingEnabled(False)
         layout.addWidget(self.table, 1)
 
@@ -1058,6 +1223,9 @@ class OBDTab(QWidget):
         clear_visible_btn = QPushButton("Clear visible")
         clear_visible_btn.clicked.connect(lambda: self._set_visible_checks(Qt.Unchecked))
         poll_row.addWidget(clear_visible_btn)
+        self.open_graph_btn = QPushButton("View in Graph")
+        self.open_graph_btn.clicked.connect(lambda: self.navigate_to_graph_callback() if self.navigate_to_graph_callback else None)
+        poll_row.addWidget(self.open_graph_btn)
         poll_row.addStretch()
         layout.addLayout(poll_row)
 
@@ -1095,12 +1263,39 @@ class OBDTab(QWidget):
             if self.table.item(row, 0).checkState() == Qt.Checked
         ]
 
+    def selected_sensor_ids(self):
+        return {f"obd_{pid:02X}" for pid in self.selected_pids()}
+
+    def set_selected_sensor_ids(self, sensor_ids):
+        selected = {str(value).lower() for value in sensor_ids}
+        self._syncing_selection = True
+        self.table.blockSignals(True)
+        for pid, row in self.pid_rows.items():
+            self.table.item(row, 0).setCheckState(Qt.Checked if f"obd_{pid:02X}" in selected else Qt.Unchecked)
+        self.table.blockSignals(False)
+        self._syncing_selection = False
+
+    def _on_table_item_changed(self, item):
+        if item.column() == 0 and not self._syncing_selection and self.selection_changed_callback:
+            self.selection_changed_callback(self.selected_sensor_ids())
+
+    def _update_activity_indicators(self):
+        now = time.monotonic()
+        self.activity_phase = not self.activity_phase
+        for pid, row in self.pid_rows.items():
+            item = self.table.item(row, 6)
+            active = now - self.last_sample_time.get(pid, 0) <= 5.0
+            item.setText("●" if active else "○")
+            item.setForeground(QColor("#39d98a") if active and self.activity_phase else
+                               QColor("#27885b") if active else QColor("#77818c"))
+            item.setToolTip("Live data arriving" if active else "No recent samples")
+
     def update_value(self, pid, value):
         row = self.pid_rows.get(pid)
         if row is not None:
-            self.table.item(row, 5).setText(
-                f"{value:.2f}".rstrip("0").rstrip(".")
-            )
+            self.table.item(row, 5).setText(f"{value:.2f}".rstrip("0").rstrip("."))
+            self.last_sample_time[pid] = time.monotonic()
+            self._update_activity_indicators()
 
     def clear_values(self):
         for row in range(self.table.rowCount()):
@@ -1136,11 +1331,19 @@ class OBDTab(QWidget):
         name = self.favorite_combo.currentData()
         if not name:
             return
-        pids = set(self._favorite_groups().get(name, []))
-        for pid, row in self.pid_rows.items():
-            self.table.item(row, 0).setCheckState(
-                Qt.Checked if pid in pids else Qt.Unchecked
-            )
+        sensor_ids = set()
+        for value in self._favorite_groups().get(name, []):
+            text = str(value).strip().lower()
+            if text.startswith("obd_"):
+                sensor_ids.add(text)
+            else:
+                try:
+                    sensor_ids.add(f"obd_{int(text, 16):02X}")
+                except ValueError:
+                    continue
+        self.set_selected_sensor_ids(sensor_ids)
+        if self.selection_changed_callback:
+            self.selection_changed_callback(sensor_ids)
 
     def save_favorite_group(self):
         pids = self.selected_pids()
@@ -1157,10 +1360,12 @@ class OBDTab(QWidget):
         if not accepted or not name:
             return
         groups = dict(self._favorite_groups())
-        groups[name] = [f"{pid:02X}" for pid in pids]
+        groups[name] = [f"obd_{pid:02X}" for pid in pids]
         self.settings["obd_pid_favorites"] = groups
         save_settings(self.settings)
         self._refresh_favorite_combo(name)
+        if self.favorites_changed_callback:
+            self.favorites_changed_callback(name)
 
     def delete_favorite_group(self):
         name = self.favorite_combo.currentData()
@@ -1171,6 +1376,8 @@ class OBDTab(QWidget):
         self.settings["obd_pid_favorites"] = groups
         save_settings(self.settings)
         self._refresh_favorite_combo()
+        if self.favorites_changed_callback:
+            self.favorites_changed_callback()
 
 
 class ModulesTab(QWidget):
@@ -2699,8 +2906,17 @@ class MainWindow(QMainWindow):
         self._build_capture_tab()
         self._build_sensors_tab()
         self.graph_tab = SensorGraphTab(self.sensor_capture)
+        self.graph_tab.parent_settings = self.settings
+        self.graph_tab.refresh_favorite_groups()
         self.tabs.addTab(self.graph_tab, "Graph")
         self.obd_tab = OBDTab(self.settings)
+        self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
+        self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
+        self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
+        self.obd_tab.navigate_to_graph_callback = lambda: self.tabs.setCurrentWidget(self.graph_tab)
+        self.graph_tab.favorites_changed_callback = self.obd_tab._refresh_favorite_combo
+        self.obd_tab.favorites_changed_callback = self.graph_tab.refresh_favorite_groups
+        self.graph_tab.set_selected_sensor_ids(self.obd_tab.selected_sensor_ids())
         self.tabs.addTab(self.obd_tab, "OBD-II")
         self.module_networks = {}
         self.module_network = SimulatedModuleNetwork()
@@ -3769,8 +3985,9 @@ class MainWindow(QMainWindow):
                 metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
                          "vin": self.capture_vin or "UNASSIGNED"},
             ))
+            self.graph_tab.mark_sample(sensor_id)
             known = any(
-                self.graph_tab.sensor_list.item(i).text().endswith(f"({sensor_id})")
+                self.graph_tab._sensor_id(self.graph_tab.sensor_list.item(i)) == sensor_id
                 for i in range(self.graph_tab.sensor_list.count())
             )
             if not known:
