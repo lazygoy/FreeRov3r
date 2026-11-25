@@ -138,7 +138,7 @@ def analyze_dbc_signal_behavior(library, records):
             ),
             "observed_duration_seconds": duration,
             "average_sample_rate_hz": (
-                (len(timed) - 1) / duration
+                len(deltas) / duration
                 if duration is not None and len(timed) > 1
                 else None
             ),
