@@ -78,7 +78,7 @@ def search_mode01_pids(query="", category="All"):
         haystack = " ".join((
             f"{pid:02X}", name, unit, group, PID_SEARCH_TERMS.get(pid, "")
         )).casefold()
-        if needle and needle not in haystack:
+        if needle and not all(term in haystack for term in needle.split()):
             continue
         rows.append((f"{pid:02X}", name, unit, group))
     return rows
