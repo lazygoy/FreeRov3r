@@ -26,3 +26,73 @@ def test_decode_run_time_and_mil_distance():
 def test_reject_non_obd_response_frames():
     assert decode_mode01(CanFrame(0x123, bytes([4, 0x41, 0x0C, 0, 0]))) is None
     assert decode_mode01(CanFrame(0x7E8, bytes([4, 0x42, 0x0C, 0, 0]))) is None
+
+
+import pytest
+
+from freerov3r.diagnostics.obd2 import PID_CATEGORIES, PID_DEFINITIONS, search_mode01_pids
+
+
+@pytest.mark.parametrize(
+    ("pid", "a", "b", "expected"),
+    [
+        (0x06, 0xC0, 0x00, 50.0),
+        (0x07, 0x40, 0x00, -50.0),
+        (0x08, 0x80, 0x00, 0.0),
+        (0x09, 0xFF, 0x00, 99.21875),
+        (0x0A, 10, 0, 30.0),
+        (0x0E, 128, 0, 0.0),
+        (0x22, 1, 0, 20.224),
+        (0x23, 1, 2, 2580.0),
+        (0x2C, 128, 0, 12800.0 / 255.0),
+        (0x2D, 128, 0, 0.0),
+        (0x2E, 255, 0, 100.0),
+        (0x30, 5, 0, 5.0),
+        (0x31, 1, 2, 258.0),
+        (0x33, 100, 0, 100.0),
+        (0x3C, 1, 144, 0.0),
+        (0x3D, 3, 232, 60.0),
+        (0x3E, 1, 144, 0.0),
+        (0x3F, 3, 232, 60.0),
+        (0x4C, 128, 0, 12800.0 / 255.0),
+        (0x4D, 1, 2, 258.0),
+        (0x4E, 3, 4, 772.0),
+        (0x52, 128, 0, 12800.0 / 255.0),
+        (0x53, 1, 0, 1.28),
+        (0x54, 128, 0, 1.0),
+        (0x55, 128, 0, 0.0),
+        (0x56, 0, 0, -100.0),
+        (0x57, 255, 0, 99.21875),
+        (0x58, 64, 0, -50.0),
+        (0x59, 1, 2, 2580.0),
+        (0x5A, 128, 0, 12800.0 / 255.0),
+        (0x5B, 255, 0, 100.0),
+        (0x5D, 1, 0, -208.0),
+        (0x5E, 1, 0, 12.8),
+    ],
+)
+def test_decode_added_mode01_pid_scaling(pid, a, b, expected):
+    frame = CanFrame(0x7E8, bytes([4, 0x41, pid, a, b, 0, 0, 0]))
+    decoded = decode_mode01(frame)
+    assert decoded is not None
+    assert decoded[0] == pid
+    assert decoded[2] == pytest.approx(expected)
+
+
+def test_every_numeric_pid_has_category_and_search_terms():
+    from freerov3r.diagnostics.obd2 import PID_SEARCH_TERMS
+
+    assert set(PID_DEFINITIONS) == set(PID_CATEGORIES)
+    assert set(PID_DEFINITIONS) == set(PID_SEARCH_TERMS)
+
+
+def test_search_finds_new_fuel_trim_and_catalyst_pids():
+    assert {row[0] for row in search_mode01_pids("long term trim bank two")} == {"09"}
+    assert {row[0] for row in search_mode01_pids("catalytic temperature", "Temperatures")} == {
+        "3C", "3D", "3E", "3F"
+    }
+
+
+def test_two_byte_mode01_pid_rejects_truncated_response():
+    frame = CanFrame(0x7E8, bytes([3, 0x41, 0x23, 0x01]))
+    assert decode_mode01(frame) is None
