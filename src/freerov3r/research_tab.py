@@ -26,6 +26,7 @@ from freerov3r.timestamp_analysis import analyze_channel_timestamps
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
+from freerov3r.diagnostics.dbc_signal_behavior import analyze_dbc_signal_behavior
 from freerov3r.diagnostics.module_discovery import (
     compare_module_discovery, discover_modules,
 )
@@ -988,6 +989,10 @@ class ResearchTab(QWidget):
         self.dbc_audit_button.setToolTip("Measure passive capture coverage against the loaded DBC; unmatched frames are not automatically faults.")
         self.dbc_audit_button.clicked.connect(self.audit_capture_against_dbc)
         dbc_controls.addWidget(self.dbc_audit_button)
+        self.dbc_signal_behavior_button = QPushButton("Analyze DBC signals")
+        self.dbc_signal_behavior_button.setToolTip("Summarize decoded signal values and capture-relative behavior. Passive only.")
+        self.dbc_signal_behavior_button.clicked.connect(self.analyze_dbc_signal_behavior)
+        dbc_controls.addWidget(self.dbc_signal_behavior_button)
         dbc_controls.setContentsMargins(0, 0, 0, 0)
         dbc_controls.setSpacing(5)
         root.addLayout(dbc_controls)
@@ -1570,6 +1575,77 @@ class ResearchTab(QWidget):
         self.status_label.setText(
             f"DBC audit: {report['matched_frames']:,}/{report['input_frame_count']:,} "
             f"frames matched ({coverage_text})"
+        )
+
+    def analyze_dbc_signal_behavior(self):
+        """Show descriptive value and timing behavior for DBC-decoded signals."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(
+                self, "DBC signal behavior", "Capture or import CAN frames first."
+            )
+            return
+        if self.dbc_library.database is None:
+            QMessageBox.information(
+                self, "DBC signal behavior", "Load a DBC definition first."
+            )
+            return
+        report = analyze_dbc_signal_behavior(self.dbc_library, dataset)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Passive DBC signal behavior")
+        dialog.resize(1180, 680)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(
+            f"{report['matched_frames']:,} frames decoded | "
+            f"{report['signal_count']:,} numeric signals | "
+            f"{report['unmatched_frames']:,} unmatched | "
+            f"{report['invalid_records']:,} invalid"
+        )
+        layout.addWidget(summary)
+        columns = [
+            ("CAN ID", "can_id"), ("Fmt", "format"), ("Channel", "channel"),
+            ("Message", "message"), ("Signal", "signal"), ("Unit", "unit"),
+            ("Samples", "sample_count"), ("Min", "min"), ("Max", "max"),
+            ("Mean", "mean"), ("First", "first"), ("Last", "last"),
+            ("Net Δ", "net_change"), ("Changes", "value_change_count"),
+            ("Avg Hz", "average_sample_rate_hz"), ("Max |rate|/s", "max_absolute_rate_per_second"),
+            ("Dup times", "duplicate_timestamps"), ("Out of order", "out_of_order_timestamps"),
+        ]
+        table = QTableWidget(len(report["signals"]), len(columns))
+        table.setHorizontalHeaderLabels([label for label, _ in columns])
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSortingEnabled(True)
+        for row_index, record in enumerate(report["signals"]):
+            for column_index, (_, key) in enumerate(columns):
+                value = record.get(key)
+                if key == "can_id":
+                    value = f"0x{int(value):X}"
+                elif value is None:
+                    value = "n/a"
+                elif isinstance(value, float):
+                    value = f"{value:.4f}"
+                table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table, 1)
+        note = QLabel(
+            "Descriptive capture statistics only. Rates use elapsed_seconds when present; "
+            "missing timestamps do not remove value samples. Signal meaning, expected behavior, "
+            "vehicle applicability and DBC correctness are not independently verified. "
+            "No CAN traffic is transmitted."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"DBC signal analysis: {report['signal_count']:,} numeric signals from "
+            f"{report['matched_frames']:,} decoded frames"
         )
 
     def compare_dbcs(self):
@@ -2640,6 +2716,9 @@ class ResearchTab(QWidget):
             "",
             "## DBC capture coverage audit",
             json.dumps(audit_dbc_capture(self.dbc_library, self.frames), indent=2),
+            "",
+            "## DBC signal behavior",
+            json.dumps(analyze_dbc_signal_behavior(self.dbc_library, self.frames), indent=2),
             "",
             "## Session context",
             json.dumps({
