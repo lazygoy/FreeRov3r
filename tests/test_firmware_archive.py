@@ -438,6 +438,50 @@ def test_dual_backup_bundle_rejects_file_directory_path_conflicts(tmp_path):
 
     assert not (tmp_path / "internal/FreeRov3r/recovery").exists()
 
+def test_archive_registry_rejects_inconsistent_verification_evidence(tmp_path):
+    from freerov3r.archive_registry import ArchiveRegistryError, record_archive
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original calibration")
+    result = create_dual_backup(
+        source, tmp_path / "internal", tmp_path / "usb",
+        metadata={"vin": "TESTVIN", "module": "ECM"},
+    )
+    result["files"][0]["copies"]["removable"]["sha256"] = "0" * 64
+
+    with pytest.raises(ArchiveRegistryError, match="consistent file evidence"):
+        record_archive(tmp_path / "register.json", result)
+
+
+def test_archive_registry_does_not_mark_tampered_verification_as_verified(tmp_path):
+    from freerov3r.archive_registry import load_archive_records, record_archive, record_verification
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original calibration")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    result = create_dual_backup(
+        source, internal, removable,
+        metadata={"vin": "TESTVIN", "module": "ECM"},
+    )
+    registry = tmp_path / "register.json"
+    record_archive(registry, result)
+
+    tampered = dict(result)
+    tampered["files"] = [dict(result["files"][0])]
+    tampered["files"][0]["copies"] = dict(result["files"][0]["copies"])
+    tampered["files"][0]["copies"]["internal"] = dict(result["files"][0]["copies"]["internal"])
+    tampered["files"][0]["copies"]["internal"]["matches_manifest"] = False
+    record_verification(
+        registry,
+        internal / "FreeRov3r/recovery",
+        removable / "FreeRov3r/recovery",
+        tampered,
+    )
+
+    assert load_archive_records(registry)[0]["status"] == "verification_failed"
+
+
 def test_archive_registry_rejects_malformed_register(tmp_path):
     from freerov3r.archive_registry import ArchiveRegistryError, load_archive_records
 
