@@ -695,6 +695,7 @@ class SensorGraphTab(QWidget):
         self.activity_phase = True
         self.selection_changed_callback = None
         self.favorites_changed_callback = None
+        self.navigate_to_obd_callback = None
         self.parent_settings = {}
 
         layout = QVBoxLayout(self)
@@ -786,6 +787,9 @@ class SensorGraphTab(QWidget):
         self.delete_group_btn = QPushButton("Delete")
         self.delete_group_btn.clicked.connect(self.delete_favorite_group)
         favorite_row.addWidget(self.delete_group_btn)
+        self.open_obd_btn = QPushButton("Open OBD-II")
+        self.open_obd_btn.clicked.connect(lambda: self.navigate_to_obd_callback() if self.navigate_to_obd_callback else None)
+        favorite_row.addWidget(self.open_obd_btn)
         self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
         layout.addLayout(favorite_row)
         self.activity_timer = QTimer(self)
@@ -859,6 +863,7 @@ class SensorGraphTab(QWidget):
     def set_selected_sensor_ids(self, sensor_ids):
         selected = {str(value).lower() for value in sensor_ids}
         known = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
+        known.update(f"obd_{int(pid, 16):02X}" for pid, _name, _unit in OBD_PIDS)
         self.hidden_sensor_ids.update(known - selected)
         self.hidden_sensor_ids.difference_update(selected)
         self.sensor_list.blockSignals(True)
@@ -1107,6 +1112,7 @@ class OBDTab(QWidget):
         self._syncing_selection = False
         self.selection_changed_callback = None
         self.favorites_changed_callback = None
+        self.navigate_to_graph_callback = None
         self.last_sample_time = {}
         self.activity_phase = True
         layout = QVBoxLayout(self)
@@ -1209,6 +1215,9 @@ class OBDTab(QWidget):
         clear_visible_btn = QPushButton("Clear visible")
         clear_visible_btn.clicked.connect(lambda: self._set_visible_checks(Qt.Unchecked))
         poll_row.addWidget(clear_visible_btn)
+        self.open_graph_btn = QPushButton("View in Graph")
+        self.open_graph_btn.clicked.connect(lambda: self.navigate_to_graph_callback() if self.navigate_to_graph_callback else None)
+        poll_row.addWidget(self.open_graph_btn)
         poll_row.addStretch()
         layout.addLayout(poll_row)
 
@@ -2895,6 +2904,8 @@ class MainWindow(QMainWindow):
         self.obd_tab = OBDTab(self.settings)
         self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
+        self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
+        self.obd_tab.navigate_to_graph_callback = lambda: self.tabs.setCurrentWidget(self.graph_tab)
         self.graph_tab.favorites_changed_callback = self.obd_tab._refresh_favorite_combo
         self.obd_tab.favorites_changed_callback = self.graph_tab.refresh_favorite_groups
         self.graph_tab.set_selected_sensor_ids(self.obd_tab.selected_sensor_ids())
