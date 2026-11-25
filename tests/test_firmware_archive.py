@@ -237,6 +237,7 @@ def test_archive_registry_persists_and_updates_verification(tmp_path):
 
 def test_archive_registry_preserves_each_file_identity(tmp_path):
     from freerov3r.archive_registry import record_archive
+    from freerov3r.firmware_archive import create_dual_backup_bundle
 
     source = tmp_path / "stock.bin"
     second_source = tmp_path / "tcm.bin"
@@ -244,44 +245,30 @@ def test_archive_registry_preserves_each_file_identity(tmp_path):
     second_source.write_bytes(b"original transmission calibration")
     internal = tmp_path / "internal"
     removable = tmp_path / "usb"
-    result = create_dual_backup(
-        source,
+    result = create_dual_backup_bundle(
+        [
+            {
+                "source_file": source,
+                "metadata": {"vin": "TESTVIN", "module": "ECM"},
+            },
+            {
+                "source_file": second_source,
+                "metadata": {
+                    "vin": "TESTVIN",
+                    "module": "TCM",
+                    "hardware_id": "TCM-HW2",
+                },
+            },
+        ],
         internal,
         removable,
-        metadata={"vin": "TESTVIN", "module": "ECM"},
     )
 
-    # Add a second real archived file to both destinations and update their
-    # matching manifests, then obtain the registry input from the real verifier.
-    second_relative = "original/tcm.bin"
-    second_bytes = second_source.read_bytes()
-    second_hash = hashlib.sha256(second_bytes).hexdigest()
-    for root in (internal, removable):
-        archive = root / "FreeRov3r/recovery"
-        second_target = archive / second_relative
-        second_target.parent.mkdir(parents=True, exist_ok=True)
-        second_target.write_bytes(second_bytes)
-        manifest_path = archive / MANIFEST_NAME
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["files"].append({
-            "path": second_relative,
-            "size_bytes": len(second_bytes),
-            "sha256": second_hash,
-            "source_name": second_source.name,
-            "acquired_at_utc": manifest["files"][0]["acquired_at_utc"],
-            "metadata": {
-                "vin": "TESTVIN",
-                "module": "TCM",
-                "hardware_id": "TCM-HW2",
-            },
-        })
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    result = verify_dual_backup(
-        internal / "FreeRov3r/recovery",
-        removable / "FreeRov3r/recovery",
-    )
     assert result["verified"] is True
+    assert len(result["files"]) == 2
+    assert all(item["verified"] for item in result["files"])
+    assert (internal / "FreeRov3r/recovery/original/stock.bin").read_bytes() == source.read_bytes()
+    assert (removable / "FreeRov3r/recovery/original/tcm.bin").read_bytes() == second_source.read_bytes()
 
     record = record_archive(tmp_path / "register.json", result)
 
@@ -295,6 +282,47 @@ def test_archive_registry_preserves_each_file_identity(tmp_path):
     assert record["files"][1]["internal"]["matches_manifest"] is True
     assert record["files"][1]["removable"]["matches_manifest"] is True
 
+
+def test_dual_backup_bundle_rejects_duplicate_archive_paths(tmp_path):
+    from freerov3r.firmware_archive import create_dual_backup_bundle
+
+    first = tmp_path / "first.bin"
+    second = tmp_path / "second.bin"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
+    with pytest.raises(ArchiveError, match="duplicate archive path"):
+        create_dual_backup_bundle(
+            [
+                {"source_file": first, "relative_file_path": "original/shared.bin"},
+                {"source_file": second, "relative_file_path": "original/shared.bin"},
+            ],
+            tmp_path / "internal",
+            tmp_path / "usb",
+        )
+
+    assert not (tmp_path / "internal/FreeRov3r/recovery").exists()
+
+
+def test_dual_backup_bundle_rejects_file_directory_path_conflicts(tmp_path):
+    from freerov3r.firmware_archive import create_dual_backup_bundle
+
+    first = tmp_path / "first.bin"
+    second = tmp_path / "second.bin"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
+    with pytest.raises(ArchiveError, match="conflicting archive paths"):
+        create_dual_backup_bundle(
+            [
+                {"source_file": first, "relative_file_path": "original/module"},
+                {"source_file": second, "relative_file_path": "original/module/child.bin"},
+            ],
+            tmp_path / "internal",
+            tmp_path / "usb",
+        )
+
+    assert not (tmp_path / "internal/FreeRov3r/recovery").exists()
 
 def test_archive_registry_rejects_malformed_register(tmp_path):
     from freerov3r.archive_registry import ArchiveRegistryError, load_archive_records
