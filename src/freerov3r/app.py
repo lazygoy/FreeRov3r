@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
     QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
-    QDialog, QFrame, QScrollArea, QSizePolicy,
+    QDialog, QFrame, QScrollArea, QSizePolicy, QInputDialog,
 )
 
 try:
@@ -34,7 +34,7 @@ from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter
-from .diagnostics.obd2 import OBD_PIDS, decode_mode01
+from .diagnostics.obd2 import (OBD_PIDS, PID_CATEGORIES_ALL, search_mode01_pids, decode_mode01)
 from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
@@ -947,8 +947,13 @@ class SensorGraphTab(QWidget):
 
 
 class OBDTab(QWidget):
-    def __init__(self, parent=None):
+    """Searchable, categorized OBD-II PID selector with persistent user groups."""
+
+    def __init__(self, settings=None, parent=None):
         super().__init__(parent)
+        self.settings = settings if settings is not None else {}
+        self.pid_rows = {}
+        self._loading_group = False
         layout = QVBoxLayout(self)
 
         note = QLabel(
@@ -957,28 +962,71 @@ class OBDTab(QWidget):
             "connection. Other interfaces remain passive unless their transmit support is "
             "implemented and explicitly enabled. No ECU write commands are sent. "
             "The simulator streams clearly labeled synthetic Mode 01 values; real vehicles "
-            "also populate this table when matching response frames are observed."
+            "also populate this table when matching response frames are observed. "
+            "A listed PID is not proof that the vehicle supports it."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        self.table = QTableWidget(len(OBD_PIDS), 5)
-        self.pid_rows = {pid: row for row, (pid, _, _) in enumerate(OBD_PIDS)}
-        self.table.setHorizontalHeaderLabels(["Poll", "PID", "Description", "Unit", "Value"])
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("Find sensor:"))
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Search coolant, RPM, throttle, voltage, PID…")
+        self.search_edit.textChanged.connect(self.filter_pids)
+        search_row.addWidget(self.search_edit, 2)
+        search_row.addWidget(QLabel("Category:"))
+        self.category_combo = QComboBox()
+        self.category_combo.addItems(PID_CATEGORIES_ALL)
+        self.category_combo.currentTextChanged.connect(self.filter_pids)
+        search_row.addWidget(self.category_combo, 1)
+        layout.addLayout(search_row)
+
+        favorite_row = QHBoxLayout()
+        favorite_row.addWidget(QLabel("Favorite group:"))
+        self.favorite_combo = QComboBox()
+        self.favorite_combo.setMinimumWidth(170)
+        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
+        favorite_row.addWidget(self.favorite_combo, 1)
+        self.load_group_btn = QPushButton("Load")
+        self.load_group_btn.clicked.connect(self.load_favorite_group)
+        favorite_row.addWidget(self.load_group_btn)
+        self.save_group_btn = QPushButton("Save selected as…")
+        self.save_group_btn.clicked.connect(self.save_favorite_group)
+        favorite_row.addWidget(self.save_group_btn)
+        self.delete_group_btn = QPushButton("Delete")
+        self.delete_group_btn.clicked.connect(self.delete_favorite_group)
+        favorite_row.addWidget(self.delete_group_btn)
+        layout.addLayout(favorite_row)
+
+        self.table = QTableWidget(len(OBD_PIDS), 6)
+        self.table.setHorizontalHeaderLabels(
+            ["Poll", "PID", "Category", "Sensor", "Unit", "Value"]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         for row, (pid, desc, unit) in enumerate(OBD_PIDS):
+            pid_int = int(pid, 16)
+            category = next(
+                (entry[3] for entry in search_mode01_pids() if entry[0] == pid),
+                "Other",
+            )
             poll_item = QTableWidgetItem()
             poll_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
             poll_item.setCheckState(Qt.Checked)
             self.table.setItem(row, 0, poll_item)
             self.table.setItem(row, 1, QTableWidgetItem(pid))
-            self.table.setItem(row, 2, QTableWidgetItem(desc))
-            self.table.setItem(row, 3, QTableWidgetItem(unit))
-            self.table.setItem(row, 4, QTableWidgetItem("—"))
+            self.table.setItem(row, 2, QTableWidgetItem(category))
+            self.table.setItem(row, 3, QTableWidgetItem(desc))
+            self.table.setItem(row, 4, QTableWidgetItem(unit))
+            self.table.setItem(row, 5, QTableWidgetItem("—"))
+            self.pid_rows[pid_int] = row
         self.table.setColumnWidth(0, 48)
         self.table.setColumnWidth(1, 58)
-        self.table.setColumnWidth(3, 70)
-        layout.addWidget(self.table)
+        self.table.setColumnWidth(2, 110)
+        self.table.setColumnWidth(4, 65)
+        self.table.setColumnWidth(5, 85)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(False)
+        layout.addWidget(self.table, 1)
 
         poll_row = QHBoxLayout()
         poll_row.addWidget(QLabel("Request interval:"))
@@ -986,20 +1034,45 @@ class OBDTab(QWidget):
         self.poll_interval_ms.setRange(50, 2000)
         self.poll_interval_ms.setValue(200)
         self.poll_interval_ms.setSuffix(" ms / PID")
-        self.poll_interval_ms.setToolTip("Delay between sequential Mode 01 PID requests on an active ELM327 connection.")
+        self.poll_interval_ms.setToolTip(
+            "Delay between sequential Mode 01 PID requests on an active ELM327 connection."
+        )
         poll_row.addWidget(self.poll_interval_ms)
+        select_visible_btn = QPushButton("Select visible")
+        select_visible_btn.clicked.connect(lambda: self._set_visible_checks(Qt.Checked))
+        poll_row.addWidget(select_visible_btn)
+        clear_visible_btn = QPushButton("Clear visible")
+        clear_visible_btn.clicked.connect(lambda: self._set_visible_checks(Qt.Unchecked))
+        poll_row.addWidget(clear_visible_btn)
         poll_row.addStretch()
         layout.addLayout(poll_row)
 
         btn_row = QHBoxLayout()
-        self.request_btn = QPushButton("Active polling is selected by the ELM327 OBD-II connection")
+        self.request_btn = QPushButton(
+            "Active polling is selected by the ELM327 OBD-II connection"
+        )
         self.request_btn.setEnabled(False)
-        self.request_btn.setToolTip("Polling starts only when the dedicated ELM327 OBD-II adapter is selected.")
+        self.request_btn.setToolTip(
+            "Polling starts only when the dedicated ELM327 OBD-II adapter is selected."
+        )
         btn_row.addWidget(self.request_btn)
         clear_btn = QPushButton("Clear Values")
         clear_btn.clicked.connect(self.clear_values)
         btn_row.addWidget(clear_btn)
         layout.addLayout(btn_row)
+        self._refresh_favorite_combo()
+
+    def filter_pids(self, *_):
+        query = self.search_edit.text()
+        category = self.category_combo.currentText()
+        visible = {int(row[0], 16) for row in search_mode01_pids(query, category)}
+        for pid, row in self.pid_rows.items():
+            self.table.setRowHidden(row, pid not in visible)
+
+    def _set_visible_checks(self, state):
+        for row in range(self.table.rowCount()):
+            if not self.table.isRowHidden(row):
+                self.table.item(row, 0).setCheckState(state)
 
     def selected_pids(self):
         return [
@@ -1009,13 +1082,81 @@ class OBDTab(QWidget):
         ]
 
     def update_value(self, pid, value):
-        row = self.pid_rows.get(f"{pid:02X}")
+        row = self.pid_rows.get(pid)
         if row is not None:
-            self.table.item(row, 4).setText(f"{value:.2f}".rstrip("0").rstrip("."))
+            self.table.item(row, 5).setText(
+                f"{value:.2f}".rstrip("0").rstrip(".")
+            )
 
     def clear_values(self):
         for row in range(self.table.rowCount()):
-            self.table.item(row, 4).setText("—")
+            self.table.item(row, 5).setText("—")
+
+    def _favorite_groups(self):
+        groups = self.settings.get("obd_pid_favorites", {})
+        return groups if isinstance(groups, dict) else {}
+
+    def _refresh_favorite_combo(self, selected_name=None):
+        self._loading_group = True
+        self.favorite_combo.clear()
+        self.favorite_combo.addItem("Choose saved group…", None)
+        for name in sorted(self._favorite_groups(), key=str.casefold):
+            self.favorite_combo.addItem(name, name)
+        if selected_name:
+            index = self.favorite_combo.findData(selected_name)
+            if index >= 0:
+                self.favorite_combo.setCurrentIndex(index)
+        self._loading_group = False
+        has_group = self.favorite_combo.currentData() is not None
+        self.load_group_btn.setEnabled(has_group)
+        self.delete_group_btn.setEnabled(has_group)
+
+    def _favorite_selection_changed(self, *_):
+        if self._loading_group:
+            return
+        has_group = self.favorite_combo.currentData() is not None
+        self.load_group_btn.setEnabled(has_group)
+        self.delete_group_btn.setEnabled(has_group)
+
+    def load_favorite_group(self):
+        name = self.favorite_combo.currentData()
+        if not name:
+            return
+        pids = set(self._favorite_groups().get(name, []))
+        for pid, row in self.pid_rows.items():
+            self.table.item(row, 0).setCheckState(
+                Qt.Checked if pid in pids else Qt.Unchecked
+            )
+
+    def save_favorite_group(self):
+        pids = self.selected_pids()
+        if not pids:
+            QMessageBox.information(
+                self, "No PIDs selected",
+                "Select at least one sensor before saving a favorite group.",
+            )
+            return
+        name, accepted = QInputDialog.getText(
+            self, "Save PID group", "Group name:"
+        )
+        name = name.strip()
+        if not accepted or not name:
+            return
+        groups = dict(self._favorite_groups())
+        groups[name] = [f"{pid:02X}" for pid in pids]
+        self.settings["obd_pid_favorites"] = groups
+        save_settings(self.settings)
+        self._refresh_favorite_combo(name)
+
+    def delete_favorite_group(self):
+        name = self.favorite_combo.currentData()
+        if not name:
+            return
+        groups = dict(self._favorite_groups())
+        groups.pop(name, None)
+        self.settings["obd_pid_favorites"] = groups
+        save_settings(self.settings)
+        self._refresh_favorite_combo()
 
 
 class ModulesTab(QWidget):
@@ -2545,7 +2686,7 @@ class MainWindow(QMainWindow):
         self._build_sensors_tab()
         self.graph_tab = SensorGraphTab(self.sensor_capture)
         self.tabs.addTab(self.graph_tab, "Graph")
-        self.obd_tab = OBDTab()
+        self.obd_tab = OBDTab(self.settings)
         self.tabs.addTab(self.obd_tab, "OBD-II")
         self.module_networks = {}
         self.module_network = SimulatedModuleNetwork()
