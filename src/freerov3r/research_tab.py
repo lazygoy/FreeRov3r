@@ -30,6 +30,7 @@ from freerov3r.diagnostics.payload_variability import analyze_payload_variabilit
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.dbc_signal_behavior import (
     analyze_dbc_signal_behavior, build_dbc_signal_series,
+    summarize_dbc_marker_signal_changes,
 )
 
 try:
@@ -1954,10 +1955,100 @@ class ResearchTab(QWidget):
             redraw()
 
         focus_marker_button.clicked.connect(focus_marker_window)
+
+        def summarize_selected_marker_signals():
+            selected_keys = {
+                signal_list.item(i).data(Qt.UserRole)
+                for i in range(signal_list.count())
+                if signal_list.item(i).checkState() == Qt.Checked
+            }
+            selected = [
+                item for item in signals
+                if item["key"] in selected_keys and item["samples"]
+            ]
+            marker_index = marker_combo.currentData()
+            if not selected:
+                QMessageBox.information(
+                    dialog, "Marker signal summary",
+                    "Select at least one decoded signal first.",
+                )
+                return
+            if marker_index is None:
+                QMessageBox.information(
+                    dialog, "Marker signal summary",
+                    "This capture has no scanner action markers.",
+                )
+                return
+
+            marker = graph_data["markers"][int(marker_index)]
+            report = summarize_dbc_marker_signal_changes(
+                {"signals": selected},
+                [marker],
+                before_seconds=marker_before.value(),
+                after_seconds=marker_after.value(),
+            )
+            if not report or not report[0]["signals"]:
+                QMessageBox.information(
+                    dialog, "Marker signal summary",
+                    "No selected signal samples fall inside the chosen marker windows.",
+                )
+                return
+
+            result = report[0]
+            summary_dialog = QDialog(dialog)
+            summary_dialog.setWindowTitle("DBC signal changes around scanner marker")
+            summary_dialog.resize(1180, 600)
+            summary_layout = QVBoxLayout(summary_dialog)
+            summary_layout.addWidget(QLabel(
+                f'{marker["elapsed_seconds"]:.3f}s | {marker.get("label", "Scanner action")} | '
+                f'{result["before_seconds"]:.2f}s before / {result["after_seconds"]:.2f}s after'
+            ))
+            columns = [
+                ("Channel", "channel"), ("CAN ID", "can_id"),
+                ("Format", "format"), ("Message", "message"),
+                ("Signal", "signal"), ("Unit", "unit"),
+                ("Before n", "before_sample_count"), ("Before mean", "before_mean"),
+                ("After n", "after_sample_count"), ("After mean", "after_mean"),
+                ("Mean Δ", "mean_delta"), ("First after (s)", "first_after_marker_seconds"),
+            ]
+            table = QTableWidget(len(result["signals"]), len(columns))
+            table.setHorizontalHeaderLabels([label for label, _ in columns])
+            table.setAlternatingRowColors(True)
+            table.setEditTriggers(QTableWidget.NoEditTriggers)
+            table.setSelectionBehavior(QTableWidget.SelectRows)
+            for row_index, record in enumerate(result["signals"]):
+                for column_index, (_, key) in enumerate(columns):
+                    value = record.get(key)
+                    if key == "can_id" and value is not None:
+                        value = f"0x{int(value):X}"
+                    elif value is None:
+                        value = "n/a"
+                    elif isinstance(value, float):
+                        value = f"{value:.4f}"
+                    table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+            table.setSortingEnabled(True)
+            table.resizeColumnsToContents()
+            table.horizontalHeader().setStretchLastSection(True)
+            summary_layout.addWidget(table, 1)
+            note = QLabel(
+                result["interpretation"] + " A missing before/after window is shown as n/a, "
+                "not as a zero value. Results are descriptive and do not establish causation."
+            )
+            note.setWordWrap(True)
+            summary_layout.addWidget(note)
+            done_button = QPushButton("Close")
+            done_button.clicked.connect(summary_dialog.accept)
+            summary_layout.addWidget(done_button)
+            summary_dialog.exec()
+
+        marker_summary_button = QPushButton("Summarize marker signal changes")
+        marker_summary_button.setEnabled(bool(graph_data["markers"]))
+        marker_summary_button.clicked.connect(summarize_selected_marker_signals)
         controls = QHBoxLayout()
         controls.addWidget(select_all_button)
         controls.addWidget(clear_button)
         controls.addWidget(plot_button)
+        controls.addWidget(marker_summary_button)
         close_button = QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
         controls.addWidget(close_button)
