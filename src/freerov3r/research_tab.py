@@ -3261,6 +3261,24 @@ class ResearchTab(QWidget):
                     f'{change["before_count"]} → {change["after_count"]} '
                     f'(delta {change["delta"]:+})'
                 )
+        if self.markers and self.dbc_library.database is not None:
+            dbc_series = build_dbc_signal_series(
+                self.dbc_library, self.frames, self.markers
+            )
+            marker_signal_results = summarize_dbc_marker_signal_changes(
+                dbc_series,
+                self.markers,
+                before_seconds=2.0,
+                after_seconds=5.0,
+            )
+            lines += [
+                "",
+                "## DBC signal changes around operation markers",
+                "Decoded numeric signals summarized over 2 seconds before and 5 seconds after each marker. "
+                "Only capture-relative monotonic timestamps are used. Missing windows remain null; "
+                "temporal association does not establish causation.",
+                json.dumps(marker_signal_results, indent=2),
+            ]
         if self.sequence_captures:
             sequence_result = compare_operation_sequences(self.sequence_captures)
             lines += [
