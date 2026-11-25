@@ -937,6 +937,8 @@ class SensorGraphTab(QWidget):
 
     def save_favorite_group(self):
         selected = self.selected_sensor_ids()
+        visible_ids = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
+        selected.update(self.synced_obd_sensor_ids - visible_ids)
         if not selected:
             QMessageBox.information(self, "No sensors selected", "Select at least one sensor before saving a group.")
             return
