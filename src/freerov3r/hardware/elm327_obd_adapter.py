@@ -1,7 +1,9 @@
 """Active, read-only SAE J1979 Mode 01 polling over ELM327 serial adapters.
 
-This adapter issues standard OBD-II data requests only. It never sends clear-DTC,
-coding, actuator, or other ECU write commands.
+This adapter performs standard OBD-II data requests only. It first discovers
+supported Mode 01 PID ranges, then polls only user-selected PIDs reported by
+the responding vehicle. It never sends clear-DTC, coding, actuator, or other
+ECU write commands.
 """
 import time
 from collections import deque
@@ -10,24 +12,31 @@ import serial
 
 from .base import CanAdapter
 from ..models import CanFrame
-from ..diagnostics.obd2 import PID_DEFINITIONS
+from ..diagnostics.obd2 import PID_DEFINITIONS, parse_mode01_supported_pids
 
 
 DEFAULT_PIDS = tuple(PID_DEFINITIONS)
+BITMAP_BASES = (0x00, 0x20, 0x40)
 
 
 class Elm327ObdAdapter(CanAdapter):
-    """Round-robin Mode 01 PID poller that exposes replies as normal CAN frames."""
+    """Discover supported PIDs, then round-robin poll selected Mode 01 sensors."""
 
     def __init__(self, port, baudrate=38400, pids=None, request_interval=0.20, timeout=0.35):
         self.port = str(port)
         self.baudrate = int(baudrate)
-        self.pids = tuple(dict.fromkeys(int(pid) for pid in (DEFAULT_PIDS if pids is None else pids)))
-        if not self.pids:
+        self.requested_pids = tuple(dict.fromkeys(
+            int(pid) for pid in (DEFAULT_PIDS if pids is None else pids)
+        ))
+        if not self.requested_pids:
             raise ValueError("Select at least one OBD-II PID to poll.")
-        invalid = [pid for pid in self.pids if pid not in PID_DEFINITIONS]
+        invalid = [pid for pid in self.requested_pids if pid not in PID_DEFINITIONS]
         if invalid:
             raise ValueError(f"Unsupported Mode 01 PID(s): {invalid}")
+        self.pids = self.requested_pids
+        self.supported_pids = set()
+        self.unsupported_pids = set()
+        self.discovery_complete = False
         self.request_interval = max(0.05, float(request_interval))
         self.timeout = max(0.1, float(timeout))
         self.connection = None
@@ -40,6 +49,13 @@ class Elm327ObdAdapter(CanAdapter):
 
     @property
     def description(self):
+        if self.discovery_complete:
+            supported = ",".join(f"{pid:02X}" for pid in self.pids) or "none"
+            skipped = ",".join(f"{pid:02X}" for pid in sorted(self.unsupported_pids)) or "none"
+            return (
+                f"ELM327 OBD-II: {self.port} | supported [{supported}] | "
+                f"skipped [{skipped}]"
+            )
         return f"ELM327 OBD-II polling: {self.port} @ {self.baudrate}"
 
     def _command(self, command, wait_for_prompt=True):
@@ -47,6 +63,37 @@ class Elm327ObdAdapter(CanAdapter):
         self.connection.flush()
         response = self.connection.read_until(b">") if wait_for_prompt else b""
         return response.decode("ascii", errors="replace")
+
+    def _discover_supported_pids(self):
+        discovered = set()
+        valid_bitmap_seen = False
+        for base_pid in BITMAP_BASES:
+            response = self._command(f"01{base_pid:02X}")
+            block = parse_mode01_supported_pids(response, base_pid)
+            if not block:
+                break
+            valid_bitmap_seen = True
+            discovered.update(block)
+            # The final bit advertises the next 32-PID bitmap range.
+            if base_pid == 0x40 or (base_pid + 0x20) not in block:
+                break
+
+        if not valid_bitmap_seen:
+            raise RuntimeError(
+                "The vehicle returned no valid Mode 01 supported-PID bitmap. "
+                "Polling was not started."
+            )
+
+        self.supported_pids = discovered
+        self.unsupported_pids = set(self.requested_pids) - discovered
+        self.pids = tuple(pid for pid in self.requested_pids if pid in discovered)
+        if not self.pids:
+            requested = ", ".join(f"{pid:02X}" for pid in self.requested_pids)
+            raise RuntimeError(
+                "None of the selected PIDs were reported as supported "
+                f"(selected: {requested}). Polling was not started."
+            )
+        self.discovery_complete = True
 
     def open(self):
         self.connection = serial.Serial(
@@ -63,6 +110,7 @@ class Elm327ObdAdapter(CanAdapter):
             for command in ("ATE0", "ATL0", "ATS1", "ATH1", "ATSP0", "ATCAF1"):
                 self._command(command)
             self.connection.reset_input_buffer()
+            self._discover_supported_pids()
             self._next_request = time.monotonic()
         except Exception:
             self.close()
@@ -103,8 +151,6 @@ class Elm327ObdAdapter(CanAdapter):
                 continue
             if data[1] != 0x41 or data[2] != pid:
                 continue
-            # ATCAF1 formats responses as [DLC, 41, PID, A, B...], which is
-            # exactly the layout consumed by the shared Mode 01 decoder.
             self._queue.append(CanFrame(
                 arbitration_id=can_id, data=data, channel=self.port, timestamp=now
             ))
@@ -113,6 +159,8 @@ class Elm327ObdAdapter(CanAdapter):
     def receive(self, timeout=0.2):
         if self.connection is None:
             raise RuntimeError("ELM327 OBD-II adapter is not open")
+        if not self.discovery_complete:
+            raise RuntimeError("OBD-II PID support discovery has not completed")
         deadline = time.monotonic() + max(0.0, float(timeout))
         while time.monotonic() <= deadline:
             if self._queue:
