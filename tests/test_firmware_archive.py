@@ -196,3 +196,48 @@ def test_dual_backup_rejects_insufficient_destination_space(tmp_path, monkeypatc
     with pytest.raises(ArchiveError, match="Insufficient free space"):
         create_dual_backup(source, internal, removable)
     assert not (internal / "FreeRov3r/recovery").exists()
+
+
+def test_archive_registry_persists_and_updates_verification(tmp_path):
+    from freerov3r.archive_registry import (
+        load_archive_records,
+        record_archive,
+        record_verification,
+    )
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original calibration")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    result = create_dual_backup(
+        source, internal, removable,
+        metadata={"vin": "TESTVIN", "module": "ECM", "hardware_id": "HW1"},
+    )
+    registry = tmp_path / "register.json"
+
+    record = record_archive(registry, result)
+    assert record["vin"] == "TESTVIN"
+    assert record["module"] == "ECM"
+    assert record["hardware_id"] == "HW1"
+    assert record["status"] == "verified"
+
+    records = load_archive_records(registry)
+    assert len(records) == 1
+    assert records[0]["sha256"] == result["files"][0]["copies"]["internal"]["sha256"]
+
+    record_verification(
+        registry,
+        internal / "FreeRov3r/recovery",
+        removable / "FreeRov3r/recovery",
+        result,
+    )
+    assert load_archive_records(registry)[0]["last_verified_utc"]
+
+
+def test_archive_registry_rejects_malformed_register(tmp_path):
+    from freerov3r.archive_registry import ArchiveRegistryError, load_archive_records
+
+    registry = tmp_path / "register.json"
+    registry.write_text('{"format":"wrong","records":[]}', encoding="utf-8")
+    with pytest.raises(ArchiveRegistryError, match="malformed"):
+        load_archive_records(registry)
