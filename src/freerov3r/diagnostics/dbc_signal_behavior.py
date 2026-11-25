@@ -171,3 +171,94 @@ def analyze_dbc_signal_behavior(library, records):
             "No CAN traffic is transmitted and no ECU state is changed.",
         ],
     }
+
+
+def build_dbc_signal_series(library, records, markers=None):
+    """Build timestamped numeric DBC series and operator markers for plotting.
+
+    Series are separated by CAN ID, frame format, channel, message and signal.
+    Only finite capture-relative elapsed_seconds values are plotted. Samples are
+    sorted by that timestamp, while duplicate timestamps are retained.
+    """
+    if library is None or library.database is None:
+        return {"signals": [], "markers": []}
+
+    groups = {}
+    for record in records or []:
+        try:
+            if not isinstance(record, dict):
+                continue
+            can_id = int(record["arbitration_id"])
+            if not 0 <= can_id <= 0x1FFFFFFF:
+                continue
+            extended = bool(record.get("extended", False))
+            payload = bytes.fromhex(str(record["data"]))
+            elapsed = float(record["elapsed_seconds"])
+            if not math.isfinite(elapsed) or len(payload) > 64:
+                continue
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+
+        message = library.messages_by_key.get((can_id, extended))
+        if message is None or len(payload) != int(message.length):
+            continue
+        try:
+            decoded = library.decode(can_id, payload, extended)
+        except Exception:
+            continue
+        if decoded is None:
+            continue
+
+        channel = record.get("channel")
+        for name, raw_value in decoded.decoded.items():
+            if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool):
+                continue
+            value = float(raw_value)
+            if not math.isfinite(value):
+                continue
+            key = (can_id, extended, channel, decoded.message_name, str(name))
+            item = groups.setdefault(key, {
+                "can_id": can_id,
+                "format": "EXT" if extended else "STD",
+                "channel": channel,
+                "message": decoded.message_name,
+                "signal": str(name),
+                "unit": decoded.units.get(name, "") or "",
+                "samples": [],
+            })
+            item["samples"].append((elapsed, value))
+
+    signals = []
+    for key, item in groups.items():
+        item["samples"].sort(key=lambda sample: sample[0])
+        item["sample_count"] = len(item["samples"])
+        item["minimum"] = min(value for _, value in item["samples"])
+        item["maximum"] = max(value for _, value in item["samples"])
+        item["key"] = "|".join((
+            str(item["channel"] or "Unknown"),
+            f"{item['can_id']:X}", item["format"], item["message"], item["signal"],
+        ))
+        signals.append(item)
+    signals.sort(key=lambda item: (
+        item["channel"] or "", item["can_id"], item["format"],
+        item["message"], item["signal"],
+    ))
+
+    plotted_markers = []
+    for index, marker in enumerate(markers or [], start=1):
+        if not isinstance(marker, dict):
+            continue
+        try:
+            elapsed = float(marker["elapsed_seconds"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(elapsed):
+            continue
+        operation = str(marker.get("operation") or "Unspecified")
+        note = str(marker.get("note") or "").strip()
+        plotted_markers.append({
+            "elapsed_seconds": elapsed,
+            "label": f"{index}. {operation}" + (f" ({note})" if note else ""),
+        })
+    plotted_markers.sort(key=lambda item: item["elapsed_seconds"])
+    return {"signals": signals, "markers": plotted_markers}

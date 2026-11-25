@@ -1,4 +1,6 @@
-from freerov3r.diagnostics.dbc_signal_behavior import analyze_dbc_signal_behavior
+from freerov3r.diagnostics.dbc_signal_behavior import (
+    analyze_dbc_signal_behavior, build_dbc_signal_series,
+)
 
 
 class FakeDecoded:
@@ -84,3 +86,36 @@ def test_no_dbc_returns_explicit_unavailable_report():
     assert report["dbc_loaded"] is False
     assert report["unmatched_frames"] == 1
     assert report["signals"] == []
+
+
+
+def test_graph_series_preserve_channel_identity_and_sort_timestamps():
+    frames = [
+        _frame(4, 2.0),
+        _frame(1, 0.0),
+        {**_frame(2, 1.0), "channel": "MS-CAN"},
+        _frame(3, 1.0),
+        {**_frame(4, 3.0), "elapsed_seconds": float("nan")},
+    ]
+    result = build_dbc_signal_series(
+        FakeLibrary(), frames,
+        [{"elapsed_seconds": 1.5, "operation": "Read live data", "note": "scanner"},
+         {"elapsed_seconds": "bad", "operation": "ignored"}],
+    )
+    assert len(result["signals"]) == 4  # Two numeric signals on each channel.
+    hs = next(item for item in result["signals"] if item["channel"] == "HS-CAN" and item["signal"] == "EngineSpeed")
+    ms = next(item for item in result["signals"] if item["channel"] == "MS-CAN" and item["signal"] == "EngineSpeed")
+    assert hs["samples"] == [(0.0, 1000.0), (1.0, 3000.0), (2.0, 4000.0)]
+    assert ms["samples"] == [(1.0, 2000.0)]
+    assert hs["minimum"] == 1000.0
+    assert hs["maximum"] == 4000.0
+    assert result["markers"] == [{
+        "elapsed_seconds": 1.5,
+        "label": "1. Read live data (scanner)",
+    }]
+
+
+def test_graph_series_without_dbc_is_empty():
+    assert build_dbc_signal_series(None, [_frame(1, 0.0)]) == {
+        "signals": [], "markers": []
+    }
