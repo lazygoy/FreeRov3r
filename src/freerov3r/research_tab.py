@@ -26,7 +26,19 @@ from freerov3r.timestamp_analysis import analyze_channel_timestamps
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
-from freerov3r.diagnostics.dbc_signal_behavior import analyze_dbc_signal_behavior
+from freerov3r.diagnostics.dbc_signal_behavior import (
+    analyze_dbc_signal_behavior, build_dbc_signal_series,
+)
+
+try:
+    from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
+    from PySide6.QtGui import QPen
+    from PySide6.QtWidgets import QListWidget, QListWidgetItem
+    HAS_RESEARCH_CHARTS = True
+except ImportError:
+    QChart = QChartView = QLineSeries = QValueAxis = QPen = None
+    QListWidget = QListWidgetItem = None
+    HAS_RESEARCH_CHARTS = False
 from freerov3r.diagnostics.module_discovery import (
     compare_module_discovery, discover_modules,
 )
@@ -993,6 +1005,12 @@ class ResearchTab(QWidget):
         self.dbc_signal_behavior_button.setToolTip("Summarize decoded signal values and capture-relative behavior. Passive only.")
         self.dbc_signal_behavior_button.clicked.connect(self.analyze_dbc_signal_behavior)
         dbc_controls.addWidget(self.dbc_signal_behavior_button)
+        self.dbc_signal_graph_button = QPushButton("Graph DBC signals")
+        self.dbc_signal_graph_button.setToolTip(
+            "Plot selected decoded signals against capture-relative time and overlay scanner action markers. Passive only."
+        )
+        self.dbc_signal_graph_button.clicked.connect(self.graph_dbc_signals)
+        dbc_controls.addWidget(self.dbc_signal_graph_button)
         dbc_controls.setContentsMargins(0, 0, 0, 0)
         dbc_controls.setSpacing(5)
         root.addLayout(dbc_controls)
@@ -1646,6 +1664,188 @@ class ResearchTab(QWidget):
         self.status_label.setText(
             f"DBC signal analysis: {report['signal_count']:,} numeric signals from "
             f"{report['matched_frames']:,} decoded frames"
+        )
+
+    def graph_dbc_signals(self):
+        """Plot selected passive DBC signal series and scanner-operation markers."""
+        if not HAS_RESEARCH_CHARTS:
+            QMessageBox.information(
+                self, "DBC signal graph",
+                "Qt Charts is unavailable in this PySide6 installation. "
+                "The numeric DBC analysis remains available.",
+            )
+            return
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(self, "DBC signal graph", "Capture or import CAN frames first.")
+            return
+        if self.dbc_library.database is None:
+            QMessageBox.information(self, "DBC signal graph", "Load a DBC definition first.")
+            return
+
+        graph_data = build_dbc_signal_series(self.dbc_library, dataset, self.markers)
+        signals = graph_data["signals"]
+        if not signals:
+            QMessageBox.information(
+                self, "DBC signal graph",
+                "No numeric DBC-decoded samples with valid elapsed_seconds timestamps were found.",
+            )
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Passive DBC signal graph")
+        dialog.resize(1320, 820)
+        outer = QVBoxLayout(dialog)
+        header = QLabel(
+            f"{len(signals):,} timestamped numeric signal(s) | "
+            f"{len(graph_data['markers']):,} scanner action marker(s) | "
+            "capture-relative monotonic time"
+        )
+        outer.addWidget(header)
+
+        body = QHBoxLayout()
+        signal_list = QListWidget()
+        signal_list.setMinimumWidth(330)
+        signal_list.setMaximumWidth(480)
+        signal_list.setToolTip(
+            "Select one or more signals. Each signal is independently normalized to 0–100% "
+            "so different units are not mixed on a misleading shared physical axis."
+        )
+        for item in signals:
+            channel = item["channel"] or "Unknown channel"
+            unit = f" {item['unit']}" if item["unit"] else ""
+            label = (
+                f"{channel} | 0x{item['can_id']:X} {item['format']} | "
+                f"{item['message']}.{item['signal']} [{item['minimum']:.4g}.."
+                f"{item['maximum']:.4g}{unit}]"
+            )
+            entry = QListWidgetItem(label)
+            entry.setData(Qt.UserRole, item["key"])
+            entry.setFlags(entry.flags() | Qt.ItemIsUserCheckable)
+            entry.setCheckState(Qt.Unchecked)
+            signal_list.addItem(entry)
+        body.addWidget(signal_list, 1)
+
+        chart = QChart()
+        chart.setTitle("DBC signals vs capture time")
+        chart.legend().setVisible(True)
+        chart.setAnimationOptions(QChart.NoAnimation)
+        chart_view = QChartView(chart)
+        chart_view.setRenderHint(QPainter.Antialiasing)
+        chart_view.setRubberBand(QChartView.RectangleRubberBand)
+        body.addWidget(chart_view, 4)
+        outer.addLayout(body, 1)
+
+        axis_x = QValueAxis()
+        axis_x.setTitleText("Elapsed time from recording start (seconds)")
+        axis_y = QValueAxis()
+        axis_y.setTitleText("Independently normalized signal value (%)")
+        axis_y.setRange(0.0, 100.0)
+        chart.addAxis(axis_x, Qt.AlignBottom)
+        chart.addAxis(axis_y, Qt.AlignLeft)
+
+        marker_check = QCheckBox("Overlay scanner action markers")
+        marker_check.setChecked(True)
+        outer.addWidget(marker_check)
+        hint = QLabel(
+            "Each signal is scaled independently from its observed minimum to maximum. "
+            "Legend entries retain the original unit and range. This is for comparing timing "
+            "and shape, not comparing absolute values. Missing timestamps are omitted."
+        )
+        hint.setWordWrap(True)
+        outer.addWidget(hint)
+
+        def redraw():
+            chart.removeAllSeries()
+            selected_keys = {
+                signal_list.item(i).data(Qt.UserRole)
+                for i in range(signal_list.count())
+                if signal_list.item(i).checkState() == Qt.Checked
+            }
+            x_values = []
+            for item in signals:
+                if item["key"] not in selected_keys:
+                    continue
+                samples = item["samples"]
+                if not samples:
+                    continue
+                minimum, maximum = item["minimum"], item["maximum"]
+                span = maximum - minimum
+                line = QLineSeries()
+                unit = f" {item['unit']}" if item["unit"] else ""
+                channel = item["channel"] or "Unknown"
+                line.setName(
+                    f"{channel} 0x{item['can_id']:X} {item['message']}.{item['signal']} "
+                    f"({minimum:.4g}..{maximum:.4g}{unit})"
+                )
+                # Bound rendering cost for large captures while preserving endpoints.
+                stride = max(1, (len(samples) + 7999) // 8000)
+                chosen = samples[::stride]
+                if chosen[-1] != samples[-1]:
+                    chosen.append(samples[-1])
+                for elapsed, value in chosen:
+                    normalized = 50.0 if span == 0 else ((value - minimum) / span) * 100.0
+                    line.append(float(elapsed), float(normalized))
+                    x_values.append(float(elapsed))
+                chart.addSeries(line)
+                line.attachAxis(axis_x)
+                line.attachAxis(axis_y)
+
+            if marker_check.isChecked():
+                for marker in graph_data["markers"]:
+                    elapsed = marker["elapsed_seconds"]
+                    marker_line = QLineSeries()
+                    marker_line.setName(f"Marker {elapsed:.3f}s: {marker['label']}")
+                    pen = QPen()
+                    pen.setStyle(Qt.DashLine)
+                    pen.setWidth(1)
+                    marker_line.setPen(pen)
+                    marker_line.append(elapsed, 0.0)
+                    marker_line.append(elapsed, 100.0)
+                    chart.addSeries(marker_line)
+                    marker_line.attachAxis(axis_x)
+                    marker_line.attachAxis(axis_y)
+                    x_values.append(elapsed)
+
+            if x_values:
+                left, right = min(x_values), max(x_values)
+                if left == right:
+                    axis_x.setRange(left - 0.5, right + 0.5)
+                else:
+                    padding = max((right - left) * 0.02, 0.001)
+                    axis_x.setRange(left - padding, right + padding)
+            else:
+                axis_x.setRange(0.0, 1.0)
+
+        plot_button = QPushButton("Plot selected signals")
+        plot_button.clicked.connect(redraw)
+        select_all_button = QPushButton("Select all")
+        select_all_button.clicked.connect(
+            lambda: [signal_list.item(i).setCheckState(Qt.Checked)
+                     for i in range(signal_list.count())]
+        )
+        clear_button = QPushButton("Clear selection")
+        clear_button.clicked.connect(
+            lambda: [signal_list.item(i).setCheckState(Qt.Unchecked)
+                     for i in range(signal_list.count())]
+        )
+        marker_check.toggled.connect(redraw)
+        controls = QHBoxLayout()
+        controls.addWidget(select_all_button)
+        controls.addWidget(clear_button)
+        controls.addWidget(plot_button)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        controls.addWidget(close_button)
+        outer.addLayout(controls)
+        # Start with a manageable subset rather than overlaying every decoded signal.
+        for index in range(min(6, signal_list.count())):
+            signal_list.item(index).setCheckState(Qt.Checked)
+        redraw()
+        dialog.exec()
+        self.status_label.setText(
+            f"DBC graph closed: {len(signals):,} timestamped signals available"
         )
 
     def compare_dbcs(self):
