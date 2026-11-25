@@ -60,8 +60,13 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
     device_timestamp_us from an ESP32 receiver. Missing optional timestamps
     never invalidate the associated CAN frame.
     """
-    if suspicious_gap_seconds <= 0:
-        raise ValueError("Suspicious gap threshold must be positive")
+    if (
+        isinstance(suspicious_gap_seconds, bool)
+        or not isinstance(suspicious_gap_seconds, (int, float))
+        or not math.isfinite(suspicious_gap_seconds)
+        or suspicious_gap_seconds <= 0
+    ):
+        raise ValueError("Suspicious gap threshold must be a finite positive number")
 
     grouped = defaultdict(list)
     total = 0
@@ -94,7 +99,10 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
 
         for record in channel_records:
             try:
-                host_time = float(record.get("timestamp"))
+                raw_host = record.get("timestamp")
+                if isinstance(raw_host, bool):
+                    raise ValueError
+                host_time = float(raw_host)
                 if not math.isfinite(host_time):
                     raise ValueError
             except (TypeError, ValueError):
