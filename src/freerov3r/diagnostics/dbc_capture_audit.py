@@ -10,6 +10,7 @@ def audit_dbc_capture(library, records):
     counts = Counter()
     messages = Counter()
     unmatched = Counter()
+    matched_records = []
     invalid_records = 0
 
     if library is None or library.database is None:
@@ -57,6 +58,7 @@ def audit_dbc_capture(library, records):
             else:
                 counts["matched"] += 1
                 messages[f"0x{can_id:X} {'EXT' if extended else 'STD'} {decoded.message_name}"] += 1
+                matched_records.append(record)
                 continue
 
         counts[reason] += 1
@@ -66,7 +68,7 @@ def audit_dbc_capture(library, records):
     matched = counts["matched"]
     unmatched_count = len(frames) - matched - invalid_records
     denominator = len(frames) - invalid_records
-    signal_coverage = library.decode_coverage(frames)
+    signal_coverage = library.decode_coverage(matched_records)
     signatures = [
         {
             "can_id": key[0],
