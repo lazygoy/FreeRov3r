@@ -63,6 +63,28 @@ PID_CATEGORIES_ALL = ("All", "Engine", "Temperatures", "Air & Intake",
                       "Fuel", "Emissions", "Electrical", "Vehicle")
 
 
+def search_mode01_pids(query="", category="All"):
+    """Return searchable PID rows as (hex_pid, name, unit, category).
+
+    Search covers PID number, displayed name, unit, category and common
+    workshop terminology. It does not imply that a PID is supported.
+    """
+    needle = str(query or "").strip().casefold()
+    rows = []
+    for pid, (name, unit) in PID_DEFINITIONS.items():
+        group = PID_CATEGORIES.get(pid, "Other")
+        if category not in (None, "", "All") and group != category:
+            continue
+        haystack = " ".join((
+            f"{pid:02X}", name, unit, group, PID_SEARCH_TERMS.get(pid, "")
+        )).casefold()
+        if needle and not all(term in haystack for term in needle.split()):
+            continue
+        rows.append((f"{pid:02X}", name, unit, group))
+    return rows
+
+
+
 def parse_mode01_supported_pids(response, base_pid):
     """Decode a Mode 01 PID-support bitmap into the supported PID numbers.
 
