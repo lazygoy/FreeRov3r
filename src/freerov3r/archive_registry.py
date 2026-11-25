@@ -61,9 +61,55 @@ def _write_records(registry_path: str | Path, records: list[dict[str, Any]]) -> 
         raise ArchiveRegistryError(f"Cannot update backup register {path}: {exc}") from exc
 
 
+def _verified_result_consistent(result: Any) -> bool:
+    """Check the verifier's detailed evidence before trusting its summary flag."""
+    if not isinstance(result, dict) or result.get("verified") is not True:
+        return False
+    manifest = result.get("manifest")
+    files = result.get("files")
+    unexpected = result.get("unexpected_files")
+    if not isinstance(manifest, dict) or not isinstance(files, list) or not files:
+        return False
+    if not isinstance(unexpected, dict) or set(unexpected) != {"internal", "removable"}:
+        return False
+    if any(unexpected.get(key) != [] for key in ("internal", "removable")):
+        return False
+    manifest_files = manifest.get("files")
+    if not isinstance(manifest_files, list) or len(manifest_files) != len(files):
+        return False
+    for verified_file, manifest_file in zip(files, manifest_files):
+        if not isinstance(verified_file, dict) or not isinstance(manifest_file, dict):
+            return False
+        if verified_file.get("verified") is not True:
+            return False
+        if verified_file.get("path") != manifest_file.get("path"):
+            return False
+        digest = manifest_file.get("sha256")
+        size = manifest_file.get("size_bytes")
+        if not isinstance(digest, str) or len(digest) != 64:
+            return False
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            return False
+        copies = verified_file.get("copies")
+        if not isinstance(copies, dict):
+            return False
+        for label in ("internal", "removable"):
+            copy = copies.get(label)
+            if not isinstance(copy, dict):
+                return False
+            if (
+                copy.get("readable") is not True
+                or copy.get("matches_manifest") is not True
+                or copy.get("sha256") != digest
+                or copy.get("size_bytes") != size
+            ):
+                return False
+    return True
+
+
 def record_archive(registry_path: str | Path, result: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(result, dict) or not result.get("verified"):
-        raise ArchiveRegistryError("Only a successfully verified dual archive can be registered.")
+    if not _verified_result_consistent(result):
+        raise ArchiveRegistryError("Only a fully verified dual archive with consistent file evidence can be registered.")
     manifest = result.get("manifest")
     files = result.get("files")
     if not isinstance(manifest, dict) or not isinstance(files, list) or not files:
@@ -143,5 +189,5 @@ def record_verification(
     timestamp = _timestamp()
     for item in matches:
         item["last_verified_utc"] = timestamp
-        item["status"] = "verified" if result.get("verified") else "verification_failed"
+        item["status"] = "verified" if _verified_result_consistent(result) else "verification_failed"
     _write_records(registry_path, records)
