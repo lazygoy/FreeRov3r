@@ -91,8 +91,8 @@ def test_cross_capture_inventory_tracks_repeatability_without_upgrading_identity
 def test_cross_capture_inventory_retains_probable_responder_evidence():
     from freerov3r.diagnostics.module_discovery import compare_module_discovery
 
-    request = _sf(b"\\x22\\xF1\\x90", 0x7E0, 1.0)
-    response = _sf(b"\\x62\\xF1\\x90", 0x7E8, 1.05)
+    request = _sf(bytes.fromhex("22 F1 90"), 0x7E0, 1.0)
+    response = _sf(bytes.fromhex("62 F1 90"), 0x7E8, 1.05)
     report = compare_module_discovery([
         {"name": "scan", "frames": [request, response]},
         {"name": "idle", "frames": [
