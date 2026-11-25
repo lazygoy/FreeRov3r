@@ -131,3 +131,26 @@ def test_marker_signal_summary_markdown_table_handles_empty_results():
 
     table = format_dbc_marker_signal_summary_table([])
     assert "No decoded numeric signal samples" in table
+
+
+def test_marker_signal_summary_markdown_table_uses_real_line_breaks_and_sanitizes_cells():
+    from freerov3r.diagnostics.dbc_signal_behavior import (
+        format_dbc_marker_signal_summary_table,
+    )
+
+    table = format_dbc_marker_signal_summary_table([{
+        "marker_index": 1,
+        "marker": {"operation": "Idle check\\nsecond line"},
+        "signals": [{
+            "channel": "HS-CAN",
+            "can_id": 0x123,
+            "message": "EngineData",
+            "signal": "EngineSpeed",
+            "before_sample_count": 1,
+            "after_sample_count": 1,
+        }],
+    }])
+
+    assert "\\n|---:" in table
+    assert "Idle check second line" in table
+    assert "\\\\n" not in table
