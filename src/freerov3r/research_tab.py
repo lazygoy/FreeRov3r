@@ -1617,7 +1617,6 @@ class ResearchTab(QWidget):
         table.setAlternatingRowColors(True)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
-        table.setSortingEnabled(True)
         for row_index, record in enumerate(report["signals"]):
             for column_index, (_, key) in enumerate(columns):
                 value = record.get(key)
@@ -1628,6 +1627,7 @@ class ResearchTab(QWidget):
                 elif isinstance(value, float):
                     value = f"{value:.4f}"
                 table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+        table.setSortingEnabled(True)
         table.resizeColumnsToContents()
         table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(table, 1)
