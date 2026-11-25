@@ -1787,6 +1787,33 @@ class ResearchTab(QWidget):
         time_row.addWidget(reset_time_button)
         outer.addLayout(time_row)
 
+        marker_row = QHBoxLayout()
+        marker_row.addWidget(QLabel("Focus scanner operation:"))
+        marker_combo = QComboBox()
+        for marker_index, marker in enumerate(graph_data["markers"]):
+            marker_combo.addItem(
+                f'{marker["elapsed_seconds"]:.3f}s | {marker["label"]}',
+                marker_index,
+            )
+        marker_combo.setEnabled(bool(graph_data["markers"]))
+        marker_row.addWidget(marker_combo, 3)
+        marker_row.addWidget(QLabel("Before (s):"))
+        marker_before = QDoubleSpinBox()
+        marker_before.setDecimals(2)
+        marker_before.setRange(0.0, 3600.0)
+        marker_before.setValue(2.0)
+        marker_row.addWidget(marker_before)
+        marker_row.addWidget(QLabel("After (s):"))
+        marker_after = QDoubleSpinBox()
+        marker_after.setDecimals(2)
+        marker_after.setRange(0.0, 3600.0)
+        marker_after.setValue(5.0)
+        marker_row.addWidget(marker_after)
+        focus_marker_button = QPushButton("Focus marker window")
+        focus_marker_button.setEnabled(bool(graph_data["markers"]))
+        marker_row.addWidget(focus_marker_button)
+        outer.addLayout(marker_row)
+
         hint = QLabel(
             "Normalized mode independently scales each signal to 0–100%, retaining its original "
             "unit and observed range in the legend. Physical mode uses actual decoded values and "
@@ -1915,6 +1942,18 @@ class ResearchTab(QWidget):
             redraw()
 
         reset_time_button.clicked.connect(reset_time_range)
+
+        def focus_marker_window():
+            marker_index = marker_combo.currentData()
+            if marker_index is None:
+                return
+            marker = graph_data["markers"][int(marker_index)]
+            center = float(marker["elapsed_seconds"])
+            time_start.setValue(center - marker_before.value())
+            time_end.setValue(center + marker_after.value())
+            redraw()
+
+        focus_marker_button.clicked.connect(focus_marker_window)
         controls = QHBoxLayout()
         controls.addWidget(select_all_button)
         controls.addWidget(clear_button)
