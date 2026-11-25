@@ -84,6 +84,8 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
         invalid_device = 0
         non_monotonic = 0
         duplicate_device_time = 0
+        non_monotonic_host = 0
+        duplicate_host_time = 0
         device_gaps = 0
         host_gaps = 0
         device_deltas = []
@@ -104,7 +106,13 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
                 missing_device += 1
                 continue
             try:
+                if isinstance(raw_device, bool):
+                    raise ValueError
                 device_time = int(raw_device)
+                if isinstance(raw_device, float) and (
+                    not math.isfinite(raw_device) or raw_device != device_time
+                ):
+                    raise ValueError
                 if device_time < 0:
                     raise ValueError
             except (TypeError, ValueError, OverflowError):
@@ -124,13 +132,24 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
                     device_deltas.append(device_delta)
                     if device_delta >= suspicious_gap_seconds:
                         device_gaps += 1
-                if host_delta > 0:
+                if host_delta < 0:
+                    non_monotonic_host += 1
+                elif host_delta == 0:
+                    duplicate_host_time += 1
+                else:
                     host_deltas.append(host_delta)
                     if host_delta >= suspicious_gap_seconds:
                         host_gaps += 1
             previous = (device_seconds, host_time)
 
-        fit = _linear_fit(points)
+        # A regression or duplicate in either clock makes a linear drift fit
+        # misleading. Keep the raw counts, but do not publish a fit.
+        fit = (
+            None if (
+                non_monotonic or duplicate_device_time
+                or non_monotonic_host or duplicate_host_time
+            ) else _linear_fit(points)
+        )
         channels.append({
             "channel": channel,
             "frame_count": len(channel_records),
@@ -143,6 +162,8 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
             ),
             "non_monotonic_device_steps": non_monotonic,
             "duplicate_device_timestamps": duplicate_device_time,
+            "non_monotonic_host_steps": non_monotonic_host,
+            "duplicate_host_timestamps": duplicate_host_time,
             "suspicious_device_gaps": device_gaps,
             "suspicious_host_gaps": host_gaps,
             "median_device_interval_ms": (
@@ -154,7 +175,11 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
             "clock_fit": fit,
             "timing_quality": (
                 "insufficient data" if fit is None
-                else "check monotonicity/gaps" if non_monotonic or device_gaps or host_gaps
+                else "check monotonicity/gaps" if (
+                    non_monotonic or duplicate_device_time
+                    or non_monotonic_host or duplicate_host_time
+                    or device_gaps or host_gaps
+                )
                 else "measured; not synchronized"
             ),
         })
