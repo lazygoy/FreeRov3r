@@ -7,7 +7,7 @@ def test_supported_pid_bitmap_decodes_msb_first():
 
 
 def test_supported_pid_bitmap_decodes_next_range_and_continuation_bit():
-    response = "7E8 06 41 20 C0 00 00 00"
+    response = "7E8 06 41 20 80 00 00 01"
     assert parse_mode01_supported_pids(response, 0x20) == {0x21, 0x40}
 
 
