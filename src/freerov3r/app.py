@@ -54,7 +54,7 @@ except ImportError:
 from .vehicle_history import VehicleHistoryStore
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
-from .asset_loader import load_asset_pixmap
+from .asset_loader import ASSET_DIR, load_asset_pixmap
 from .research_tab import ResearchTab
 from .tuning_tab import TuningTab
 
