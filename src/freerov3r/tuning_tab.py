@@ -358,21 +358,27 @@ class TuningTab(QWidget):
             self.archive_status.setText(f"ARCHIVE FAILED: {exc}")
             QMessageBox.warning(self, "Archive failed", str(exc))
             return
+        registry_warning = ""
         try:
             record_archive(self.REGISTRY_PATH, result)
             self.refresh_archive_registry()
         except ArchiveRegistryError as exc:
-            self.archive_status.setText(f"ARCHIVE VERIFIED, BUT REGISTER UPDATE FAILED: {exc}")
+            registry_warning = f" Backup register update failed: {exc}"
         self.archive_status.setText(
             f"VERIFIED: {len(result['files'])} file(s). Both archived copies were reopened "
-            "and matched against the manifest SHA-256 and file size."
+            "and matched against the manifest SHA-256 and file size.{registry_warning}"
         )
         self.log.append(
             f"[{datetime.now().astimezone().isoformat(timespec='seconds')}] "
             f"Dual archive verified: {Path(self.source_file).name}; VIN={metadata['vin']}; "
             f"module={metadata['module']}; SHA-256={result['files'][0]['copies']['internal']['sha256']}"
         )
-        QMessageBox.information(self, "Archive verified", "Both copies were read back and hash-verified.")
+        confirmation = "Both copies were read back and hash-verified."
+        if registry_warning:
+            confirmation += "\n\nThe archive is valid, but its local backup register was not updated.\n" + registry_warning
+            QMessageBox.warning(self, "Archive verified; register update failed", confirmation)
+        else:
+            QMessageBox.information(self, "Archive verified", confirmation)
 
     def verify_archive(self):
         try:
@@ -382,6 +388,7 @@ class TuningTab(QWidget):
             self.archive_status.setText(f"VERIFICATION FAILED: {exc}")
             QMessageBox.warning(self, "Verification failed", str(exc))
             return
+        registry_warning = ""
         try:
             record_verification(
                 self.REGISTRY_PATH,
@@ -391,18 +398,27 @@ class TuningTab(QWidget):
             )
             self.refresh_archive_registry()
         except ArchiveRegistryError as exc:
-            self.archive_status.setText(f"VERIFICATION FINISHED, BUT REGISTER UPDATE FAILED: {exc}")
+            registry_warning = f" Backup register update failed: {exc}"
         if result["verified"]:
             self.archive_status.setText(
                 f"VERIFIED: {len(result['files'])} file(s). Both copies match the shared manifest."
+                f"{registry_warning}"
             )
-            QMessageBox.information(self, "Archive verified", "Both archive copies match the manifest.")
+            confirmation = "Both archive copies match the manifest."
+            if registry_warning:
+                confirmation += "\n\nThe archive is valid, but its local backup register was not updated.\n" + registry_warning
+                QMessageBox.warning(self, "Archive verified; register update failed", confirmation)
+            else:
+                QMessageBox.information(self, "Archive verified", confirmation)
         else:
-            self.archive_status.setText("VERIFICATION FAILED: one or more archived files do not match.")
-            QMessageBox.warning(
-                self, "Archive mismatch",
-                "At least one archived copy is missing, unreadable, or has a hash/size mismatch.",
+            self.archive_status.setText(
+                "VERIFICATION FAILED: one or more archived files do not match."
+                f"{registry_warning}"
             )
+            warning = "At least one archived copy is missing, unreadable, or has a hash/size mismatch."
+            if registry_warning:
+                warning += "\n\nThe failed verification could not be written to the local register.\n" + registry_warning
+            QMessageBox.warning(self, "Archive mismatch", warning)
 
     def refresh_archive_registry(self):
         try:
