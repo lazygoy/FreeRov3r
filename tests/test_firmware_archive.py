@@ -54,6 +54,32 @@ def test_verification_detects_changed_copy(tmp_path):
     assert result["files"][0]["copies"]["removable"]["matches_manifest"] is False
 
 
+def test_verification_detects_unlisted_archive_files(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    extra_internal = internal / "FreeRov3r/recovery/untracked/notes.txt"
+    extra_removable = removable / "FreeRov3r/recovery/untracked/notes.txt"
+    extra_internal.parent.mkdir(parents=True)
+    extra_removable.parent.mkdir(parents=True)
+    extra_internal.write_text("untracked internal file", encoding="utf-8")
+    extra_removable.write_text("untracked removable file", encoding="utf-8")
+
+    result = verify_dual_backup(
+        internal / "FreeRov3r/recovery",
+        removable / "FreeRov3r/recovery",
+    )
+
+    assert result["verified"] is False
+    assert result["unexpected_files"] == {
+        "internal": ["untracked/notes.txt"],
+        "removable": ["untracked/notes.txt"],
+    }
+
+
 def test_existing_original_is_never_overwritten(tmp_path):
     source = tmp_path / "stock.bin"
     source.write_bytes(b"first")
