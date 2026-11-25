@@ -275,6 +275,8 @@ def create_dual_backup_bundle(
             item.get("relative_file_path") or Path("original") / source.name
         )
         relative_parts = tuple(part.casefold() for part in relative.parts)
+        if relative_parts in seen_paths:
+            raise ArchiveError(f"Recovery bundle contains a duplicate archive path: {relative}")
         if any(
             relative_parts[:len(existing)] == existing
             or existing[:len(relative_parts)] == relative_parts
