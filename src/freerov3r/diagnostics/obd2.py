@@ -9,54 +9,122 @@ from ..models import CanFrame
 PID_DEFINITIONS = {
     0x04: ("Calculated engine load", "%"),
     0x05: ("Engine coolant temperature", "°C"),
+    0x06: ("Short-term fuel trim bank 1", "%"),
+    0x07: ("Long-term fuel trim bank 1", "%"),
+    0x08: ("Short-term fuel trim bank 2", "%"),
+    0x09: ("Long-term fuel trim bank 2", "%"),
+    0x0A: ("Fuel pressure", "kPa"),
     0x0B: ("Intake manifold pressure", "kPa"),
     0x0C: ("Engine speed", "rpm"),
     0x0D: ("Vehicle speed", "km/h"),
+    0x0E: ("Ignition timing advance", "°"),
     0x0F: ("Intake air temperature", "°C"),
     0x10: ("MAF air flow", "g/s"),
     0x11: ("Throttle position", "%"),
     0x1F: ("Run time since engine start", "s"),
     0x21: ("Distance traveled with MIL on", "km"),
+    0x22: ("Fuel rail pressure relative to manifold vacuum", "kPa"),
+    0x23: ("Fuel rail pressure", "kPa"),
+    0x2C: ("Commanded EGR", "%"),
+    0x2D: ("EGR error", "%"),
+    0x2E: ("Commanded evaporative purge", "%"),
     0x2F: ("Fuel tank level", "%"),
+    0x30: ("Warm-ups since codes cleared", "count"),
+    0x31: ("Distance since codes cleared", "km"),
+    0x33: ("Barometric pressure", "kPa"),
+    0x3C: ("Catalyst temperature bank 1 sensor 1", "°C"),
+    0x3D: ("Catalyst temperature bank 1 sensor 2", "°C"),
+    0x3E: ("Catalyst temperature bank 2 sensor 1", "°C"),
+    0x3F: ("Catalyst temperature bank 2 sensor 2", "°C"),
     0x42: ("Control module voltage", "V"),
     0x46: ("Ambient air temperature", "°C"),
+    0x4C: ("Commanded throttle actuator", "%"),
+    0x4D: ("Time run with MIL on", "min"),
+    0x4E: ("Time since codes cleared", "min"),
+    0x52: ("Ethanol fuel percentage", "%"),
+    0x53: ("Absolute evaporative system vapor pressure", "kPa"),
+    0x54: ("Evaporative system vapor pressure", "Pa"),
+    0x55: ("Short-term secondary oxygen sensor trim bank 1 and 3", "%"),
+    0x56: ("Long-term secondary oxygen sensor trim bank 1 and 3", "%"),
+    0x57: ("Short-term secondary oxygen sensor trim bank 2 and 4", "%"),
+    0x58: ("Long-term secondary oxygen sensor trim bank 2 and 4", "%"),
+    0x59: ("Fuel rail pressure", "kPa"),
+    0x5A: ("Relative accelerator pedal position", "%"),
+    0x5B: ("Hybrid battery pack remaining life", "%"),
     0x5C: ("Engine oil temperature", "°C"),
+    0x5D: ("Fuel injection timing", "°"),
+    0x5E: ("Engine fuel rate", "L/h"),
 }
 
 # Categories are navigation aids, not claims that a particular vehicle supports
 # the PID. Support must be discovered from the responding ECU.
 PID_CATEGORIES = {
-    0x04: "Engine",
-    0x05: "Temperatures",
-    0x0B: "Air & Intake",
-    0x0C: "Engine",
-    0x0D: "Vehicle",
-    0x0F: "Temperatures",
-    0x10: "Air & Intake",
-    0x11: "Engine",
-    0x1F: "Engine",
-    0x21: "Emissions",
-    0x2F: "Fuel",
-    0x42: "Electrical",
-    0x46: "Temperatures",
-    0x5C: "Temperatures",
+    0x04: "Engine", 0x05: "Temperatures",
+    0x06: "Fuel", 0x07: "Fuel", 0x08: "Fuel", 0x09: "Fuel",
+    0x0A: "Fuel", 0x0B: "Air & Intake", 0x0C: "Engine",
+    0x0D: "Vehicle", 0x0E: "Engine", 0x0F: "Temperatures",
+    0x10: "Air & Intake", 0x11: "Engine", 0x1F: "Engine",
+    0x21: "Emissions", 0x22: "Fuel", 0x23: "Fuel",
+    0x2C: "Air & Intake", 0x2D: "Air & Intake", 0x2E: "Emissions",
+    0x2F: "Fuel", 0x30: "Emissions", 0x31: "Emissions",
+    0x33: "Air & Intake", 0x3C: "Temperatures", 0x3D: "Temperatures",
+    0x3E: "Temperatures", 0x3F: "Temperatures", 0x42: "Electrical",
+    0x46: "Temperatures", 0x4C: "Engine", 0x4D: "Emissions",
+    0x4E: "Emissions", 0x52: "Fuel", 0x53: "Emissions",
+    0x54: "Emissions", 0x55: "Fuel", 0x56: "Fuel",
+    0x57: "Fuel", 0x58: "Fuel", 0x59: "Fuel",
+    0x5A: "Engine", 0x5B: "Electrical", 0x5C: "Temperatures",
+    0x5D: "Engine", 0x5E: "Fuel",
 }
 
 PID_SEARCH_TERMS = {
     0x04: "load engine load calculated torque",
     0x05: "coolant water temperature engine ect",
+    0x06: "short term fuel trim stft bank one b1",
+    0x07: "long term fuel trim ltft bank one b1",
+    0x08: "short term fuel trim stft bank two b2",
+    0x09: "long term fuel trim ltft bank two b2",
+    0x0A: "fuel pressure rail gauge low pressure",
     0x0B: "map manifold absolute pressure boost intake",
     0x0C: "rpm revs revolutions engine speed",
     0x0D: "speed road vehicle speed",
+    0x0E: "spark ignition timing advance degrees before top dead center",
     0x0F: "iat intake air temperature",
     0x10: "maf mass air flow airflow",
     0x11: "throttle tps accelerator position",
     0x1F: "runtime run time engine start",
     0x21: "mil emissions distance check engine light",
+    0x22: "fuel rail pressure manifold vacuum relative",
+    0x23: "fuel rail pressure direct injection high pressure",
+    0x2C: "egr exhaust gas recirculation commanded",
+    0x2D: "egr exhaust gas recirculation error",
+    0x2E: "evap evaporative purge command",
     0x2F: "fuel tank level fuel",
+    0x30: "warmups warm up cycles since clear reset",
+    0x31: "distance since codes cleared reset",
+    0x33: "barometric baro atmospheric pressure",
+    0x3C: "catalyst catalytic converter temperature bank 1 sensor 1",
+    0x3D: "catalyst catalytic converter temperature bank 1 sensor 2",
+    0x3E: "catalyst catalytic converter temperature bank 2 sensor 1",
+    0x3F: "catalyst catalytic converter temperature bank 2 sensor 2",
     0x42: "voltage battery charging electrical module",
     0x46: "ambient outside air temperature",
+    0x4C: "throttle actuator commanded",
+    0x4D: "time mil malfunction indicator lamp",
+    0x4E: "time since codes cleared reset",
+    0x52: "ethanol alcohol fuel content percentage",
+    0x53: "evap evaporative vapor pressure absolute",
+    0x54: "evap evaporative vapor pressure",
+    0x55: "secondary oxygen sensor short term fuel trim bank 1 bank 3",
+    0x56: "secondary oxygen sensor long term fuel trim bank 1 bank 3",
+    0x57: "secondary oxygen sensor short term fuel trim bank 2 bank 4",
+    0x58: "secondary oxygen sensor long term fuel trim bank 2 bank 4",
+    0x59: "fuel rail pressure absolute high pressure",
+    0x5A: "accelerator pedal position relative app",
+    0x5B: "hybrid battery remaining life charge",
     0x5C: "oil temperature engine lubricant",
+    0x5D: "fuel injection timing start of injection",
+    0x5E: "fuel rate consumption engine liters per hour",
 }
 
 PID_CATEGORIES_ALL = ("All", "Engine", "Temperatures", "Air & Intake",
@@ -122,7 +190,11 @@ OBD_PIDS = [
 
 
 def decode_mode01(frame: CanFrame):
-    """Return (pid, name, value, unit) for a supported 11-bit CAN response."""
+    """Return (pid, name, value, unit) for a supported 11-bit CAN response.
+
+    Values follow the SAE J1979 Mode 01 scaling. This numeric decoder
+    intentionally leaves bitfields and enumerated status PIDs out of scope.
+    """
     data = frame.data
     if frame.is_extended_id or not 0x7E8 <= frame.arbitration_id <= 0x7EF:
         return None
@@ -131,24 +203,52 @@ def decode_mode01(frame: CanFrame):
     pid = data[2]
     if pid not in PID_DEFINITIONS:
         return None
-    if pid in (0x0C, 0x10, 0x1F, 0x21, 0x42) and len(data) < 5:
+
+    two_byte_pids = {
+        0x1F, 0x21, 0x22, 0x23, 0x31, 0x3C, 0x3D, 0x3E, 0x3F,
+        0x42, 0x4D, 0x4E, 0x53, 0x54, 0x59, 0x5D, 0x5E,
+    }
+    if pid in two_byte_pids and len(data) < 5:
         return None
+
     a, b = data[3], data[4] if len(data) > 4 else 0
+    ab = a * 256 + b
     name, unit = PID_DEFINITIONS[pid]
-    if pid == 0x04 or pid == 0x11 or pid == 0x2F:
+
+    if pid in (0x04, 0x11, 0x2C, 0x2E, 0x2F, 0x4C, 0x52, 0x5A, 0x5B):
         value = a * 100.0 / 255.0
     elif pid in (0x05, 0x0F, 0x46, 0x5C):
         value = a - 40.0
-    elif pid == 0x0B or pid == 0x0D:
+    elif pid in (0x06, 0x07, 0x08, 0x09, 0x2D, 0x55, 0x56, 0x57, 0x58):
+        value = (a - 128.0) * 100.0 / 128.0
+    elif pid == 0x0A:
+        value = a * 3.0
+    elif pid in (0x0B, 0x0D, 0x33):
         value = float(a)
     elif pid == 0x0C:
-        value = (a * 256 + b) / 4.0
+        value = ab / 4.0
+    elif pid == 0x0E:
+        value = a / 2.0 - 64.0
     elif pid == 0x10:
-        value = (a * 256 + b) / 100.0
-    elif pid == 0x1F or pid == 0x21:
-        value = float(a * 256 + b)
+        value = ab / 100.0
+    elif pid in (0x1F, 0x21, 0x30, 0x31, 0x4D, 0x4E):
+        value = float(ab if pid not in (0x30,) else a)
+    elif pid == 0x22:
+        value = ab * 0.079
+    elif pid in (0x23, 0x59):
+        value = ab * 10.0
+    elif pid in (0x3C, 0x3D, 0x3E, 0x3F):
+        value = ab / 10.0 - 40.0
     elif pid == 0x42:
-        value = (a * 256 + b) / 1000.0
+        value = ab / 1000.0
+    elif pid == 0x53:
+        value = ab / 200.0
+    elif pid == 0x54:
+        value = float(ab - 32767)
+    elif pid == 0x5D:
+        value = ab / 128.0 - 210.0
+    elif pid == 0x5E:
+        value = ab / 20.0
     else:
         return None
     return pid, name, value, unit
