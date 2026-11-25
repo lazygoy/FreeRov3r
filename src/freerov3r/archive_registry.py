@@ -68,23 +68,54 @@ def record_archive(registry_path: str | Path, result: dict[str, Any]) -> dict[st
     files = result.get("files")
     if not isinstance(manifest, dict) or not isinstance(files, list) or not files:
         raise ArchiveRegistryError("Archive result is missing its manifest or file verification details.")
-    metadata = manifest.get("files", [{}])[0].get("metadata", {})
-    first = files[0]
-    internal_copy = first.get("copies", {}).get("internal", {})
+    manifest_files = manifest.get("files")
+    if (
+        not isinstance(manifest_files, list)
+        or len(manifest_files) != len(files)
+        or any(not isinstance(item, dict) for item in manifest_files)
+        or any(not isinstance(item, dict) for item in files)
+    ):
+        raise ArchiveRegistryError("Archive manifest and verification file lists are malformed or inconsistent.")
+
+    file_records = []
+    for verified_file, manifest_file in zip(files, manifest_files):
+        copies = verified_file.get("copies")
+        if not isinstance(copies, dict):
+            raise ArchiveRegistryError("Archive verification details are missing copy information.")
+        internal_copy = copies.get("internal")
+        removable_copy = copies.get("removable")
+        if not isinstance(internal_copy, dict) or not isinstance(removable_copy, dict):
+            raise ArchiveRegistryError("Archive verification details are missing a destination copy.")
+        metadata = manifest_file.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        file_records.append({
+            "path": str(verified_file.get("path", manifest_file.get("path", "unknown"))),
+            "file_name": Path(str(verified_file.get("path", "unknown"))).name,
+            "size_bytes": manifest_file.get("size_bytes"),
+            "sha256": internal_copy.get("sha256", "unknown"),
+            "metadata": metadata,
+            "internal": internal_copy,
+            "removable": removable_copy,
+        })
+
+    first = file_records[0]
+    metadata = first["metadata"]
     record = {
         "timestamp_utc": _timestamp(),
         "last_verified_utc": _timestamp(),
         "status": "verified",
-        "vin": metadata.get("vin", "unknown") if isinstance(metadata, dict) else "unknown",
-        "module": metadata.get("module", "unknown") if isinstance(metadata, dict) else "unknown",
-        "hardware_id": metadata.get("hardware_id", "unknown") if isinstance(metadata, dict) else "unknown",
-        "software_id": metadata.get("software_id", "unknown") if isinstance(metadata, dict) else "unknown",
-        "calibration_id": metadata.get("calibration_id", "unknown") if isinstance(metadata, dict) else "unknown",
-        "file_name": Path(first.get("path", "unknown")).name,
-        "sha256": internal_copy.get("sha256", "unknown"),
+        "vin": metadata.get("vin", "unknown"),
+        "module": metadata.get("module", "unknown"),
+        "hardware_id": metadata.get("hardware_id", "unknown"),
+        "software_id": metadata.get("software_id", "unknown"),
+        "calibration_id": metadata.get("calibration_id", "unknown"),
+        "file_name": first["file_name"],
+        "sha256": first["sha256"],
         "internal_archive": result.get("internal_archive", ""),
         "removable_archive": result.get("removable_archive", ""),
-        "file_count": len(files),
+        "file_count": len(file_records),
+        "files": file_records,
     }
     records = load_archive_records(registry_path)
     records.append(record)
