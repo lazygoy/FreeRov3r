@@ -329,7 +329,7 @@ def create_dual_backup_bundle(
         "files": entries,
     }
     try:
-        manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\\n").encode("utf-8")
+        manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ArchiveError(f"Archive metadata must be JSON-serializable: {exc}") from exc
 
