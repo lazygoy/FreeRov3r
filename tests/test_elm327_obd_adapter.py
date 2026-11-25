@@ -9,16 +9,16 @@ class FakeSerial:
     def __init__(self, *args, responses=None, **kwargs):
         self.commands = []
         self.responses = deque(responses or [
-            b"ELM327 v1.5\\r>",
-            b"OK\\r>",
-            b"OK\\r>",
-            b"OK\\r>",
-            b"OK\\r>",
-            b"OK\\r>",
-            b"OK\\r>",
+            b"ELM327 v1.5\r>",
+            b"OK\r>",
+            b"OK\r>",
+            b"OK\r>",
+            b"OK\r>",
+            b"OK\r>",
+            b"OK\r>",
             # PID 0C is supported; PID 20 is not, so discovery stops here.
-            b"7E8 06 41 00 00 10 00 00\\r>",
-            b"7E8 04 41 0C 1A F8\\r>",
+            b"7E8 06 41 00 00 10 00 00\r>",
+            b"7E8 04 41 0C 1A F8\r>",
         ])
         self.timeout = kwargs.get("timeout", 0.2)
 
@@ -66,10 +66,10 @@ def test_elm327_obd_adapter_refuses_to_poll_unsupported_selection(monkeypatch):
     import freerov3r.hardware.elm327_obd_adapter as module
 
     fake = FakeSerial(responses=[
-        b"ELM327 v1.5\\r>",
-        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
-        b"OK\\r>", b"OK\\r>",
-        b"7E8 06 41 00 00 10 00 00\\r>",
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
     ])
     monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
     adapter = Elm327ObdAdapter("COM9", pids=[0x05])
