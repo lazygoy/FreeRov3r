@@ -13,7 +13,7 @@ def test_supported_pid_bitmap_decodes_next_range_and_continuation_bit():
 
 def test_supported_pid_bitmap_accepts_multiple_ecu_lines():
     response = (
-        "7E8 06 41 00 00 10 00 00\\r"
+        "7E8 06 41 00 00 10 00 00\r"
         "7E9 06 41 00 00 08 00 00"
     )
     assert parse_mode01_supported_pids(response, 0x00) == {0x0C, 0x0D}
