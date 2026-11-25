@@ -50,10 +50,11 @@ class Elm327ObdAdapter(CanAdapter):
     @property
     def description(self):
         if self.discovery_complete:
+            supported = ",".join(f"{pid:02X}" for pid in self.pids) or "none"
+            skipped = ",".join(f"{pid:02X}" for pid in sorted(self.unsupported_pids)) or "none"
             return (
-                f"ELM327 OBD-II: {self.port} | "
-                f"{len(self.pids)} selected PIDs supported, "
-                f"{len(self.unsupported_pids)} unsupported"
+                f"ELM327 OBD-II: {self.port} | supported [{supported}] | "
+                f"skipped [{skipped}]"
             )
         return f"ELM327 OBD-II polling: {self.port} @ {self.baudrate}"
 
