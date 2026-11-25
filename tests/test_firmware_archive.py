@@ -275,7 +275,7 @@ def test_archive_registry_preserves_each_file_identity(tmp_path):
                 "hardware_id": "TCM-HW2",
             },
         })
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     result = verify_dual_backup(
         internal / "FreeRov3r/recovery",
