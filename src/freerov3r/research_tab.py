@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QGridLayout, QWidget,
+    QDoubleSpinBox,
 )
 
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
@@ -1668,7 +1669,7 @@ class ResearchTab(QWidget):
         )
 
     def graph_dbc_signals(self):
-        """Plot selected passive DBC signal series and scanner-operation markers."""
+        """Plot selected passive DBC signals with unit-safe scaling and time controls."""
         if not HAS_RESEARCH_CHARTS:
             QMessageBox.information(
                 self, "DBC signal graph",
@@ -1694,9 +1695,15 @@ class ResearchTab(QWidget):
             )
             return
 
+        all_times = [elapsed for item in signals for elapsed, _ in item["samples"]]
+        data_start, data_end = min(all_times), max(all_times)
+        if data_start == data_end:
+            data_start -= 0.5
+            data_end += 0.5
+
         dialog = QDialog(self)
         dialog.setWindowTitle("Passive DBC signal graph")
-        dialog.resize(1320, 820)
+        dialog.resize(1420, 860)
         outer = QVBoxLayout(dialog)
         header = QLabel(
             f"{len(signals):,} timestamped numeric signal(s) | "
@@ -1710,8 +1717,8 @@ class ResearchTab(QWidget):
         signal_list.setMinimumWidth(330)
         signal_list.setMaximumWidth(480)
         signal_list.setToolTip(
-            "Select one or more signals. Each signal is independently normalized to 0–100% "
-            "so different units are not mixed on a misleading shared physical axis."
+            "Select one or more signals. Normalized mode compares timing and shape. "
+            "Physical mode plots actual decoded values and requires matching units."
         )
         for item in signals:
             channel = item["channel"] or "Unknown channel"
@@ -1735,6 +1742,7 @@ class ResearchTab(QWidget):
         chart_view = QChartView(chart)
         chart_view.setRenderHint(QPainter.Antialiasing)
         chart_view.setRubberBand(QChartView.RectangleRubberBand)
+        chart_view.setToolTip("Drag a rectangle to zoom into a time interval. Use Reset time range to restore the full capture.")
         body.addWidget(chart_view, 4)
         outer.addLayout(body, 1)
 
@@ -1746,31 +1754,82 @@ class ResearchTab(QWidget):
         chart.addAxis(axis_x, Qt.AlignBottom)
         chart.addAxis(axis_y, Qt.AlignLeft)
 
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Y-axis mode:"))
+        mode_combo = QComboBox()
+        mode_combo.addItem("Normalized 0–100% (compare shape)")
+        mode_combo.addItem("Physical values (matching units only)")
+        mode_row.addWidget(mode_combo)
         marker_check = QCheckBox("Overlay scanner action markers")
         marker_check.setChecked(True)
-        outer.addWidget(marker_check)
+        mode_row.addWidget(marker_check)
+        mode_row.addStretch()
+        outer.addLayout(mode_row)
+
+        time_row = QHBoxLayout()
+        time_row.addWidget(QLabel("Time start (s):"))
+        time_start = QDoubleSpinBox()
+        time_start.setDecimals(3)
+        time_start.setRange(-1_000_000_000.0, 1_000_000_000.0)
+        time_start.setValue(data_start)
+        time_start.setKeyboardTracking(False)
+        time_row.addWidget(time_start)
+        time_row.addWidget(QLabel("Time end (s):"))
+        time_end = QDoubleSpinBox()
+        time_end.setDecimals(3)
+        time_end.setRange(-1_000_000_000.0, 1_000_000_000.0)
+        time_end.setValue(data_end)
+        time_end.setKeyboardTracking(False)
+        time_row.addWidget(time_end)
+        apply_time_button = QPushButton("Apply time window")
+        reset_time_button = QPushButton("Reset time range")
+        time_row.addWidget(apply_time_button)
+        time_row.addWidget(reset_time_button)
+        outer.addLayout(time_row)
+
         hint = QLabel(
-            "Each signal is scaled independently from its observed minimum to maximum. "
-            "Legend entries retain the original unit and range. This is for comparing timing "
-            "and shape, not comparing absolute values. Missing timestamps are omitted."
+            "Normalized mode independently scales each signal to 0–100%, retaining its original "
+            "unit and observed range in the legend. Physical mode uses actual decoded values and "
+            "refuses mixed-unit overlays. Drag on the chart to zoom; the time fields set an exact "
+            "capture-relative window. Missing timestamps are omitted."
         )
         hint.setWordWrap(True)
         outer.addWidget(hint)
 
         def redraw():
-            chart.removeAllSeries()
             selected_keys = {
                 signal_list.item(i).data(Qt.UserRole)
                 for i in range(signal_list.count())
                 if signal_list.item(i).checkState() == Qt.Checked
             }
+            selected = [item for item in signals if item["key"] in selected_keys and item["samples"]]
+            physical_mode = mode_combo.currentIndex() == 1
+            units = {str(item["unit"] or "").strip() for item in selected}
+            if physical_mode and len(units) > 1:
+                QMessageBox.warning(
+                    dialog, "Incompatible signal units",
+                    "Physical-value mode cannot place different units on one Y axis. "
+                    "Select signals with matching units, or use normalized mode to compare shape.",
+                )
+                return
+
+            try:
+                window_start = float(time_start.value())
+                window_end = float(time_end.value())
+            except (TypeError, ValueError):
+                return
+            if window_start >= window_end:
+                QMessageBox.warning(
+                    dialog, "Invalid time window",
+                    "The time start must be less than the time end.",
+                )
+                return
+
+            chart.removeAllSeries()
             x_values = []
-            for item in signals:
-                if item["key"] not in selected_keys:
-                    continue
+            y_values = []
+            for item in selected:
                 samples = item["samples"]
-                if not samples:
-                    continue
                 minimum, maximum = item["minimum"], item["maximum"]
                 span = maximum - minimum
                 line = QLineSeries()
@@ -1786,38 +1845,53 @@ class ResearchTab(QWidget):
                 if chosen[-1] != samples[-1]:
                     chosen.append(samples[-1])
                 for elapsed, value in chosen:
-                    normalized = 50.0 if span == 0 else ((value - minimum) / span) * 100.0
-                    line.append(float(elapsed), float(normalized))
+                    plotted_value = (
+                        float(value) if physical_mode
+                        else (50.0 if span == 0 else ((value - minimum) / span) * 100.0)
+                    )
+                    line.append(float(elapsed), plotted_value)
                     x_values.append(float(elapsed))
+                    y_values.append(plotted_value)
                 chart.addSeries(line)
                 line.attachAxis(axis_x)
                 line.attachAxis(axis_y)
 
+            if physical_mode:
+                unit = next(iter(units), "")
+                axis_y.setTitleText(f"Decoded value ({unit or 'unit unspecified'})")
+            else:
+                axis_y.setTitleText("Independently normalized signal value (%)")
+
             if marker_check.isChecked():
+                marker_low, marker_high = (
+                    (min(y_values), max(y_values)) if physical_mode and y_values
+                    else (0.0, 100.0)
+                )
+                if marker_low == marker_high:
+                    marker_padding = max(abs(marker_low) * 0.02, 0.5)
+                    marker_low -= marker_padding
+                    marker_high += marker_padding
                 for marker in graph_data["markers"]:
                     elapsed = marker["elapsed_seconds"]
                     marker_line = QLineSeries()
-                    marker_line.setName(f"Marker {elapsed:.3f}s: {marker['label']}")
+                    marker_line.setName(f"{elapsed:.3f}s | {marker['label']}")
                     pen = QPen()
                     pen.setStyle(Qt.DashLine)
                     pen.setWidth(1)
                     marker_line.setPen(pen)
-                    marker_line.append(elapsed, 0.0)
-                    marker_line.append(elapsed, 100.0)
+                    marker_line.append(elapsed, marker_low)
+                    marker_line.append(elapsed, marker_high)
                     chart.addSeries(marker_line)
                     marker_line.attachAxis(axis_x)
                     marker_line.attachAxis(axis_y)
-                    x_values.append(elapsed)
 
-            if x_values:
-                left, right = min(x_values), max(x_values)
-                if left == right:
-                    axis_x.setRange(left - 0.5, right + 0.5)
-                else:
-                    padding = max((right - left) * 0.02, 0.001)
-                    axis_x.setRange(left - padding, right + padding)
+            if physical_mode and y_values:
+                low, high = min(y_values), max(y_values)
+                padding = max((high - low) * 0.05, abs(low) * 0.01, 0.001)
+                axis_y.setRange(low - padding, high + padding)
             else:
-                axis_x.setRange(0.0, 1.0)
+                axis_y.setRange(0.0, 100.0)
+            axis_x.setRange(window_start, window_end)
 
         plot_button = QPushButton("Plot selected signals")
         plot_button.clicked.connect(redraw)
@@ -1832,6 +1906,15 @@ class ResearchTab(QWidget):
                      for i in range(signal_list.count())]
         )
         marker_check.toggled.connect(redraw)
+        mode_combo.currentIndexChanged.connect(redraw)
+        apply_time_button.clicked.connect(redraw)
+
+        def reset_time_range():
+            time_start.setValue(data_start)
+            time_end.setValue(data_end)
+            redraw()
+
+        reset_time_button.clicked.connect(reset_time_range)
         controls = QHBoxLayout()
         controls.addWidget(select_all_button)
         controls.addWidget(clear_button)
