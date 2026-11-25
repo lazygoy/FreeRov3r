@@ -79,6 +79,6 @@ def test_module_discovery_embeds_timing_without_changing_identity_evidence():
         _frame(0x321, 1.2),
     ])
     node = report["nodes"][0]
-    assert node["timing"]["median_interval_s"] == 0.1
+    assert node["timing"]["median_interval_s"] == pytest.approx(0.1)
     assert node["evidence_level"] == "Observed"
     assert report["transmission_performed"] is False
