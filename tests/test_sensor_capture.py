@@ -14,3 +14,23 @@ def test_capture_exports_and_llm_report(tmp_path):
     assert "88.5" in csv_path.read_text()
     assert '"value": 88.5' in jsonl_path.read_text()
     assert "L319" in md_path.read_text()
+
+
+def test_jsonl_and_markdown_exports_use_real_line_breaks(tmp_path):
+    capture = SensorCapture()
+    capture.add(SensorSample(1.0, "rpm", "Engine speed", 800,
+                             "rpm", "ecu"))
+    capture.add(SensorSample(2.0, "rpm", "Engine speed", 900,
+                             "rpm", "ecu"))
+
+    jsonl_path = tmp_path / "multiple.jsonl"
+    report_path = tmp_path / "report.md"
+    capture.export_jsonl(jsonl_path)
+    capture.export_llm_report(report_path)
+
+    jsonl_lines = jsonl_path.read_text(encoding="utf-8").splitlines()
+    assert len(jsonl_lines) == 2
+    assert all('"sensor_id": "rpm"' in line for line in jsonl_lines)
+    report = report_path.read_text(encoding="utf-8")
+    assert "\\n" not in report
+    assert "# FreeRov3r sensor capture analysis\n\n" in report
