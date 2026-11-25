@@ -274,11 +274,17 @@ def create_dual_backup_bundle(
         relative = _safe_relative_path(
             item.get("relative_file_path") or Path("original") / source.name
         )
-        relative_key = relative.as_posix().casefold()
-        if relative_key in seen_paths:
-            raise ArchiveError(f"Recovery bundle contains a duplicate archive path: {relative}")
-        seen_paths.add(relative_key)
-        metadata = item.get("metadata") or {}
+        relative_parts = tuple(part.casefold() for part in relative.parts)
+        if any(
+            relative_parts[:len(existing)] == existing
+            or existing[:len(relative_parts)] == relative_parts
+            for existing in seen_paths
+        ):
+            raise ArchiveError(f"Recovery bundle contains conflicting archive paths: {relative}")
+        seen_paths.add(relative_parts)
+        metadata = item.get("metadata")
+        if metadata is None:
+            metadata = {}
         if not isinstance(metadata, dict):
             raise ArchiveError("Recovery bundle metadata must be a dictionary.")
         try:
@@ -365,6 +371,7 @@ def create_dual_backup_bundle(
         return result
     except OSError as exc:
         raise ArchiveError(f"Unable to complete dual-location recovery bundle: {exc}") from exc
+
 
 def verify_dual_backup(
     internal_archive: str | Path,
