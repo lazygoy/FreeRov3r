@@ -693,6 +693,7 @@ class SensorGraphTab(QWidget):
         self.record_start = None
         self.last_sample_time = {}
         self.activity_phase = True
+        self.synced_obd_sensor_ids = set()
         self.selection_changed_callback = None
         self.favorites_changed_callback = None
         self.navigate_to_obd_callback = None
@@ -862,6 +863,7 @@ class SensorGraphTab(QWidget):
 
     def set_selected_sensor_ids(self, sensor_ids):
         selected = {str(value).lower() for value in sensor_ids}
+        self.synced_obd_sensor_ids = {value for value in selected if value.startswith("obd_")}
         known = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
         known.update(f"obd_{int(pid, 16):02X}" for pid, _name, _unit in OBD_PIDS)
         self.hidden_sensor_ids.update(known - selected)
@@ -969,7 +971,11 @@ class SensorGraphTab(QWidget):
             self.hidden_sensor_ids.add(sensor_id)
         self.update_chart()
         if self.selection_changed_callback:
-            self.selection_changed_callback(self.selected_sensor_ids())
+            visible_ids = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
+            selected_ids = self.selected_sensor_ids()
+            selected_ids.update(self.synced_obd_sensor_ids - visible_ids)
+            self.synced_obd_sensor_ids = {value for value in selected_ids if value.startswith("obd_")}
+            self.selection_changed_callback(selected_ids)
 
     def toggle_record(self):
         self.recording = not self.recording
@@ -996,7 +1002,7 @@ class SensorGraphTab(QWidget):
         if not color.isValid():
             return
         for item in items:
-            sensor_id = item.text().split("(")[-1].rstrip(")")
+            sensor_id = self._sensor_id(item)
             self.color_map[sensor_id] = color
         self.update_chart()
 
