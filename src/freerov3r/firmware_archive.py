@@ -44,6 +44,34 @@ def _distinct_destinations(internal_root: Path, removable_root: Path) -> None:
         raise ArchiveError("Internal and removable archive locations must be separate, non-nested destinations.")
 
 
+def inspect_destination(root: str | Path, *, required_bytes: int = 0, test_write: bool = False) -> dict[str, Any]:
+    """Report destination capacity and optionally perform a write/read probe."""
+    destination = Path(root).expanduser()
+    if isinstance(required_bytes, bool) or not isinstance(required_bytes, int) or required_bytes < 0:
+        raise ArchiveError("Required archive space must be a non-negative integer.")
+    try:
+        if not destination.exists() or not destination.is_dir():
+            raise ArchiveError(f"Archive destination is missing or is not a directory: {destination}")
+        usage = shutil.disk_usage(destination)
+    except OSError as exc:
+        raise ArchiveError(f"Cannot inspect archive destination {destination}: {exc}") from exc
+    if usage.free < required_bytes:
+        raise ArchiveError(
+            f"Insufficient free space at {destination}: "
+            f"{usage.free} bytes free, {required_bytes} bytes required."
+        )
+    if test_write:
+        _test_writable(destination)
+    return {
+        "path": str(destination.resolve()),
+        "total_bytes": usage.total,
+        "free_bytes": usage.free,
+        "required_bytes": required_bytes,
+        "enough_space": True,
+        "write_test_passed": bool(test_write),
+    }
+
+
 def _test_writable(root: Path) -> None:
     try:
         root.mkdir(parents=True, exist_ok=True)
@@ -151,6 +179,8 @@ def create_dual_backup(
     _distinct_destinations(internal, removable)
     _test_writable(internal)
     _test_writable(removable)
+    inspect_destination(internal, required_bytes=source_size)
+    inspect_destination(removable, required_bytes=source_size)
 
     subdir = _safe_relative_path(archive_subdir)
     file_relative = _safe_relative_path(relative_file_path or Path("original") / source.name)
