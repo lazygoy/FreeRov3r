@@ -10,9 +10,36 @@ from .models import SensorSample
 class SensorCapture:
     samples: list[SensorSample] = field(default_factory=list)
     vehicle_context: dict = field(default_factory=dict)
+    max_samples: int = 100000
+    total_samples_added: int = 0
+    dropped_samples: int = 0
+
+    def __post_init__(self):
+        if self.max_samples < 1:
+            raise ValueError("max_samples must be at least 1.")
+        if len(self.samples) > self.max_samples:
+            overflow = len(self.samples) - self.max_samples
+            del self.samples[:overflow]
+            self.dropped_samples += overflow
+        self.total_samples_added = max(self.total_samples_added, len(self.samples) + self.dropped_samples)
 
     def add(self, sample: SensorSample):
         self.samples.append(sample)
+        self.total_samples_added += 1
+        overflow = len(self.samples) - self.max_samples
+        if overflow > 0:
+            # Trim in batches to avoid shifting a large list on every new sample.
+            batch = min(
+                len(self.samples),
+                max(overflow, min(1000, max(1, self.max_samples // 20))),
+            )
+            del self.samples[:batch]
+            self.dropped_samples += batch
+
+    def samples_since(self, sequence_index):
+        """Return retained samples added at or after an absolute capture index."""
+        start = max(0, int(sequence_index) - self.dropped_samples)
+        return self.samples[start:]
 
     def export_csv(self, path, vin=None):
         fields = ["vin", "timestamp", "sensor_id", "name", "value", "unit",
