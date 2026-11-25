@@ -90,3 +90,44 @@ def test_marker_signal_summary_rejects_negative_windows():
         summarize_dbc_marker_signal_changes(
             {"signals": []}, [{"elapsed_seconds": 1.0}], before_seconds=-1
         )
+
+
+def test_marker_signal_summary_markdown_table_is_readable_and_preserves_missing_values():
+    from freerov3r.diagnostics.dbc_signal_behavior import (
+        format_dbc_marker_signal_summary_table,
+    )
+
+    table = format_dbc_marker_signal_summary_table([{
+        "marker_index": 1,
+        "marker": {"operation": "Engine | idle check"},
+        "signals": [{
+            "channel": "HS-CAN",
+            "can_id": 0x123,
+            "message": "EngineData",
+            "signal": "EngineSpeed",
+            "unit": "rpm",
+            "before_sample_count": 2,
+            "before_mean": 900.0,
+            "before_min": 800.0,
+            "before_max": 1000.0,
+            "after_sample_count": 2,
+            "after_mean": 1200.0,
+            "after_min": 1100.0,
+            "after_max": 1300.0,
+            "mean_delta": 300.0,
+            "first_after_marker_seconds": 0.0,
+        }],
+    }])
+
+    assert "| 1 | Engine \\| idle check | HS-CAN | 0x123 |" in table
+    assert "| 2 | 900.0000 | 800.0000 | 1000.0000 | 2 |" in table
+    assert "| 1200.0000 | 1100.0000 | 1300.0000 | 300.0000 | 0.0000 |" in table
+
+
+def test_marker_signal_summary_markdown_table_handles_empty_results():
+    from freerov3r.diagnostics.dbc_signal_behavior import (
+        format_dbc_marker_signal_summary_table,
+    )
+
+    table = format_dbc_marker_signal_summary_table([])
+    assert "No decoded numeric signal samples" in table
