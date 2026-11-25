@@ -159,3 +159,40 @@ def test_non_json_metadata_is_reported_as_archive_error(tmp_path):
             tmp_path / "usb",
             metadata={"not_json": object()},
         )
+
+
+def test_inspect_destination_reports_capacity_and_write_probe(tmp_path):
+    from freerov3r.firmware_archive import inspect_destination
+
+    destination = tmp_path / "storage"
+    destination.mkdir()
+    result = inspect_destination(destination, required_bytes=10, test_write=True)
+
+    assert result["enough_space"] is True
+    assert result["required_bytes"] == 10
+    assert result["free_bytes"] > 0
+    assert result["write_test_passed"] is True
+
+
+def test_dual_backup_rejects_insufficient_destination_space(tmp_path, monkeypatch):
+    from collections import namedtuple
+    from pathlib import Path
+    from freerov3r import firmware_archive
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware payload")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    internal.mkdir()
+    removable.mkdir()
+    usage = namedtuple("Usage", "total used free")
+
+    def disk_usage(path):
+        if Path(path) == internal:
+            return usage(1000, 999, 1)
+        return usage(1000, 0, 1000)
+
+    monkeypatch.setattr(firmware_archive.shutil, "disk_usage", disk_usage)
+    with pytest.raises(ArchiveError, match="Insufficient free space"):
+        create_dual_backup(source, internal, removable)
+    assert not (internal / "FreeRov3r/recovery").exists()
