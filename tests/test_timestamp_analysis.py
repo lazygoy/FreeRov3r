@@ -101,3 +101,20 @@ def test_timestamp_analysis_detects_duplicate_clocks_and_rejects_fractional_devi
     assert item["invalid_device_timestamp_count"] == 1
     assert item["clock_fit"] is None
     assert item["timing_quality"] == "check monotonicity/gaps"
+
+
+@pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf"), True, 0, -1])
+def test_timestamp_analysis_rejects_non_finite_or_non_positive_gap_thresholds(threshold):
+    with pytest.raises(ValueError, match="finite positive"):
+        analyze_channel_timestamps([], suspicious_gap_seconds=threshold)
+
+
+def test_timestamp_analysis_rejects_boolean_host_timestamps():
+    records = [
+        _record("HS-CAN", True, 1_000_000),
+        _record("HS-CAN", 1.1, 1_100_000),
+    ]
+    item = analyze_channel_timestamps(records)["channels"][0]
+    assert item["invalid_host_timestamp_count"] == 1
+    assert item["timed_frame_count"] == 1
+    assert item["clock_fit"] is None
