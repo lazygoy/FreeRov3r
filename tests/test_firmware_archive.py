@@ -482,6 +482,41 @@ def test_archive_registry_does_not_mark_tampered_verification_as_verified(tmp_pa
     assert load_archive_records(registry)[0]["status"] == "verification_failed"
 
 
+def test_archive_registry_requires_verification_for_matching_archive_paths(tmp_path):
+    from freerov3r.archive_registry import load_archive_records, record_archive, record_verification
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original calibration")
+    internal_a, removable_a = tmp_path / "internal-a", tmp_path / "usb-a"
+    internal_b, removable_b = tmp_path / "internal-b", tmp_path / "usb-b"
+    result_a = create_dual_backup(source, internal_a, removable_a)
+    result_b = create_dual_backup(source, internal_b, removable_b)
+    registry = tmp_path / "register.json"
+    record_archive(registry, result_a)
+
+    # Valid evidence for a different pair must not certify the registered pair.
+    record_verification(
+        registry,
+        internal_a / "FreeRov3r/recovery",
+        removable_a / "FreeRov3r/recovery",
+        result_b,
+    )
+
+    assert load_archive_records(registry)[0]["status"] == "verification_failed"
+
+
+def test_archive_registry_rejects_non_hex_verification_digest(tmp_path):
+    from freerov3r.archive_registry import ArchiveRegistryError, record_archive
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original calibration")
+    result = create_dual_backup(source, tmp_path / "internal", tmp_path / "usb")
+    result["manifest"]["files"][0]["sha256"] = "z" * 64
+
+    with pytest.raises(ArchiveRegistryError, match="consistent file evidence"):
+        record_archive(tmp_path / "register.json", result)
+
+
 def test_archive_registry_rejects_malformed_register(tmp_path):
     from freerov3r.archive_registry import ArchiveRegistryError, load_archive_records
 

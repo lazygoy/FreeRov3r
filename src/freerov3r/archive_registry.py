@@ -86,7 +86,11 @@ def _verified_result_consistent(result: Any) -> bool:
             return False
         digest = manifest_file.get("sha256")
         size = manifest_file.get("size_bytes")
-        if not isinstance(digest, str) or len(digest) != 64:
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
             return False
         if isinstance(size, bool) or not isinstance(size, int) or size < 0:
             return False
@@ -187,7 +191,17 @@ def record_verification(
             record_archive(registry_path, result)
         return
     timestamp = _timestamp()
+    try:
+        result_matches_archives = (
+            Path(result.get("internal_archive", "")).resolve()
+            == Path(internal_archive).resolve()
+            and Path(result.get("removable_archive", "")).resolve()
+            == Path(removable_archive).resolve()
+        )
+    except (OSError, TypeError, ValueError):
+        result_matches_archives = False
+    evidence_is_valid = _verified_result_consistent(result) and result_matches_archives
     for item in matches:
         item["last_verified_utc"] = timestamp
-        item["status"] = "verified" if _verified_result_consistent(result) else "verification_failed"
+        item["status"] = "verified" if evidence_is_valid else "verification_failed"
     _write_records(registry_path, records)
