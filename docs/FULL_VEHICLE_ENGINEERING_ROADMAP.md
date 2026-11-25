@@ -107,6 +107,49 @@ The immediate research priorities are:
 
 Do not infer ECU type, programming support, or calibration compatibility from engine displacement or model year alone.
 
+
+## Firmware preservation and recovery prerequisite
+
+Firmware preservation is a first-class project requirement, not an optional convenience. FreeRov3r must prioritize protecting the original state of every module before firmware editing or programming is enabled.
+
+### Dedicated recovery media
+
+Before a user can begin an ECU firmware modification workflow, the application should prompt them to connect and designate a removable USB storage device as the vehicle's recovery archive. The application should:
+
+- Let the user explicitly select the target device and show its model, capacity, available space, and filesystem.
+- Never silently format, repartition, erase, or repurpose a drive. Any destructive storage operation requires a separate, explicit confirmation and a clear explanation.
+- Check that the device is writable and has adequate free space for the expected firmware, metadata, logs, and recovery assets. Where practical, perform a write/read verification test in a dedicated test folder.
+- Create a predictable archive structure organized by VIN, module identity, hardware/software revision, and acquisition date.
+- Store original firmware reads, calibration files, module configuration/coding, identification records, DTC/baseline reports, operation logs, tool versions, protocol notes, and recovery instructions.
+- Record cryptographic hashes (for example SHA-256), file sizes, acquisition method, source module identity, timestamps, and verification results in a manifest.
+- Verify every archived file after writing by reading it back and recomputing its hash.
+- Recheck archive integrity before using any backup for restoration or recovery.
+- Warn users that removable media can fail, be lost, or be corrupted. Require a second independent copy of critical originals and recovery assets before permitting a high-risk programming operation.
+- Allow a user to export and inspect the manifest and recovery inventory without proprietary application software.
+
+The USB archive is a designated recovery repository, not proof that recovery is possible. Some modules cannot be fully read through the normal diagnostic interface, and some recovery methods require boot-mode access, bench tools, security credentials, or manufacturer-specific procedures. FreeRov3r must state exactly what was and was not acquired.
+
+### Mandatory operation gates
+
+**Before editing a firmware/calibration working copy:**
+1. Identify the exact target module and software/hardware revision.
+2. Preserve an untouched original source file or module read, when obtainable.
+3. Store it in the designated archive and verify its hash.
+4. Create a separate working copy. Never edit the only original.
+5. Record the source-to-working-copy relationship and all subsequent changes.
+
+**Before writing modified firmware to a vehicle module:**
+1. Confirm the original backup is present, readable, and hash-verified.
+2. Confirm a second independent copy exists.
+3. Confirm the exact module/file compatibility and required checksum/signature handling.
+4. Confirm a module-specific recovery method, compatible recovery hardware, required credentials/tools, and recovery instructions.
+5. Confirm that the recovery method is documented and has been validated for the target hardware/software revision. If recovery is unknown or unverified, block the write and explain why.
+6. Confirm stable power, communications, and environmental preconditions.
+7. Require a final explicit user confirmation showing the target module, source and modified file hashes, expected changes, risks, and recovery method.
+
+A user may still perform read-only diagnostics, capture traffic, inspect files, and conduct offline research without recovery media. The hard gate applies to firmware modification workflows and especially to writing/programming a module. No bypass should silently waive missing backups or an unknown recovery path.
+
+
 ## Current implementation boundary
 
 The initial Tuning workspace is a read-only research log and workflow tracker. It does not currently transmit CAN messages, spoof signals, request ECU security access, write configurations, unlock ECUs, or flash modules. Those capabilities are future stages and must be implemented separately with module-specific validation and explicit user control.
