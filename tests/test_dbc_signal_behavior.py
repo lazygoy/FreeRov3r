@@ -1,4 +1,6 @@
-from freerov3r.diagnostics.dbc_signal_behavior import (\n    analyze_dbc_signal_behavior, build_dbc_signal_series,\n)
+from freerov3r.diagnostics.dbc_signal_behavior import (
+    analyze_dbc_signal_behavior, build_dbc_signal_series,
+)
 
 
 class FakeDecoded:
