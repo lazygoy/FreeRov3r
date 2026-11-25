@@ -30,7 +30,7 @@ def discover_modules(frames, *, response_window=2.0):
             extended = bool(frame.get("extended", False))
             channel = frame.get("channel")
             timestamp = float(frame.get("timestamp", 0.0) or 0.0)
-            data = str(frame.get("data", "")).replace(" ", "").upper()
+            data = str(frame["data"]).replace(" ", "").upper()
             bytes.fromhex(data)
         except (KeyError, TypeError, ValueError):
             continue
