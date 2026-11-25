@@ -125,6 +125,19 @@ def _validate_manifest_paths(paths: list[Path]) -> None:
             raise ArchiveError(f"Recovery manifest contains conflicting archive paths: {path}")
         seen.add(parts)
 
+def _validated_metadata(value: Any) -> dict[str, Any]:
+    """Require metadata to be a JSON object with standards-compliant values."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ArchiveError("Archive metadata must be a dictionary.")
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ArchiveError(f"Archive metadata must be JSON-serializable: {exc}") from exc
+    return value
+
+
 def _archive_target(root: Path, relative: Path) -> Path:
     """Return a contained target while rejecting symlinks in every path component."""
     if root.is_symlink():
@@ -167,6 +180,7 @@ def _read_manifest(archive: Path) -> dict[str, Any]:
             raise ArchiveError(f"Invalid SHA-256 entry for {relative}")
         if isinstance(size, bool) or not isinstance(size, int) or size < 0:
             raise ArchiveError(f"Invalid file size entry for {relative}")
+        _validated_metadata(entry.get("metadata", {}))
         manifest_paths.append(relative)
     _validate_manifest_paths(manifest_paths)
     return data
@@ -218,13 +232,14 @@ def create_dual_backup(
         if target.exists():
             raise ArchiveError(f"Refusing to overwrite existing recovery data: {target}")
 
+    archive_metadata = _validated_metadata(metadata)
     entry = {
         "path": file_relative.as_posix(),
         "size_bytes": source_size,
         "sha256": source_hash,
         "source_name": source.name,
         "acquired_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "metadata": metadata or {},
+        "metadata": archive_metadata,
     }
     manifest = {
         "format": "freerov3r-recovery-archive-v1",
@@ -232,7 +247,7 @@ def create_dual_backup(
         "files": [entry],
     }
     try:
-        manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ArchiveError(f"Archive metadata must be JSON-serializable: {exc}") from exc
 
@@ -309,13 +324,8 @@ def create_dual_backup_bundle(
         ):
             raise ArchiveError(f"Recovery bundle contains conflicting archive paths: {relative}")
         seen_paths.add(relative_parts)
-        metadata = item.get("metadata")
-        if metadata is None:
-            metadata = {}
-        if not isinstance(metadata, dict):
-            raise ArchiveError("Recovery bundle metadata must be a dictionary.")
+        metadata = _validated_metadata(item.get("metadata"))
         try:
-            json.dumps(metadata)
             digest = sha256_file(source)
             size = source.stat().st_size
         except (OSError, TypeError, ValueError) as exc:

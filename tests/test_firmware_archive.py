@@ -235,6 +235,47 @@ def test_non_json_metadata_is_reported_as_archive_error(tmp_path):
         )
 
 
+def test_archive_metadata_must_be_a_json_object(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    for metadata in (["not", "an", "object"], "text", 42):
+        with pytest.raises(ArchiveError, match="metadata must be a dictionary"):
+            create_dual_backup(
+                source, tmp_path / "internal", tmp_path / "usb",
+                metadata=metadata,
+            )
+
+
+def test_archive_metadata_rejects_non_finite_numbers(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    with pytest.raises(ArchiveError, match="JSON-serializable"):
+        create_dual_backup(
+            source, tmp_path / "internal", tmp_path / "usb",
+            metadata={"calibration_value": float("nan")},
+        )
+
+
+def test_manifest_rejects_non_object_metadata(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    for root in (internal, removable):
+        manifest_path = root / "FreeRov3r/recovery" / MANIFEST_NAME
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"][0]["metadata"] = ["tampered"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ArchiveError, match="metadata must be a dictionary"):
+        verify_dual_backup(
+            internal / "FreeRov3r/recovery",
+            removable / "FreeRov3r/recovery",
+        )
+
+
 def test_inspect_destination_reports_capacity_and_write_probe(tmp_path):
     from freerov3r.firmware_archive import inspect_destination
 
