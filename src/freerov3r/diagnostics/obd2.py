@@ -63,25 +63,34 @@ PID_CATEGORIES_ALL = ("All", "Engine", "Temperatures", "Air & Intake",
                       "Fuel", "Emissions", "Electrical", "Vehicle")
 
 
-def search_mode01_pids(query="", category="All"):
-    """Return searchable PID rows as (hex_pid, name, unit, category).
+def parse_mode01_supported_pids(response, base_pid):
+    """Decode a Mode 01 PID-support bitmap into the supported PID numbers.
 
-    Search covers PID number, displayed name, unit, category and common
-    workshop terminology. It does not imply that a PID is supported.
+    ELM327 text responses commonly look like: 7E8 06 41 00 BE 3E B8 13.
+    The four bitmap bytes describe the next 32 PIDs after base_pid.
+    Returns an empty set when the response contains no valid bitmap.
     """
-    needle = str(query or "").strip().casefold()
-    rows = []
-    for pid, (name, unit) in PID_DEFINITIONS.items():
-        group = PID_CATEGORIES.get(pid, "Other")
-        if category not in (None, "", "All") and group != category:
-            continue
-        haystack = " ".join((
-            f"{pid:02X}", name, unit, group, PID_SEARCH_TERMS.get(pid, "")
-        )).casefold()
-        if needle and not all(term in haystack for term in needle.split()):
-            continue
-        rows.append((f"{pid:02X}", name, unit, group))
-    return rows
+    base_pid = int(base_pid)
+    if base_pid < 0 or base_pid > 0xE0 or base_pid % 0x20:
+        raise ValueError("base_pid must be a Mode 01 bitmap base (00, 20, ... E0)")
+
+    supported = set()
+    for raw_line in str(response or "").replace(">", "\n").replace("\r", "\n").splitlines():
+        tokens = [token.strip().upper().strip(",") for token in raw_line.split()]
+        for index in range(len(tokens) - 5):
+            if tokens[index] != "41" or tokens[index + 1] != f"{base_pid:02X}":
+                continue
+            try:
+                bitmap_bytes = [int(token, 16) for token in tokens[index + 2:index + 6]]
+            except ValueError:
+                continue
+            if len(bitmap_bytes) != 4:
+                continue
+            bitmap = int.from_bytes(bytes(bitmap_bytes), "big")
+            for bit in range(32):
+                if bitmap & (1 << (31 - bit)):
+                    supported.add(base_pid + bit + 1)
+    return supported
 
 
 OBD_PIDS = [
