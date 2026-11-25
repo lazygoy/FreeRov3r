@@ -23,7 +23,9 @@ from PySide6.QtWidgets import (
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
-from freerov3r.diagnostics.module_discovery import discover_modules
+from freerov3r.diagnostics.module_discovery import (
+    compare_module_discovery, discover_modules,
+)
 
 from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
@@ -834,6 +836,7 @@ class ResearchTab(QWidget):
         self.frames = []
         self.live_preview = []
         self.reference_frames = []
+        self.reference_metadata = {}
         self.sequence_captures = []
         self.bookmarks = {}
         self.markers = []
@@ -1064,6 +1067,8 @@ class ResearchTab(QWidget):
         self.sequence_analysis_button.clicked.connect(self.analyze_operation_sequences)
         self.did_decode_button = QPushButton("Decode DID responses")
         self.did_decode_button.clicked.connect(self.decode_did_responses)
+        self.module_inventory_button = QPushButton("Compare module inventory")
+        self.module_inventory_button.clicked.connect(self.analyze_module_inventory)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
@@ -1071,14 +1076,15 @@ class ResearchTab(QWidget):
         footer_buttons = (
             self.isotp_button, self.pair_button, self.address_map_button,
             self.marker_analysis_button, self.sequence_analysis_button,
-            self.did_decode_button, self.packet_button, self.clear_button,
+            self.did_decode_button, self.module_inventory_button,
+            self.packet_button, self.clear_button,
         )
         for index, button in enumerate(footer_buttons):
             button.setToolTip(button.text())
             footer.addWidget(button, index // 4, index % 4)
             footer.setColumnStretch(index % 4, 1)
         self.count_label = QLabel("0 displayed · 0 recorded")
-        footer.addWidget(self.count_label, 2, 0, 1, 4)
+        footer.addWidget(self.count_label, 3, 0, 1, 4)
         root.addLayout(footer)
 
     def set_receiver_diagnostics(self, diagnostics=None):
@@ -1673,11 +1679,13 @@ class ResearchTab(QWidget):
         if not path:
             return
         try:
-            _, records = load_capture_file(path)
+            metadata, records = load_capture_file(path)
         except Exception as exc:
             QMessageBox.critical(self, "Comparison load failed", str(exc))
             return
         self.reference_frames = records
+        self.reference_metadata = dict(metadata)
+        self.reference_metadata["imported_from"] = path
         self.refresh_table()
         self.status_label.setText(f"Comparison reference loaded: {Path(path).name} ({len(records):,} frames)")
 
@@ -1712,6 +1720,89 @@ class ResearchTab(QWidget):
         if failures:
             message += "\\n\\nCould not load:\\n" + "\\n".join(failures)
         self.status_label.setText(message.replace("\\n", "\n"))
+
+    def _module_inventory_capture_set(self):
+        """Return independently loaded captures for passive node comparison."""
+        if self.sequence_captures:
+            return list(self.sequence_captures)
+        captures = []
+        if self.frames:
+            name = (
+                self.metadata.get("session_name")
+                or Path(self.metadata.get("imported_from", "Working capture")).name
+            )
+            captures.append({"name": name, "frames": self.frames})
+        if self.reference_frames:
+            name = (
+                self.reference_metadata.get("session_name")
+                or Path(self.reference_metadata.get("imported_from", "Reference capture")).name
+            )
+            captures.append({"name": name, "frames": self.reference_frames})
+        return captures
+
+    def analyze_module_inventory(self):
+        """Compare observed CAN nodes across independently loaded capture files."""
+        captures = self._module_inventory_capture_set()
+        if len(captures) < 2:
+            QMessageBox.information(
+                self, "Cross-capture module inventory",
+                "Load at least two saved captures using Load sequences, or load a working capture and a comparison capture."
+            )
+            return
+        result = compare_module_discovery(captures)
+        lines = [
+            f"Independent captures analyzed: {result['capture_count']}",
+            f"Distinct CAN nodes: {result['node_count']}",
+            "Nodes are keyed by CAN ID, CAN format, and channel.",
+            "Repeatability is not proof of physical ECU identity. No CAN traffic was transmitted.",
+            "",
+            "CAPTURES",
+        ]
+        for capture in result["captures"]:
+            lines.append(
+                f"  {capture['name']}: {capture['frame_count']:,} frames, "
+                f"{capture['observed_node_count']} nodes, "
+                f"{capture['probable_responder_count']} probable responders"
+            )
+        lines += ["", "CROSS-CAPTURE NODE INVENTORY"]
+        for node in result["nodes"]:
+            channel = node["channel"] if node["channel"] is not None else "unspecified"
+            request_ids = ", ".join(f"0x{value:X}" for value in node["request_ids"]) or "none"
+            services = ", ".join(f"0x{value:02X}" for value in node["services"]) or "none"
+            lines.append(
+                f"  0x{node['can_id']:X} {'EXT' if node['extended'] else 'STD'} "
+                f"channel={channel} | {node['evidence_level']} | "
+                f"{node['repeatability']} | captures={node['capture_count']}/{result['capture_count']} | "
+                f"frames={node['observed_frame_count']}"
+            )
+            lines.append(
+                f"    probable responder captures={node['probable_capture_count']}; "
+                f"request IDs={request_ids}; services={services}"
+            )
+            lines.append(f"    {node['interpretation']}")
+        if not result["nodes"]:
+            lines.append("No valid CAN nodes were found in the selected captures.")
+        lines += ["", "LIMITATIONS"]
+        lines.extend(f"  - {item}" for item in result["limitations"])
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cross-capture passive module inventory")
+        dialog.resize(1050, 680)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            f"{result['node_count']:,} distinct nodes across {result['capture_count']:,} captures"
+        ))
+        output = QPlainTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText("\n".join(lines))
+        layout.addWidget(output, 1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Compared {result['node_count']:,} passive CAN nodes across {result['capture_count']:,} captures"
+        )
 
     def analyze_operation_sequences(self):
         if len(self.sequence_captures) < 2:
@@ -2338,6 +2429,14 @@ class ResearchTab(QWidget):
             "| Timestamp | Elapsed seconds | CAN ID | Format | Payload | ISO-TP | UDS hint |",
             "|---:|---:|---:|---|---|---|---|",
         ]
+        inventory_captures = self._module_inventory_capture_set()
+        if len(inventory_captures) >= 2:
+            lines += [
+                "",
+                "## Cross-capture passive module inventory",
+                "Each saved capture is analyzed independently. No CAN transmission or cross-file UDS pairing occurs.",
+                json.dumps(compare_module_discovery(inventory_captures), indent=2),
+            ]
         for record in self.frames[:20000]:
             iso, uds = classify_can_payload(bytes.fromhex(record["data"]))
             elapsed = (
@@ -2631,6 +2730,7 @@ class ResearchTab(QWidget):
         self._pending_records.clear()
         self._pending_preview.clear()
         self.reference_frames.clear()
+        self.reference_metadata = {}
         self.sequence_captures.clear()
         self.bookmarks.clear()
         self.markers.clear()
