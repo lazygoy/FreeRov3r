@@ -267,7 +267,7 @@ def build_dbc_signal_series(library, records, markers=None):
 def format_dbc_marker_signal_summary_table(marker_results):
     """Render marker signal summaries as a compact, human-readable Markdown table."""
     def cell(value):
-        return str(value).replace("|", "\\|").replace("\\n", " ").replace("\\r", " ")
+        return str(value).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
 
     def number(value):
         if value is None:
@@ -300,7 +300,7 @@ def format_dbc_marker_signal_summary_table(marker_results):
             )) + " |")
     if len(lines) == 2:
         lines.append("| No decoded numeric signal samples in the selected marker windows. |" + " |" * 16)
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def summarize_dbc_marker_signal_changes(series_data, markers, *, before_seconds=2.0, after_seconds=5.0):
