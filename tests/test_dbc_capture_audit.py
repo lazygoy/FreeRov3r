@@ -1,3 +1,5 @@
+import pytest
+
 from pathlib import Path
 
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
@@ -57,7 +59,7 @@ def test_audit_classifies_matches_unknown_ids_lengths_and_invalid_records(tmp_pa
     assert report["matched_frames"] == 1
     assert report["unmatched_frames"] == 2
     assert report["invalid_records"] == 2
-    assert report["coverage_percent"] == 100 / 3
+    assert report["coverage_percent"] == pytest.approx(100 / 3)
     assert report["unmatched_reasons"] == {
         "no_matching_id_and_format": 1,
         "payload_length_mismatch": 1,
