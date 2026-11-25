@@ -32,7 +32,7 @@ class SensorCapture:
     def export_jsonl(self, path):
         with Path(path).open("w", encoding="utf-8") as f:
             for sample in self.samples:
-                f.write(json.dumps(asdict(sample), ensure_ascii=False) + "\\n")
+                f.write(json.dumps(asdict(sample), ensure_ascii=False) + "\n")
 
     def llm_report(self, include_context=True, vin=None):
         """Portable, provider-neutral analysis packet. No API calls or secrets."""
@@ -68,7 +68,7 @@ class SensorCapture:
                   "2. Distinguish confirmed observations from possible causes.",
                   "3. List additional measurements or tests that would discriminate between causes.",
                   "4. Cite the exact samples supporting each conclusion."]
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     def export_llm_report(self, path, include_context=True, vin=None):
         Path(path).write_text(self.llm_report(include_context, vin=vin), encoding="utf-8")
