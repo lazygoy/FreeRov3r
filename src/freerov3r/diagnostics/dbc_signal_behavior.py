@@ -262,3 +262,91 @@ def build_dbc_signal_series(library, records, markers=None):
         })
     plotted_markers.sort(key=lambda item: item["elapsed_seconds"])
     return {"signals": signals, "markers": plotted_markers}
+
+
+def summarize_dbc_marker_signal_changes(series_data, markers, *, before_seconds=2.0, after_seconds=5.0):
+    """Summarize decoded numeric signal changes around each scanner marker.
+
+    Samples are grouped by the full DBC series identity (channel, CAN ID,
+    frame format, message and signal). A mean shift is reported only when
+    both windows contain samples. This is temporal correlation, not proof
+    that the marked operation caused a signal change.
+    """
+    import math
+
+    if before_seconds < 0 or after_seconds < 0:
+        raise ValueError("Marker windows must be non-negative")
+
+    signals = (series_data or {}).get("signals", [])
+    results = []
+    for marker_index, marker in enumerate(markers or [], start=1):
+        if not isinstance(marker, dict):
+            continue
+        try:
+            center = float(marker["elapsed_seconds"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(center):
+            continue
+
+        changes = []
+        for signal in signals:
+            before = []
+            after = []
+            for sample in signal.get("samples", []):
+                try:
+                    elapsed, value = float(sample[0]), float(sample[1])
+                except (TypeError, ValueError, IndexError, OverflowError):
+                    continue
+                if not math.isfinite(elapsed) or not math.isfinite(value):
+                    continue
+                if center - before_seconds <= elapsed < center:
+                    before.append((elapsed, value))
+                elif center <= elapsed <= center + after_seconds:
+                    after.append((elapsed, value))
+
+            if not before and not after:
+                continue
+            before_values = [value for _, value in before]
+            after_values = [value for _, value in after]
+            before_mean = sum(before_values) / len(before_values) if before_values else None
+            after_mean = sum(after_values) / len(after_values) if after_values else None
+            changes.append({
+                "can_id": signal.get("can_id"),
+                "format": signal.get("format"),
+                "channel": signal.get("channel"),
+                "message": signal.get("message"),
+                "signal": signal.get("signal"),
+                "unit": signal.get("unit", ""),
+                "before_sample_count": len(before_values),
+                "after_sample_count": len(after_values),
+                "before_mean": before_mean,
+                "after_mean": after_mean,
+                "mean_delta": (after_mean - before_mean
+                               if before_mean is not None and after_mean is not None
+                               else None),
+                "before_min": min(before_values) if before_values else None,
+                "before_max": max(before_values) if before_values else None,
+                "after_min": min(after_values) if after_values else None,
+                "after_max": max(after_values) if after_values else None,
+                "first_after_marker_seconds": (
+                    min(elapsed for elapsed, _ in after) - center if after else None
+                ),
+            })
+
+        changes.sort(key=lambda item: (
+            item["mean_delta"] is None,
+            -abs(item["mean_delta"]) if item["mean_delta"] is not None else 0,
+            str(item["channel"] or ""), item["can_id"] or 0,
+            str(item["message"] or ""), str(item["signal"] or ""),
+        ))
+        results.append({
+            "marker_index": marker_index,
+            "marker": dict(marker),
+            "before_seconds": before_seconds,
+            "after_seconds": after_seconds,
+            "signal_count": len(changes),
+            "signals": changes,
+            "interpretation": "Temporal association only; this does not establish causation.",
+        })
+    return results
