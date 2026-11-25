@@ -366,7 +366,7 @@ class TuningTab(QWidget):
             registry_warning = f" Backup register update failed: {exc}"
         self.archive_status.setText(
             f"VERIFIED: {len(result['files'])} file(s). Both archived copies were reopened "
-            "and matched against the manifest SHA-256 and file size.{registry_warning}"
+            f"and matched against the manifest SHA-256 and file size.{registry_warning}"
         )
         self.log.append(
             f"[{datetime.now().astimezone().isoformat(timespec='seconds')}] "
