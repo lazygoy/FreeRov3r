@@ -505,6 +505,28 @@ def test_archive_registry_requires_verification_for_matching_archive_paths(tmp_p
     assert load_archive_records(registry)[0]["status"] == "verification_failed"
 
 
+def test_archive_registry_does_not_register_different_archive_pair(tmp_path):
+    from freerov3r.archive_registry import load_archive_records, record_verification
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original calibration")
+    result = create_dual_backup(
+        source,
+        tmp_path / "actual-internal",
+        tmp_path / "actual-usb",
+    )
+    registry = tmp_path / "register.json"
+
+    record_verification(
+        registry,
+        tmp_path / "requested-internal",
+        tmp_path / "requested-usb",
+        result,
+    )
+
+    assert load_archive_records(registry) == []
+
+
 def test_archive_registry_rejects_non_hex_verification_digest(tmp_path):
     from freerov3r.archive_registry import ArchiveRegistryError, record_archive
 
