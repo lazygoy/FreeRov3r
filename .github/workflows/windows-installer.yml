@@ -54,7 +54,7 @@ jobs:
         run: choco install innosetup --yes --no-progress
 
       - name: Build Windows installer
-        run: '& "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe" packaging\\FreeRov3r.iss'
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\FreeRov3r.iss'
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
