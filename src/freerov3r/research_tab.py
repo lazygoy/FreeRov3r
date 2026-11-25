@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
+from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 from freerov3r.diagnostics.module_discovery import (
     compare_module_discovery, discover_modules,
 )
@@ -1069,6 +1070,9 @@ class ResearchTab(QWidget):
         self.did_decode_button.clicked.connect(self.decode_did_responses)
         self.module_inventory_button = QPushButton("Compare module inventory")
         self.module_inventory_button.clicked.connect(self.analyze_module_inventory)
+        self.can_timing_button = QPushButton("Analyze CAN timing")
+        self.can_timing_button.setToolTip("Measure observed inter-frame intervals from captured timestamps; no CAN traffic is transmitted.")
+        self.can_timing_button.clicked.connect(self.analyze_can_timing)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
@@ -1077,7 +1081,7 @@ class ResearchTab(QWidget):
             self.isotp_button, self.pair_button, self.address_map_button,
             self.marker_analysis_button, self.sequence_analysis_button,
             self.did_decode_button, self.module_inventory_button,
-            self.packet_button, self.clear_button,
+            self.can_timing_button, self.packet_button, self.clear_button,
         )
         for index, button in enumerate(footer_buttons):
             button.setToolTip(button.text())
@@ -1802,6 +1806,87 @@ class ResearchTab(QWidget):
         dialog.exec()
         self.status_label.setText(
             f"Compared {result['node_count']:,} passive CAN nodes across {result['capture_count']:,} captures"
+        )
+
+
+    def analyze_can_timing(self):
+        """Show passive inter-frame timing observations for the current capture."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(
+                self, "CAN timing analysis", "Capture or import CAN frames first."
+            )
+            return
+
+        report = analyze_message_periodicity(dataset)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Passive CAN message timing")
+        dialog.resize(1050, 620)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            f"{report['frame_count'] if 'frame_count' in report else len(dataset):,} input frames · "
+            f"{report['node_count']:,} CAN ID/format/channel groups · "
+            f"{report['invalid_record_count']:,} invalid records"
+        ))
+        note = QLabel(
+            "Intervals are calculated from timestamps in this capture. They are observed rates, "
+            "not proof of an ECU's configured transmit period. Capture buffering, dropped frames, "
+            "timestamp resolution and clock quality can affect the result. No frames are transmitted."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        columns = [
+            "CAN ID", "Channel", "Format", "Frames", "Intervals",
+            "Median ms", "Mean ms", "Min ms", "Max ms", "p95 deviation ms",
+            "Observed Hz", "Duplicate", "Out of order",
+        ]
+        table = QTableWidget(report["node_count"], len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSortingEnabled(False)
+
+        def milliseconds(value):
+            return "" if value is None else f"{value * 1000:.3f}"
+
+        for row, node in enumerate(report["nodes"]):
+            interval = node["median_interval_s"]
+            values = [
+                f"0x{node['can_id']:X}",
+                str(node["channel"] or "unspecified"),
+                "EXT" if node["extended"] else "STD",
+                f"{node['frame_count']:,}",
+                f"{node['interval_count']:,}",
+                milliseconds(interval),
+                milliseconds(node["mean_interval_s"]),
+                milliseconds(node["min_interval_s"]),
+                milliseconds(node["max_interval_s"]),
+                milliseconds(node["p95_absolute_deviation_s"]),
+                f"{1.0 / interval:.3f}" if interval and interval > 0 else "",
+                str(node["duplicate_timestamp_count"]),
+                str(node["non_monotonic_timestamp_count"]),
+            ]
+            for column, value in enumerate(values):
+                table.setItem(row, column, QTableWidgetItem(value))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table, 1)
+
+        footer = QLabel(
+            "Observed Hz = reciprocal of median positive interval. Duplicate and out-of-order "
+            "timestamps are excluded from interval calculations and reported separately."
+        )
+        footer.setWordWrap(True)
+        layout.addWidget(footer)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"CAN timing analysis: {report['node_count']:,} groups from {len(dataset):,} frames"
         )
 
     def analyze_operation_sequences(self):
