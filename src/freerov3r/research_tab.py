@@ -24,6 +24,7 @@ from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_tran
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
+from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.module_discovery import (
     compare_module_discovery, discover_modules,
 )
@@ -1073,6 +1074,9 @@ class ResearchTab(QWidget):
         self.can_timing_button = QPushButton("Analyze CAN timing")
         self.can_timing_button.setToolTip("Measure observed inter-frame intervals from captured timestamps; no CAN traffic is transmitted.")
         self.can_timing_button.clicked.connect(self.analyze_can_timing)
+        self.payload_variability_button = QPushButton("Analyze payload bits")
+        self.payload_variability_button.setToolTip("Show observed byte and bit changes by CAN ID; no signal meanings are guessed.")
+        self.payload_variability_button.clicked.connect(self.analyze_payload_variability)
         self.packet_button = QPushButton("Copy REA analysis packet")
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
@@ -1081,7 +1085,8 @@ class ResearchTab(QWidget):
             self.isotp_button, self.pair_button, self.address_map_button,
             self.marker_analysis_button, self.sequence_analysis_button,
             self.did_decode_button, self.module_inventory_button,
-            self.can_timing_button, self.packet_button, self.clear_button,
+            self.can_timing_button, self.payload_variability_button,
+            self.packet_button, self.clear_button,
         )
         for index, button in enumerate(footer_buttons):
             button.setToolTip(button.text())
@@ -1889,6 +1894,92 @@ class ResearchTab(QWidget):
             f"CAN timing analysis: {report['node_count']:,} groups from {len(dataset):,} frames"
         )
 
+
+    def analyze_payload_variability(self):
+        """Display observed byte/bit changes for the current passive capture."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(
+                self, "Payload variability", "Capture or import CAN frames first."
+            )
+            return
+
+        report = analyze_payload_variability(dataset)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Passive CAN payload variability")
+        dialog.resize(1120, 680)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            f"{report['input_frame_count']:,} input frames · "
+            f"{report['node_count']:,} CAN ID/format/channel/DLC groups · "
+            f"{report['invalid_record_count']:,} invalid records"
+        ))
+        note = QLabel(
+            "Variable bytes and bits are observations, not decoded signals. This analysis "
+            "does not infer byte order, scaling, signedness, multiplexing, units, or ECU identity. "
+            "Capture order and missing frames affect transition counts. No CAN traffic is transmitted."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        columns = [
+            "CAN ID", "Channel", "Format", "DLC", "Frames",
+            "Variable bytes", "Byte offsets / values", "Variable bit masks",
+        ]
+        table = QTableWidget(report["node_count"], len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        for row, node in enumerate(report["nodes"]):
+            details = []
+            masks = []
+            for item in node["bytes"]:
+                label = f"B{item['offset']}="
+                if item["constant"]:
+                    label += f"{item['most_common_value']:02X} fixed"
+                else:
+                    label += (
+                        f"{item['min_value']:02X}-{item['max_value']:02X} "
+                        f"({item['unique_value_count']} values)"
+                    )
+                details.append(label)
+                if item["variable_bit_mask"]:
+                    masks.append(f"B{item['offset']}:0x{item['variable_bit_mask']:02X}")
+            values = [
+                f"0x{node['can_id']:X}",
+                str(node["channel"] or "unspecified"),
+                "EXT" if node["extended"] else "STD",
+                str(node["dlc"]),
+                f"{node['frame_count']:,}",
+                ", ".join(str(value) for value in node["variable_byte_offsets"]) or "none",
+                "  ".join(details),
+                ", ".join(masks) or "none",
+            ]
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if column in (0, 3, 4):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(row, column, item)
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table, 1)
+
+        footer = QLabel(
+            "Bit masks use conventional byte notation: bit 7 is the most-significant bit, "
+            "bit 0 the least-significant bit. A set mask bit changed at least once in this capture."
+        )
+        footer.setWordWrap(True)
+        layout.addWidget(footer)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Payload variability: {report['node_count']:,} groups from {len(dataset):,} frames"
+        )
+
     def analyze_operation_sequences(self):
         if len(self.sequence_captures) < 2:
             QMessageBox.information(
@@ -2501,6 +2592,9 @@ class ResearchTab(QWidget):
             "",
             "## Per-channel timestamp quality",
             json.dumps(analyze_channel_timestamps(self.frames), indent=2),
+            "",
+            "## Passive CAN payload variability",
+            json.dumps(analyze_payload_variability(self.frames), indent=2),
             "",
             "## Session context",
             json.dumps({
