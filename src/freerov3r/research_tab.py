@@ -25,6 +25,7 @@ from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
+from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.module_discovery import (
     compare_module_discovery, discover_modules,
 )
@@ -983,6 +984,10 @@ class ResearchTab(QWidget):
         self.compare_dbc_button = QPushButton("Compare DBCs")
         self.compare_dbc_button.clicked.connect(self.compare_dbcs)
         dbc_controls.addWidget(self.compare_dbc_button)
+        self.dbc_audit_button = QPushButton("Audit capture vs DBC")
+        self.dbc_audit_button.setToolTip("Measure passive capture coverage against the loaded DBC; unmatched frames are not automatically faults.")
+        self.dbc_audit_button.clicked.connect(self.audit_capture_against_dbc)
+        dbc_controls.addWidget(self.dbc_audit_button)
         dbc_controls.setContentsMargins(0, 0, 0, 0)
         dbc_controls.setSpacing(5)
         root.addLayout(dbc_controls)
@@ -1529,6 +1534,43 @@ class ResearchTab(QWidget):
         close_button.clicked.connect(dialog.accept)
         layout.addWidget(close_button)
         dialog.exec()
+
+    def audit_capture_against_dbc(self):
+        """Show how much of the current passive capture matches the loaded DBC."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(
+                self, "DBC capture audit", "Capture or import CAN frames first."
+            )
+            return
+        report = audit_dbc_capture(self.dbc_library, dataset)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Passive capture vs DBC audit")
+        dialog.resize(900, 620)
+        layout = QVBoxLayout(dialog)
+        summary = QPlainTextEdit()
+        summary.setReadOnly(True)
+        summary.setPlainText(json.dumps(report, indent=2))
+        layout.addWidget(summary, 1)
+        note = QLabel(
+            "A match means only that the frame ID, format, payload length and decoder "
+            "matched this DBC. It does not verify vehicle applicability, bus assignment, "
+            "signal meaning or DBC correctness. Unmatched frames are not automatically faults. "
+            "No CAN traffic is transmitted."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        rate = report.get("coverage_percent")
+        coverage_text = "n/a" if rate is None else f"{rate:.1f}%"
+        self.status_label.setText(
+            f"DBC audit: {report['matched_frames']:,}/{report['input_frame_count']:,} "
+            f"frames matched ({coverage_text})"
+        )
 
     def compare_dbcs(self):
         if self.dbc_library.path is None:
@@ -2595,6 +2637,9 @@ class ResearchTab(QWidget):
             "",
             "## Passive CAN payload variability",
             json.dumps(analyze_payload_variability(self.frames), indent=2),
+            "",
+            "## DBC capture coverage audit",
+            json.dumps(audit_dbc_capture(self.dbc_library, self.frames), indent=2),
             "",
             "## Session context",
             json.dumps({
