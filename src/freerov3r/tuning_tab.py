@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QWidget,
 )
 
+from .archive_registry import ArchiveRegistryError, load_archive_records, record_archive, record_verification
+
 from .firmware_archive import (
     ArchiveError,
     create_dual_backup,
@@ -28,6 +30,7 @@ class TuningTab(QWidget):
 
     SETTINGS_PATH = Path.home() / ".freerov3r" / "tuning_archive_settings.json"
     ARCHIVE_SUBDIR = Path("FreeRov3r") / "recovery"
+    REGISTRY_PATH = Path.home() / ".freerov3r" / "firmware_archive_registry.json"
 
     def __init__(self, vin_provider=None, parent=None):
         super().__init__(parent)
@@ -39,6 +42,7 @@ class TuningTab(QWidget):
         self._build_ui()
         self.refresh_vehicle()
         self._refresh_archive_status()
+        self.refresh_archive_registry()
 
     def _load_archive_settings(self):
         try:
@@ -166,6 +170,18 @@ class TuningTab(QWidget):
         action_row.addWidget(self.verify_button)
         action_row.addStretch(1)
         archive_layout.addLayout(action_row)
+
+        registry_group = QGroupBox("PERSISTENT BACKUP REGISTER")
+        registry_layout = QVBoxLayout(registry_group)
+        self.registry_view = QTextEdit()
+        self.registry_view.setReadOnly(True)
+        self.registry_view.setMaximumHeight(125)
+        self.registry_view.setPlaceholderText("No archive records saved on this computer.")
+        registry_layout.addWidget(self.registry_view)
+        refresh_registry_button = QPushButton("Refresh backup register")
+        refresh_registry_button.clicked.connect(self.refresh_archive_registry)
+        registry_layout.addWidget(refresh_registry_button)
+        archive_layout.addWidget(registry_group)
 
         self.archive_status = QLabel("Archive not yet checked")
         self.archive_status.setWordWrap(True)
@@ -342,6 +358,11 @@ class TuningTab(QWidget):
             self.archive_status.setText(f"ARCHIVE FAILED: {exc}")
             QMessageBox.warning(self, "Archive failed", str(exc))
             return
+        try:
+            record_archive(self.REGISTRY_PATH, result)
+            self.refresh_archive_registry()
+        except ArchiveRegistryError as exc:
+            self.archive_status.setText(f"ARCHIVE VERIFIED, BUT REGISTER UPDATE FAILED: {exc}")
         self.archive_status.setText(
             f"VERIFIED: {len(result['files'])} file(s). Both archived copies were reopened "
             "and matched against the manifest SHA-256 and file size."
@@ -361,6 +382,16 @@ class TuningTab(QWidget):
             self.archive_status.setText(f"VERIFICATION FAILED: {exc}")
             QMessageBox.warning(self, "Verification failed", str(exc))
             return
+        try:
+            record_verification(
+                self.REGISTRY_PATH,
+                internal,
+                removable,
+                result,
+            )
+            self.refresh_archive_registry()
+        except ArchiveRegistryError as exc:
+            self.archive_status.setText(f"VERIFICATION FINISHED, BUT REGISTER UPDATE FAILED: {exc}")
         if result["verified"]:
             self.archive_status.setText(
                 f"VERIFIED: {len(result['files'])} file(s). Both copies match the shared manifest."
@@ -372,6 +403,31 @@ class TuningTab(QWidget):
                 self, "Archive mismatch",
                 "At least one archived copy is missing, unreadable, or has a hash/size mismatch.",
             )
+
+    def refresh_archive_registry(self):
+        try:
+            records = load_archive_records(self.REGISTRY_PATH)
+        except ArchiveRegistryError as exc:
+            self.registry_view.setPlainText(f"REGISTER ERROR: {exc}")
+            return
+        if not records:
+            self.registry_view.setPlainText("No backup records saved on this computer.")
+            return
+        lines = []
+        for item in reversed(records[-50:]):
+            lines.append(
+                f"{item.get('timestamp_utc', 'unknown time')} | "
+                f"VIN {item.get('vin', 'unknown')} | {item.get('module', 'unknown')} | "
+                f"{item.get('status', 'unknown')} | {item.get('file_name', 'unnamed')} | "
+                f"SHA-256 {item.get('sha256', 'unknown')}"
+            )
+            lines.append(
+                f"  Internal: {item.get('internal_archive', 'unknown')} | "
+                f"Removable: {item.get('removable_archive', 'unknown')}"
+            )
+            if item.get("last_verified_utc"):
+                lines.append(f"  Last verified: {item['last_verified_utc']}")
+        self.registry_view.setPlainText("\n".join(lines))
 
     def add_observation(self):
         note = self.note_input.text().strip()
