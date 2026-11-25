@@ -2429,14 +2429,6 @@ class ResearchTab(QWidget):
             "| Timestamp | Elapsed seconds | CAN ID | Format | Payload | ISO-TP | UDS hint |",
             "|---:|---:|---:|---|---|---|---|",
         ]
-        inventory_captures = self._module_inventory_capture_set()
-        if len(inventory_captures) >= 2:
-            lines += [
-                "",
-                "## Cross-capture passive module inventory",
-                "Each saved capture is analyzed independently. No CAN transmission or cross-file UDS pairing occurs.",
-                json.dumps(compare_module_discovery(inventory_captures), indent=2),
-            ]
         for record in self.frames[:20000]:
             iso, uds = classify_can_payload(bytes.fromhex(record["data"]))
             elapsed = (
@@ -2447,6 +2439,14 @@ class ResearchTab(QWidget):
                 f'| {record["timestamp"]:.6f} | {elapsed} | 0x{record["arbitration_id"]:X} | '
                 f'{"EXT" if record["extended"] else "STD"} | {record["data"].upper()} | {iso} | {uds} |'
             )
+        inventory_captures = self._module_inventory_capture_set()
+        if len(inventory_captures) >= 2:
+            lines += [
+                "",
+                "## Cross-capture passive module inventory",
+                "Each saved capture is analyzed independently. No CAN transmission or cross-file UDS pairing occurs.",
+                json.dumps(compare_module_discovery(inventory_captures), indent=2),
+            ]
         messages = reassemble_isotp(self.frames)
         lines += [
             "",
