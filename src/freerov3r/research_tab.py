@@ -1623,6 +1623,25 @@ class ResearchTab(QWidget):
                 f"{current_ids[(can_id, extended)] - reference_ids[(can_id, extended)]:+}"
                 for can_id, extended in changed[:12]
             )
+            if self.dbc_library.database is not None:
+                dbc_comparison = self.dbc_library.compare_captures(
+                    dataset[-20000:], self.reference_frames[-20000:]
+                )
+                lines += [
+                    "",
+                    "Decoded DBC signal comparison (last 20,000 frames per capture):",
+                    f"Working matched/unmatched: {dbc_comparison['working']['matched_frames']:,} / {dbc_comparison['working']['unmatched_frames']:,}",
+                    f"Reference matched/unmatched: {dbc_comparison['reference']['matched_frames']:,} / {dbc_comparison['reference']['unmatched_frames']:,}",
+                ]
+                for item in dbc_comparison["signal_differences"][:20]:
+                    if item["status"] == "shared":
+                        lines.append(
+                            f"  {item['signal']}: working mean={item['working']['mean']:.6g} "
+                            f"{item['working']['unit']}; reference mean={item['reference']['mean']:.6g} "
+                            f"{item['reference']['unit']}; delta={item['mean_delta']:+.6g}"
+                        )
+                    else:
+                        lines.append(f"  {item['signal']}: {item['status']}")
         self.summary.setPlainText("\n".join(lines))
 
     def import_capture(self):
@@ -2541,6 +2560,29 @@ class ResearchTab(QWidget):
             )
         if self.reference_frames:
             lines += ["", f"Comparison capture contains {len(self.reference_frames)} frames."]
+            if self.dbc_library.database is not None:
+                dbc_comparison = self.dbc_library.compare_captures(
+                    self.frames[-20000:], self.reference_frames[-20000:]
+                )
+                lines += [
+                    "",
+                    "## Decoded DBC signal comparison",
+                    f"- Working capture frames: {dbc_comparison['working']['frame_count']}",
+                    f"- Working matched / unmatched: {dbc_comparison['working']['matched_frames']} / {dbc_comparison['working']['unmatched_frames']}",
+                    f"- Reference capture frames: {dbc_comparison['reference']['frame_count']}",
+                    f"- Reference matched / unmatched: {dbc_comparison['reference']['matched_frames']} / {dbc_comparison['reference']['unmatched_frames']}",
+                    f"- Interpretation: {dbc_comparison['interpretation']}",
+                ]
+                for item in dbc_comparison["signal_differences"]:
+                    if item["status"] == "shared":
+                        lines.append(
+                            f"- {item['signal']}: working n={item['working']['count']} "
+                            f"mean={item['working']['mean']:.6g}; reference n={item['reference']['count']} "
+                            f"mean={item['reference']['mean']:.6g}; delta={item['mean_delta']:+.6g} "
+                            f"{item['working']['unit']}"
+                        )
+                    else:
+                        lines.append(f"- {item['signal']}: {item['status']}")
         return "\n".join(lines)
 
     def copy_analysis_packet(self):

@@ -331,3 +331,37 @@ def test_dbc_grade_a_complete_evidence_can_be_marked_verified(tmp_path, monkeypa
     )
     assert metadata["verification_status"] == "verified"
     assert metadata["evidence_grade"] == "A"
+
+
+
+def test_dbc_capture_comparison_reports_coverage_units_and_one_sided_signals(tmp_path, monkeypatch):
+    source = tmp_path / "sample.dbc"
+    source.write_text("test", encoding="utf-8")
+    library = DBCLibrary(tmp_path / "library")
+    monkeypatch.setattr(DBCLibrary, "_cantools", staticmethod(lambda: FakeCantools))
+    library.load_file(source)
+
+    working = [
+        {"arbitration_id": 0x123, "extended": False, "data": "0102"},
+        {"arbitration_id": 0x123, "extended": False, "data": "0304"},
+        {"arbitration_id": 0x124, "extended": False, "data": "0102"},
+        {"arbitration_id": 0x123, "extended": False, "data": "not-hex"},
+    ]
+    reference = [
+        {"arbitration_id": 0x123, "extended": False, "data": "0102"},
+        {"arbitration_id": 0x124, "extended": False, "data": "0102"},
+    ]
+
+    report = library.compare_captures(working, reference)
+
+    assert report["working"]["frame_count"] == 4
+    assert report["working"]["matched_frames"] == 2
+    assert report["working"]["unmatched_frames"] == 2
+    assert report["reference"]["matched_frames"] == 1
+    assert report["reference"]["unmatched_frames"] == 1
+    signals = {item["signal"]: item for item in report["signal_differences"]}
+    assert signals["EngineSpeed"]["status"] == "shared"
+    assert signals["EngineSpeed"]["working"]["unit"] == "rpm"
+    assert signals["EngineSpeed"]["mean_delta"] == 2750.0
+    assert signals["CoolantTemp"]["mean_delta"] == 0.0
+    assert "Descriptive decoded-value comparison only" in report["interpretation"]
