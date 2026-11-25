@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from .firmware_archive import (
     ArchiveError,
     create_dual_backup,
+    inspect_destination,
     verify_dual_backup,
 )
 
@@ -123,6 +124,10 @@ class TuningTab(QWidget):
         internal_row.addWidget(internal_button)
         archive_layout.addLayout(internal_row)
 
+        self.internal_capacity = QLabel("Capacity not checked")
+        self.internal_capacity.setWordWrap(True)
+        archive_layout.addWidget(self.internal_capacity)
+
         self.removable_value = QLineEdit(self.removable_root)
         self.removable_value.setReadOnly(True)
         removable_button = QPushButton("Choose USB / removable drive…")
@@ -131,6 +136,9 @@ class TuningTab(QWidget):
         removable_row.addWidget(self.removable_value, 1)
         removable_row.addWidget(removable_button)
         archive_layout.addLayout(removable_row)
+        self.removable_capacity = QLabel("Capacity not checked")
+        self.removable_capacity.setWordWrap(True)
+        archive_layout.addWidget(self.removable_capacity)
 
         metadata = QFormLayout()
         self.module_input = QLineEdit("ECM")
@@ -147,6 +155,9 @@ class TuningTab(QWidget):
         archive_layout.addLayout(metadata)
 
         action_row = QHBoxLayout()
+        self.storage_check_button = QPushButton("Check storage capacity / write access")
+        self.storage_check_button.clicked.connect(self.check_storage)
+        action_row.addWidget(self.storage_check_button)
         self.archive_button = QPushButton("Create dual verified archive")
         self.archive_button.clicked.connect(self.create_archive)
         self.verify_button = QPushButton("Verify existing archive")
@@ -222,6 +233,7 @@ class TuningTab(QWidget):
         if path:
             self.source_file = path
             self.source_value.setText(path)
+            self._refresh_archive_status()
 
     def _select_root(self, title: str) -> str:
         return QFileDialog.getExistingDirectory(self, title, "")
@@ -251,11 +263,20 @@ class TuningTab(QWidget):
         )
 
     def _refresh_archive_status(self):
+        self.internal_capacity.setText("Capacity not checked" if self.internal_root else "Internal destination not selected")
+        self.removable_capacity.setText("Capacity not checked" if self.removable_root else "Removable destination not selected")
         if not self.internal_root or not self.removable_root:
             self.archive_status.setText("Select two separate destinations to enable archive verification.")
             return
         try:
             internal, removable = self._archive_paths()
+            required = Path(self.source_file).stat().st_size if self.source_file and Path(self.source_file).is_file() else 0
+            for root, label in ((self.internal_root, self.internal_capacity), (self.removable_root, self.removable_capacity)):
+                try:
+                    info = inspect_destination(root, required_bytes=required)
+                    label.setText(f"{info['free_bytes']:,} bytes free of {info['total_bytes']:,}; {required:,} required for selected file.")
+                except (ArchiveError, OSError) as exc:
+                    label.setText(f"Storage check unavailable: {exc}")
             if (internal / "freerov3r-recovery-manifest.json").is_file() and (
                 removable / "freerov3r-recovery-manifest.json"
             ).is_file():
@@ -264,6 +285,34 @@ class TuningTab(QWidget):
                 self.archive_status.setText("No complete dual archive detected at the selected destinations.")
         except ArchiveError as exc:
             self.archive_status.setText(str(exc))
+
+    def check_storage(self):
+        if not self.internal_root or not self.removable_root:
+            QMessageBox.warning(self, "Destinations required", "Choose both archive destinations first.")
+            return
+        required = 0
+        if self.source_file:
+            try:
+                required = Path(self.source_file).stat().st_size
+            except OSError as exc:
+                QMessageBox.warning(self, "Source unavailable", str(exc))
+                return
+        try:
+            results = []
+            for label, root in (("Internal", self.internal_root), ("Removable", self.removable_root)):
+                info = inspect_destination(root, required_bytes=required, test_write=True)
+                results.append(
+                    f"{label}: {info['path']}\n"
+                    f"Free: {info['free_bytes']:,} / {info['total_bytes']:,} bytes; "
+                    f"required: {required:,}; write/read test: passed"
+                )
+            self.internal_capacity.setText(results[0].replace("\n", " | "))
+            self.removable_capacity.setText(results[1].replace("\n", " | "))
+            self.archive_status.setText("Storage preflight passed. This checks current free space and write/read access only.")
+            QMessageBox.information(self, "Storage preflight passed", "\n\n".join(results))
+        except (ArchiveError, OSError) as exc:
+            self.archive_status.setText(f"STORAGE PREFLIGHT FAILED: {exc}")
+            QMessageBox.warning(self, "Storage preflight failed", str(exc))
 
     def create_archive(self):
         if not self.source_file:
