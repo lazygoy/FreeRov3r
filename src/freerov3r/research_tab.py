@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
+from freerov3r.diagnostics.module_discovery import discover_modules
 
 from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
@@ -2383,7 +2384,6 @@ class ResearchTab(QWidget):
                     f'{pair["addressing_hint"]} |'
                 )
         address_candidates = summarize_ecu_address_pairs(transactions)
-        from freerov3r.diagnostics.module_discovery import discover_modules
         module_discovery = discover_modules(self.frames)
         lines += [
             "",
