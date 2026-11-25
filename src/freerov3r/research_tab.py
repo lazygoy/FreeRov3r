@@ -2008,7 +2008,9 @@ class ResearchTab(QWidget):
                 ("Format", "format"), ("Message", "message"),
                 ("Signal", "signal"), ("Unit", "unit"),
                 ("Before n", "before_sample_count"), ("Before mean", "before_mean"),
+                ("Before min", "before_min"), ("Before max", "before_max"),
                 ("After n", "after_sample_count"), ("After mean", "after_mean"),
+                ("After min", "after_min"), ("After max", "after_max"),
                 ("Mean Δ", "mean_delta"), ("First after (s)", "first_after_marker_seconds"),
             ]
             table = QTableWidget(len(result["signals"]), len(columns))
@@ -2016,16 +2018,31 @@ class ResearchTab(QWidget):
             table.setAlternatingRowColors(True)
             table.setEditTriggers(QTableWidget.NoEditTriggers)
             table.setSelectionBehavior(QTableWidget.SelectRows)
+
+            class SortableSummaryItem(QTableWidgetItem):
+                def __lt__(self, other):
+                    left = self.data(Qt.UserRole)
+                    right = other.data(Qt.UserRole)
+                    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                        return left < right
+                    return super().__lt__(other)
+
+            table.setSortingEnabled(False)
             for row_index, record in enumerate(result["signals"]):
                 for column_index, (_, key) in enumerate(columns):
-                    value = record.get(key)
-                    if key == "can_id" and value is not None:
-                        value = f"0x{int(value):X}"
-                    elif value is None:
-                        value = "n/a"
-                    elif isinstance(value, float):
-                        value = f"{value:.4f}"
-                    table.setItem(row_index, column_index, QTableWidgetItem(str(value)))
+                    raw_value = record.get(key)
+                    if key == "can_id" and raw_value is not None:
+                        display_value = f"0x{int(raw_value):X}"
+                    elif raw_value is None:
+                        display_value = "n/a"
+                    elif isinstance(raw_value, float):
+                        display_value = f"{raw_value:.4f}"
+                    else:
+                        display_value = str(raw_value)
+                    item = SortableSummaryItem(display_value)
+                    if isinstance(raw_value, (int, float)):
+                        item.setData(Qt.UserRole, raw_value)
+                    table.setItem(row_index, column_index, item)
             table.setSortingEnabled(True)
             table.resizeColumnsToContents()
             table.horizontalHeader().setStretchLastSection(True)
