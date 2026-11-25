@@ -30,7 +30,7 @@ from freerov3r.diagnostics.payload_variability import analyze_payload_variabilit
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.dbc_signal_behavior import (
     analyze_dbc_signal_behavior, build_dbc_signal_series,
-    summarize_dbc_marker_signal_changes,
+    summarize_dbc_marker_signal_changes, format_dbc_marker_signal_summary_table,
 )
 
 try:
@@ -3294,6 +3294,9 @@ class ResearchTab(QWidget):
                 "Decoded numeric signals summarized over 2 seconds before and 5 seconds after each marker. "
                 "Only capture-relative monotonic timestamps are used. Missing windows remain null; "
                 "temporal association does not establish causation.",
+                format_dbc_marker_signal_summary_table(marker_signal_results),
+                "",
+                "### Machine-readable marker signal results",
                 json.dumps(marker_signal_results, indent=2),
             ]
         if self.sequence_captures:
