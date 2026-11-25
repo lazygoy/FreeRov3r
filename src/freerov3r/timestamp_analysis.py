@@ -95,7 +95,8 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
         host_gaps = 0
         device_deltas = []
         host_deltas = []
-        previous = None
+        previous_device = None
+        previous_host = None
 
         for record in channel_records:
             try:
@@ -108,6 +109,18 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
             except (TypeError, ValueError):
                 invalid_host += 1
                 continue
+
+            if previous_host is not None:
+                host_delta = host_time - previous_host
+                if host_delta < 0:
+                    non_monotonic_host += 1
+                elif host_delta == 0:
+                    duplicate_host_time += 1
+                else:
+                    host_deltas.append(host_delta)
+                    if host_delta >= suspicious_gap_seconds:
+                        host_gaps += 1
+            previous_host = host_time
 
             raw_device = record.get("device_timestamp_us")
             if raw_device is None:
@@ -129,9 +142,8 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
 
             device_seconds = device_time / 1_000_000.0
             points.append((device_seconds, host_time))
-            if previous is not None:
-                device_delta = device_seconds - previous[0]
-                host_delta = host_time - previous[1]
+            if previous_device is not None:
+                device_delta = device_seconds - previous_device
                 if device_delta < 0:
                     non_monotonic += 1
                 elif device_delta == 0:
@@ -140,15 +152,7 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
                     device_deltas.append(device_delta)
                     if device_delta >= suspicious_gap_seconds:
                         device_gaps += 1
-                if host_delta < 0:
-                    non_monotonic_host += 1
-                elif host_delta == 0:
-                    duplicate_host_time += 1
-                else:
-                    host_deltas.append(host_delta)
-                    if host_delta >= suspicious_gap_seconds:
-                        host_gaps += 1
-            previous = (device_seconds, host_time)
+            previous_device = device_seconds
 
         # A regression or duplicate in either clock makes a linear drift fit
         # misleading. Keep the raw counts, but do not publish a fit.

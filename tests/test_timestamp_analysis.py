@@ -118,3 +118,28 @@ def test_timestamp_analysis_rejects_boolean_host_timestamps():
     assert item["invalid_host_timestamp_count"] == 1
     assert item["timed_frame_count"] == 1
     assert item["clock_fit"] is None
+
+
+def test_host_clock_quality_includes_frames_without_device_timestamps():
+    records = [
+        _record("HS-CAN", 1.0, 1_000_000),
+        _record("HS-CAN", 1.1, None),
+        _record("HS-CAN", 1.05, 1_200_000),
+    ]
+    item = analyze_channel_timestamps(records)["channels"][0]
+    assert item["missing_device_timestamp_count"] == 1
+    assert item["non_monotonic_host_steps"] == 1
+    assert item["clock_fit"] is None
+    assert item["timing_quality"] == "check monotonicity/gaps"
+
+
+def test_host_clock_gaps_include_frames_with_invalid_device_timestamps():
+    records = [
+        _record("HS-CAN", 1.0, 1_000_000),
+        _record("HS-CAN", 2.5, -1),
+        _record("HS-CAN", 2.6, 1_100_000),
+    ]
+    item = analyze_channel_timestamps(records, suspicious_gap_seconds=1.0)["channels"][0]
+    assert item["invalid_device_timestamp_count"] == 1
+    assert item["suspicious_host_gaps"] == 1
+    assert item["median_host_interval_ms"] == pytest.approx(800.0)
