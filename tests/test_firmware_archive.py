@@ -234,6 +234,42 @@ def test_archive_registry_persists_and_updates_verification(tmp_path):
     assert load_archive_records(registry)[0]["last_verified_utc"]
 
 
+def test_archive_registry_preserves_each_file_identity(tmp_path):
+    import copy
+
+    from freerov3r.archive_registry import record_archive
+
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original calibration")
+    result = create_dual_backup(
+        source,
+        tmp_path / "internal",
+        tmp_path / "usb",
+        metadata={"vin": "TESTVIN", "module": "ECM"},
+    )
+    second_file = copy.deepcopy(result["files"][0])
+    second_file["path"] = "original/second-module.bin"
+    result["files"].append(second_file)
+    second_manifest_entry = copy.deepcopy(result["manifest"]["files"][0])
+    second_manifest_entry["path"] = "original/second-module.bin"
+    second_manifest_entry["metadata"] = {
+        "vin": "TESTVIN",
+        "module": "TCM",
+        "hardware_id": "TCM-HW2",
+    }
+    result["manifest"]["files"].append(second_manifest_entry)
+
+    record = record_archive(tmp_path / "register.json", result)
+
+    assert record["file_count"] == 2
+    assert [item["file_name"] for item in record["files"]] == [
+        "stock.bin",
+        "second-module.bin",
+    ]
+    assert record["files"][1]["metadata"]["module"] == "TCM"
+    assert record["files"][1]["metadata"]["hardware_id"] == "TCM-HW2"
+
+
 def test_archive_registry_rejects_malformed_register(tmp_path):
     from freerov3r.archive_registry import ArchiveRegistryError, load_archive_records
 
