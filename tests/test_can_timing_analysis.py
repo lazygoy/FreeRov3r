@@ -1,3 +1,5 @@
+import pytest
+
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 
 
@@ -22,9 +24,9 @@ def test_periodicity_reports_median_and_jitter_per_can_node():
     node = report["nodes"][0]
     assert node["frame_count"] == 4
     assert node["interval_count"] == 3
-    assert node["median_interval_s"] == 0.1
-    assert node["min_interval_s"] == 0.09
-    assert node["max_interval_s"] == 0.10999999999999999
+    assert node["median_interval_s"] == pytest.approx(0.1)
+    assert node["min_interval_s"] == pytest.approx(0.09)
+    assert node["max_interval_s"] == pytest.approx(0.11)
     assert node["p95_absolute_deviation_s"] is not None
 
 
@@ -52,7 +54,7 @@ def test_periodicity_counts_duplicate_and_non_monotonic_timestamps():
     assert node["duplicate_timestamp_count"] == 1
     assert node["non_monotonic_timestamp_count"] == 1
     assert node["interval_count"] == 1
-    assert node["median_interval_s"] == 0.2
+    assert node["median_interval_s"] == pytest.approx(0.2)
 
 
 def test_periodicity_ignores_invalid_timestamps_and_payloads():
