@@ -885,7 +885,7 @@ class SensorGraphTab(QWidget):
         for i in range(self.sensor_list.count()):
             item = self.sensor_list.item(i)
             sensor_id = self._sensor_id(item)
-            active = now - self.last_sample_time.get(sensor_id, 0) <= 2.0
+            active = now - self.last_sample_time.get(sensor_id, 0) <= 5.0
             item.setText(f"{'●' if active else '○'} {item.data(Qt.UserRole + 1)} ({sensor_id})")
             item.setForeground(QColor("#39d98a") if active and self.activity_phase else
                                QColor("#27885b") if active else QColor("#77818c"))
@@ -1284,7 +1284,7 @@ class OBDTab(QWidget):
         self.activity_phase = not self.activity_phase
         for pid, row in self.pid_rows.items():
             item = self.table.item(row, 6)
-            active = now - self.last_sample_time.get(pid, 0) <= 2.0
+            active = now - self.last_sample_time.get(pid, 0) <= 5.0
             item.setText("●" if active else "○")
             item.setForeground(QColor("#39d98a") if active and self.activity_phase else
                                QColor("#27885b") if active else QColor("#77818c"))
