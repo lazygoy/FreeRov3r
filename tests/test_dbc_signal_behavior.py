@@ -102,9 +102,9 @@ def test_graph_series_preserve_channel_identity_and_sort_timestamps():
         [{"elapsed_seconds": 1.5, "operation": "Read live data", "note": "scanner"},
          {"elapsed_seconds": "bad", "operation": "ignored"}],
     )
-    assert len(result["signals"]) == 2
-    hs = next(item for item in result["signals"] if item["channel"] == "HS-CAN")
-    ms = next(item for item in result["signals"] if item["channel"] == "MS-CAN")
+    assert len(result["signals"]) == 4  # Two numeric signals on each channel.
+    hs = next(item for item in result["signals"] if item["channel"] == "HS-CAN" and item["signal"] == "EngineSpeed")
+    ms = next(item for item in result["signals"] if item["channel"] == "MS-CAN" and item["signal"] == "EngineSpeed")
     assert hs["samples"] == [(0.0, 1000.0), (1.0, 3000.0), (2.0, 4000.0)]
     assert ms["samples"] == [(1.0, 2000.0)]
     assert hs["minimum"] == 1000.0
