@@ -1,8 +1,9 @@
 """Native Qt drawer and toast primitives for the FreeRov3r workspace."""
-from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QPixmap, QDesktopServices
+from PySide6.QtGui import QDesktopServices
+
+from .asset_loader import load_asset_pixmap
 from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 
@@ -31,8 +32,7 @@ class QuickDrawer(QDockWidget):
         brand_row.setSpacing(12)
         brand_logo = QLabel()
         brand_logo.setObjectName("drawerBrandLogo")
-        logo_path = Path(__file__).resolve().parent / "assets" / "brand_badge.svg"
-        logo_pixmap = QPixmap(str(logo_path))
+        logo_pixmap = load_asset_pixmap("brand_badge.svg")
         if not logo_pixmap.isNull():
             brand_logo.setPixmap(logo_pixmap.scaled(66, 66, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         brand_row.addWidget(brand_logo)
