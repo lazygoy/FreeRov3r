@@ -71,3 +71,33 @@ def test_timestamp_analysis_handles_too_few_samples_and_missing_channels():
 def test_timestamp_analysis_rejects_invalid_gap_threshold():
     with pytest.raises(ValueError, match="positive"):
         analyze_channel_timestamps([], suspicious_gap_seconds=0)
+
+
+
+def test_timestamp_analysis_detects_host_clock_regressions_and_suppresses_fit():
+    records = [
+        _record("HS-CAN", 1.0, 1_000_000),
+        _record("HS-CAN", 1.1, 1_100_000),
+        _record("HS-CAN", 1.05, 1_200_000),
+    ]
+
+    item = analyze_channel_timestamps(records)["channels"][0]
+    assert item["non_monotonic_host_steps"] == 1
+    assert item["duplicate_host_timestamps"] == 0
+    assert item["clock_fit"] is None
+    assert item["timing_quality"] == "check monotonicity/gaps"
+
+
+def test_timestamp_analysis_detects_duplicate_clocks_and_rejects_fractional_device_time():
+    records = [
+        _record("HS-CAN", 1.0, 1_000_000),
+        _record("HS-CAN", 1.0, 1_000_000),
+        _record("HS-CAN", 1.1, 1_100_000.5),
+    ]
+
+    item = analyze_channel_timestamps(records)["channels"][0]
+    assert item["duplicate_device_timestamps"] == 1
+    assert item["duplicate_host_timestamps"] == 1
+    assert item["invalid_device_timestamp_count"] == 1
+    assert item["clock_fit"] is None
+    assert item["timing_quality"] == "check monotonicity/gaps"
