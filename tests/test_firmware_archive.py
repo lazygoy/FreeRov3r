@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from freerov3r.firmware_archive import (
+    ArchiveError,
+    MANIFEST_NAME,
+    create_dual_backup,
+    sha256_file,
+    verify_dual_backup,
+)
+
+
+def test_dual_backup_copies_and_verifies_original(tmp_path):
+    source = tmp_path / "stock_read.bin"
+    source.write_bytes(bytes(range(256)) * 8)
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+
+    result = create_dual_backup(
+        source,
+        internal,
+        removable,
+        metadata={"vin": "TESTVIN", "module": "ECM"},
+    )
+
+    assert result["verified"] is True
+    assert len(result["files"]) == 1
+    assert result["files"][0]["verified"] is True
+    assert result["files"][0]["copies"]["internal"]["sha256"] == sha256_file(source)
+    assert result["files"][0]["copies"]["removable"]["sha256"] == sha256_file(source)
+    assert (internal / "FreeRov3r/recovery" / MANIFEST_NAME).is_file()
+    assert (removable / "FreeRov3r/recovery" / MANIFEST_NAME).is_file()
+
+
+def test_verification_detects_changed_copy(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"original firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    archived = removable / "FreeRov3r/recovery/original/stock.bin"
+    archived.write_bytes(b"modified or corrupted")
+
+    result = verify_dual_backup(
+        internal / "FreeRov3r/recovery",
+        removable / "FreeRov3r/recovery",
+    )
+    assert result["verified"] is False
+    assert result["files"][0]["copies"]["removable"]["matches_manifest"] is False
+
+
+def test_existing_original_is_never_overwritten(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"first")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    source.write_bytes(b"second")
+    with pytest.raises(ArchiveError, match="Refusing to overwrite"):
+        create_dual_backup(source, internal, removable)
+
+    assert (internal / "FreeRov3r/recovery/original/stock.bin").read_bytes() == b"first"
+
+
+def test_same_or_nested_destinations_are_rejected(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    root = tmp_path / "archive"
+    with pytest.raises(ArchiveError, match="separate"):
+        create_dual_backup(source, root, root / "usb")
+
+
+def test_manifest_path_traversal_is_rejected(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    manifest_path = internal / "FreeRov3r/recovery" / MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"][0]["path"] = "../../outside.bin"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ArchiveError, match="manifests do not match"):
+        verify_dual_backup(
+            internal / "FreeRov3r/recovery",
+            removable / "FreeRov3r/recovery",
+        )
