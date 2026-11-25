@@ -4,7 +4,7 @@ This analyzer never sends diagnostic requests. It reports observed CAN IDs and
 probable UDS responder relationships without assigning an ECU name from an
 address pattern alone.
 """
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 from ..isotp import pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs
 
