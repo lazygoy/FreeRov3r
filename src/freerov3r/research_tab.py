@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
+from freerov3r.diagnostics.module_discovery import discover_modules
 
 from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
@@ -2383,6 +2384,29 @@ class ResearchTab(QWidget):
                     f'{pair["addressing_hint"]} |'
                 )
         address_candidates = summarize_ecu_address_pairs(transactions)
+        module_discovery = discover_modules(self.frames)
+        lines += [
+            "",
+            "## Passive module discovery",
+            "This section analyzes captured traffic only. It does not transmit diagnostic requests.",
+            f"Observed CAN nodes: {module_discovery['valid_observed_id_count']}",
+            f"Complete ISO-TP messages: {module_discovery['complete_isotp_message_count']}",
+            f"Probable UDS transactions: {module_discovery['probable_uds_transaction_count']}",
+            "| CAN ID | Format | Channel | Frames | Role | Evidence | Request IDs | UDS services |",
+            "|---:|---|---|---:|---|---|---|---|",
+        ]
+        for node in module_discovery["nodes"]:
+            request_ids = ", ".join(f"0x{value:X}" for value in node["request_ids"]) or "—"
+            services = ", ".join(f"0x{value:02X}" for value in node["services"]) or "—"
+            lines.append(
+                f"| 0x{node['can_id']:X} | "
+                f"{'EXT' if node['extended'] else 'STD'} | "
+                f"{node['channel'] or 'unspecified'} | {node['frame_count']} | "
+                f"{node['role']} | {node['evidence_level']} | "
+                f"{request_ids} | {services} |"
+            )
+        lines += ["", "Discovery limitations:"]
+        lines.extend(f"- {item}" for item in module_discovery["limitations"])
         lines += [
             "",
             "## Candidate CAN responder address map",
