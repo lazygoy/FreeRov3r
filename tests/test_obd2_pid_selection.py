@@ -20,10 +20,12 @@ def test_pid_search_finds_common_workshop_sensor_names():
 
 def test_pid_category_filter_is_applied_with_search():
     rows = search_mode01_pids(category="Temperatures")
-    assert {row[0] for row in rows} == {"05", "0F", "46", "5C"}
+    assert {row[0] for row in rows} == {"05", "0F", "3C", "3D", "3E", "3F", "46", "5C"}
     assert search_mode01_pids("rpm", "Temperatures") == []
 
 
 def test_pid_search_matches_hex_pid_and_unit():
     assert [row[0] for row in search_mode01_pids("0C")] == ["0C"]
-    assert {row[0] for row in search_mode01_pids("%")} == {"04", "11", "2F"}
+    from freerov3r.diagnostics.obd2 import PID_DEFINITIONS
+    expected = {f"{pid:02X}" for pid, (_, unit) in PID_DEFINITIONS.items() if unit == "%"}
+    assert {row[0] for row in search_mode01_pids("%")} == expected
