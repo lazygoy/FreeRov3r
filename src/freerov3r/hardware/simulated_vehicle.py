@@ -6,7 +6,7 @@ from .base import CanAdapter
 from ..models import CanFrame
 
 
-from ..diagnostics.obd2 import PID_DEFINITIONS, decode_mode01
+from ..diagnostics.obd2 import decode_mode01
 
 
 class SimulatedVehicleAdapter(CanAdapter):
