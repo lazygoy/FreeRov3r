@@ -1233,7 +1233,7 @@ class ModulesTab(QWidget):
         right.addWidget(QLabel("VEHICLE HEALTH REPORT"))
         self.health_report = QPlainTextEdit()
         self.health_report.setReadOnly(True)
-        self.health_report.setMinimumHeight(150)
+        self.health_report.setMinimumHeight(105)
         self.health_report.setPlaceholderText(
             "Run Generate Health Report for a module-by-module summary."
         )
@@ -2757,15 +2757,15 @@ class MainWindow(QMainWindow):
         self.tabs.tabBar().hide()
         workspace = QWidget()
         outer_layout = QVBoxLayout(workspace)
-        outer_layout.setContentsMargins(12, 10, 12, 12)
-        outer_layout.setSpacing(10)
+        outer_layout.setContentsMargins(7, 6, 7, 7)
+        outer_layout.setSpacing(6)
 
         # Persistent instrument header: the key context stays visible on every page.
         header = QWidget()
         header.setObjectName("workspaceHeader")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(16, 10, 16, 10)
-        header_layout.setSpacing(18)
+        header_layout.setContentsMargins(10, 6, 10, 6)
+        header_layout.setSpacing(10)
 
         title_column = QVBoxLayout()
         title_column.setSpacing(2)
@@ -4023,27 +4023,60 @@ class MainWindow(QMainWindow):
         # Kept native to Qt so the desktop app does not acquire a React runtime.
         self.setStyleSheet(self.styleSheet() + """
             QPushButton {
-                border-radius: 9px;
-                padding: 9px 15px;
-                min-height: 27px;
+                border-radius: 7px;
+                padding: 5px 9px;
+                min-height: 19px;
                 font-weight: 650;
             }
             QPushButton:disabled { opacity: 0.45; }
             QLineEdit, QComboBox, QSpinBox, QListWidget, QTreeWidget,
             QTableWidget, QPlainTextEdit {
-                border-radius: 8px;
-                padding: 7px 9px;
+                border-radius: 6px;
+                padding: 4px 6px;
             }
             QGroupBox {
-                border-radius: 12px;
-                margin-top: 16px;
-                padding: 16px 12px 12px 12px;
+                border-radius: 9px;
+                margin-top: 11px;
+                padding: 10px 9px 8px 9px;
                 font-weight: 700;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
-                left: 14px;
-                padding: 0 7px;
+                left: 10px;
+                padding: 0 5px;
+            }
+            QTabBar::tab {
+                padding: 8px 9px;
+                min-width: 92px;
+            }
+            QHeaderView::section {
+                padding: 5px 6px;
+            }
+            QTableWidget::item {
+                padding: 3px 5px;
+            }
+            QCheckBox, QRadioButton {
+                spacing: 6px;
+                padding: 1px;
+            }
+            QLabel#workspaceTitle {
+                font-size: 16pt;
+                letter-spacing: 0.6px;
+            }
+            QLabel#workspaceSubtitle {
+                font-size: 8.5pt;
+            }
+            QLabel#headerVehicle, QLabel#headerOffline, QLabel#headerOnline,
+            QLabel#headerSimulation {
+                padding: 6px 8px;
+                font-size: 8.5pt;
+            }
+            QLabel#headerTraffic {
+                font-size: 9pt;
+                padding: 2px 4px;
+            }
+            QToolButton#drawerToggle {
+                padding: 5px 8px;
             }
             QTableWidget {
                 alternate-background-color: rgba(120, 145, 160, 0.08);
