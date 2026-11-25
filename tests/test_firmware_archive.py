@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -235,39 +236,64 @@ def test_archive_registry_persists_and_updates_verification(tmp_path):
 
 
 def test_archive_registry_preserves_each_file_identity(tmp_path):
-    import copy
-
     from freerov3r.archive_registry import record_archive
 
     source = tmp_path / "stock.bin"
-    source.write_bytes(b"original calibration")
+    second_source = tmp_path / "tcm.bin"
+    source.write_bytes(b"original engine calibration")
+    second_source.write_bytes(b"original transmission calibration")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
     result = create_dual_backup(
         source,
-        tmp_path / "internal",
-        tmp_path / "usb",
+        internal,
+        removable,
         metadata={"vin": "TESTVIN", "module": "ECM"},
     )
-    second_file = copy.deepcopy(result["files"][0])
-    second_file["path"] = "original/second-module.bin"
-    result["files"].append(second_file)
-    second_manifest_entry = copy.deepcopy(result["manifest"]["files"][0])
-    second_manifest_entry["path"] = "original/second-module.bin"
-    second_manifest_entry["metadata"] = {
-        "vin": "TESTVIN",
-        "module": "TCM",
-        "hardware_id": "TCM-HW2",
-    }
-    result["manifest"]["files"].append(second_manifest_entry)
+
+    # Add a second real archived file to both destinations and update their
+    # matching manifests, then obtain the registry input from the real verifier.
+    second_relative = "original/tcm.bin"
+    second_bytes = second_source.read_bytes()
+    second_hash = hashlib.sha256(second_bytes).hexdigest()
+    for root in (internal, removable):
+        archive = root / "FreeRov3r/recovery"
+        second_target = archive / second_relative
+        second_target.parent.mkdir(parents=True, exist_ok=True)
+        second_target.write_bytes(second_bytes)
+        manifest_path = archive / MANIFEST_NAME
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"].append({
+            "path": second_relative,
+            "size_bytes": len(second_bytes),
+            "sha256": second_hash,
+            "source_name": second_source.name,
+            "acquired_at_utc": manifest["files"][0]["acquired_at_utc"],
+            "metadata": {
+                "vin": "TESTVIN",
+                "module": "TCM",
+                "hardware_id": "TCM-HW2",
+            },
+        })
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    result = verify_dual_backup(
+        internal / "FreeRov3r/recovery",
+        removable / "FreeRov3r/recovery",
+    )
+    assert result["verified"] is True
 
     record = record_archive(tmp_path / "register.json", result)
 
     assert record["file_count"] == 2
     assert [item["file_name"] for item in record["files"]] == [
         "stock.bin",
-        "second-module.bin",
+        "tcm.bin",
     ]
     assert record["files"][1]["metadata"]["module"] == "TCM"
     assert record["files"][1]["metadata"]["hardware_id"] == "TCM-HW2"
+    assert record["files"][1]["internal"]["matches_manifest"] is True
+    assert record["files"][1]["removable"]["matches_manifest"] is True
 
 
 def test_archive_registry_rejects_malformed_register(tmp_path):
