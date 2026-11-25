@@ -111,6 +111,25 @@ def _verified_result_consistent(result: Any) -> bool:
     return True
 
 
+def _result_matches_archives(
+    result: Any,
+    internal_archive: str | Path,
+    removable_archive: str | Path,
+) -> bool:
+    """Ensure verification evidence belongs to the exact archive pair requested."""
+    if not isinstance(result, dict):
+        return False
+    try:
+        return (
+            Path(result.get("internal_archive", "")).resolve()
+            == Path(internal_archive).resolve()
+            and Path(result.get("removable_archive", "")).resolve()
+            == Path(removable_archive).resolve()
+        )
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def record_archive(registry_path: str | Path, result: dict[str, Any]) -> dict[str, Any]:
     if not _verified_result_consistent(result):
         raise ArchiveRegistryError("Only a fully verified dual archive with consistent file evidence can be registered.")
@@ -186,21 +205,15 @@ def record_verification(
         item for item in records
         if item.get("internal_archive") == internal and item.get("removable_archive") == removable
     ]
+    evidence_is_valid = (
+        _verified_result_consistent(result)
+        and _result_matches_archives(result, internal_archive, removable_archive)
+    )
     if not matches:
-        if result.get("verified"):
+        if evidence_is_valid:
             record_archive(registry_path, result)
         return
     timestamp = _timestamp()
-    try:
-        result_matches_archives = (
-            Path(result.get("internal_archive", "")).resolve()
-            == Path(internal_archive).resolve()
-            and Path(result.get("removable_archive", "")).resolve()
-            == Path(removable_archive).resolve()
-        )
-    except (OSError, TypeError, ValueError):
-        result_matches_archives = False
-    evidence_is_valid = _verified_result_consistent(result) and result_matches_archives
     for item in matches:
         item["last_verified_utc"] = timestamp
         item["status"] = "verified" if evidence_is_valid else "verification_failed"
