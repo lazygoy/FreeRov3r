@@ -691,6 +691,10 @@ class SensorGraphTab(QWidget):
         self.vehicle_vin = None
         self.recording = False
         self.record_start = None
+        self.last_sample_time = {}
+        self.activity_phase = True
+        self.selection_changed_callback = None
+        self.favorites_changed_callback = None
 
         layout = QVBoxLayout(self)
         if not HAS_CHARTS:
@@ -768,6 +772,26 @@ class SensorGraphTab(QWidget):
         right.addWidget(refresh_btn)
         controls.addLayout(right, 1)
         layout.addLayout(controls)
+        favorite_row = QHBoxLayout()
+        favorite_row.addWidget(QLabel("Shared sensor group:"))
+        self.favorite_combo = QComboBox()
+        favorite_row.addWidget(self.favorite_combo, 1)
+        self.load_group_btn = QPushButton("Load")
+        self.load_group_btn.clicked.connect(self.load_favorite_group)
+        favorite_row.addWidget(self.load_group_btn)
+        save_group_btn = QPushButton("Save graph selection as…")
+        save_group_btn.clicked.connect(self.save_favorite_group)
+        favorite_row.addWidget(save_group_btn)
+        self.delete_group_btn = QPushButton("Delete")
+        self.delete_group_btn.clicked.connect(self.delete_favorite_group)
+        favorite_row.addWidget(self.delete_group_btn)
+        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
+        layout.addLayout(favorite_row)
+        self.activity_timer = QTimer(self)
+        self.activity_timer.setInterval(350)
+        self.activity_timer.timeout.connect(self._update_activity_indicators)
+        self.activity_timer.start()
+        self.refresh_favorite_groups()
 
         if HAS_CHARTS:
             info = QLabel(
@@ -806,7 +830,9 @@ class SensorGraphTab(QWidget):
                 continue
             if sample.sensor_id not in seen:
                 seen.add(sample.sensor_id)
-                item = QListWidgetItem(f"{sample.name} ({sample.sensor_id})")
+                item = QListWidgetItem(f"● {sample.name} ({sample.sensor_id})")
+                item.setData(Qt.UserRole, sample.sensor_id)
+                item.setData(Qt.UserRole + 1, sample.name)
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked if sample.sensor_id in self.hidden_sensor_ids else Qt.Checked)
                 self.sensor_list.addItem(item)
@@ -822,13 +848,122 @@ class SensorGraphTab(QWidget):
         self.vehicle_vin = vin
         self.refresh_sensor_list()
 
+    def _sensor_id(self, item):
+        return item.data(Qt.UserRole) or item.text().split("(")[-1].rstrip(")")
+
+    def selected_sensor_ids(self):
+        return {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())
+                if self.sensor_list.item(i).checkState() == Qt.Checked}
+
+    def set_selected_sensor_ids(self, sensor_ids):
+        selected = {str(value).lower() for value in sensor_ids}
+        known = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())}
+        self.hidden_sensor_ids.update(known - selected)
+        self.hidden_sensor_ids.difference_update(selected)
+        self.sensor_list.blockSignals(True)
+        for i in range(self.sensor_list.count()):
+            item = self.sensor_list.item(i)
+            item.setCheckState(Qt.Checked if self._sensor_id(item) in selected else Qt.Unchecked)
+        self.sensor_list.blockSignals(False)
+        self.update_chart()
+
+    def mark_sample(self, sensor_id):
+        self.last_sample_time[str(sensor_id)] = time.monotonic()
+        self._update_activity_indicators()
+
+    def _update_activity_indicators(self):
+        now = time.monotonic()
+        self.activity_phase = not self.activity_phase
+        for i in range(self.sensor_list.count()):
+            item = self.sensor_list.item(i)
+            sensor_id = self._sensor_id(item)
+            active = now - self.last_sample_time.get(sensor_id, 0) <= 2.0
+            item.setText(f"{'●' if active else '○'} {item.data(Qt.UserRole + 1)} ({sensor_id})")
+            item.setForeground(QColor("#39d98a") if active and self.activity_phase else
+                               QColor("#27885b") if active else QColor("#77818c"))
+            item.setToolTip("Live data arriving" if active else "No recent samples")
+
+    def refresh_favorite_groups(self, selected_name=None):
+        groups = self.parent_settings.get("obd_pid_favorites", {})
+        self.favorite_combo.blockSignals(True)
+        self.favorite_combo.clear()
+        self.favorite_combo.addItem("Choose saved group…", None)
+        if isinstance(groups, dict):
+            for name in sorted(groups, key=str.casefold):
+                self.favorite_combo.addItem(name, name)
+        if selected_name:
+            index = self.favorite_combo.findData(selected_name)
+            if index >= 0:
+                self.favorite_combo.setCurrentIndex(index)
+        self.favorite_combo.blockSignals(False)
+        enabled = self.favorite_combo.currentData() is not None
+        self.load_group_btn.setEnabled(enabled)
+        self.delete_group_btn.setEnabled(enabled)
+
+    def _favorite_selection_changed(self, *_):
+        enabled = self.favorite_combo.currentData() is not None
+        self.load_group_btn.setEnabled(enabled)
+        self.delete_group_btn.setEnabled(enabled)
+
+    def _group_sensor_ids(self, values):
+        result = set()
+        for value in values if isinstance(values, (list, tuple, set)) else []:
+            text = str(value).strip().lower()
+            if text.startswith("obd_"):
+                result.add(text)
+            else:
+                try:
+                    result.add(f"obd_{int(text, 16):02X}")
+                except ValueError:
+                    result.add(text)
+        return result
+
+    def load_favorite_group(self):
+        name = self.favorite_combo.currentData()
+        groups = self.parent_settings.get("obd_pid_favorites", {})
+        if name and isinstance(groups, dict):
+            selected = self._group_sensor_ids(groups.get(name, []))
+            self.set_selected_sensor_ids(selected)
+            if self.selection_changed_callback:
+                self.selection_changed_callback(selected)
+
+    def save_favorite_group(self):
+        selected = self.selected_sensor_ids()
+        if not selected:
+            QMessageBox.information(self, "No sensors selected", "Select at least one sensor before saving a group.")
+            return
+        name, accepted = QInputDialog.getText(self, "Save sensor group", "Group name:")
+        name = name.strip()
+        if not accepted or not name:
+            return
+        groups = dict(self.parent_settings.get("obd_pid_favorites", {}))
+        groups[name] = sorted(selected)
+        self.parent_settings["obd_pid_favorites"] = groups
+        save_settings(self.parent_settings)
+        self.refresh_favorite_groups(name)
+        if self.favorites_changed_callback:
+            self.favorites_changed_callback(name)
+
+    def delete_favorite_group(self):
+        name = self.favorite_combo.currentData()
+        if name:
+            groups = dict(self.parent_settings.get("obd_pid_favorites", {}))
+            groups.pop(name, None)
+            self.parent_settings["obd_pid_favorites"] = groups
+            save_settings(self.parent_settings)
+            self.refresh_favorite_groups()
+            if self.favorites_changed_callback:
+                self.favorites_changed_callback()
+
     def _on_sensor_item_changed(self, item):
-        sensor_id = item.text().split("(")[-1].rstrip(")")
+        sensor_id = self._sensor_id(item)
         if item.checkState() == Qt.Checked:
             self.hidden_sensor_ids.discard(sensor_id)
         else:
             self.hidden_sensor_ids.add(sensor_id)
         self.update_chart()
+        if self.selection_changed_callback:
+            self.selection_changed_callback(self.selected_sensor_ids())
 
     def toggle_record(self):
         self.recording = not self.recording
@@ -865,7 +1000,7 @@ class SensorGraphTab(QWidget):
         self.chart.removeAllSeries()
         self.series_map.clear()
         selected_ids = {
-            self.sensor_list.item(i).text().split("(")[-1].rstrip(")")
+            self._sensor_id(self.sensor_list.item(i))
             for i in range(self.sensor_list.count())
             if self.sensor_list.item(i).checkState() == Qt.Checked
         }
