@@ -80,6 +80,53 @@ def test_verification_detects_unlisted_archive_files(tmp_path):
     }
 
 
+def test_manifest_rejects_duplicate_and_overlapping_paths(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    for root in (internal, removable):
+        manifest_path = root / "FreeRov3r/recovery" / MANIFEST_NAME
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        duplicate = dict(manifest["files"][0])
+        manifest["files"].append(duplicate)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ArchiveError, match="duplicate archive path"):
+        verify_dual_backup(internal / "FreeRov3r/recovery", removable / "FreeRov3r/recovery")
+
+
+def test_manifest_rejects_parent_child_path_conflicts(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    internal = tmp_path / "internal"
+    removable = tmp_path / "usb"
+    create_dual_backup(source, internal, removable)
+
+    for root in (internal, removable):
+        manifest_path = root / "FreeRov3r/recovery" / MANIFEST_NAME
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        child = dict(manifest["files"][0])
+        child["path"] = "original/stock.bin/child.bin"
+        manifest["files"].append(child)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ArchiveError, match="conflicting archive paths"):
+        verify_dual_backup(internal / "FreeRov3r/recovery", removable / "FreeRov3r/recovery")
+
+
+def test_archive_rejects_reserved_manifest_filename(tmp_path):
+    source = tmp_path / "stock.bin"
+    source.write_bytes(b"firmware")
+    with pytest.raises(ArchiveError, match="reserved manifest filename"):
+        create_dual_backup(
+            source, tmp_path / "internal", tmp_path / "usb",
+            relative_file_path=MANIFEST_NAME,
+        )
+
+
 def test_existing_original_is_never_overwritten(tmp_path):
     source = tmp_path / "stock.bin"
     source.write_bytes(b"first")
