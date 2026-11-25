@@ -56,6 +56,7 @@ from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .asset_loader import load_asset_pixmap
 from .research_tab import ResearchTab
+from .tuning_tab import TuningTab
 
 SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
@@ -2955,6 +2956,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self.research_tab = ResearchTab()
         self.tabs.addTab(self.research_tab, "Research")
+        self.tuning_tab = TuningTab(
+            vin_provider=lambda: self.settings.get("current_vin")
+        )
+        self.tabs.addTab(self.tuning_tab, "Tuning")
         self._build_settings_tab()
         self._build_navigation_workspace()
         for group_box in self.findChildren(QGroupBox):
