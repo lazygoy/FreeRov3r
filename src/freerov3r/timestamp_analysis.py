@@ -174,12 +174,12 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
             ),
             "clock_fit": fit,
             "timing_quality": (
-                "insufficient data" if fit is None
-                else "check monotonicity/gaps" if (
+                "check monotonicity/gaps" if (
                     non_monotonic or duplicate_device_time
                     or non_monotonic_host or duplicate_host_time
                     or device_gaps or host_gaps
                 )
+                else "insufficient data" if fit is None
                 else "measured; not synchronized"
             ),
         })
