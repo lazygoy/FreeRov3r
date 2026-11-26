@@ -6,6 +6,11 @@ from PySide6.QtCore import QCoreApplication, Qt
 from freerov3r.app import Receiver
 
 
+# Keep Qt's application object alive until interpreter shutdown. PySide6 6.12
+# can abort during teardown if the last Python reference is released mid-suite.
+_QT_APP = None
+
+
 class DtcCapableFakeAdapter:
     description = "fake DTC adapter"
 
@@ -157,7 +162,9 @@ def test_receiver_batches_high_rate_frames():
 
     # Deliver the signal through Qt's normal queued connection and pump
     # the test event loop, matching how the application receives batches.
-    app = QCoreApplication.instance() or QCoreApplication([])
+    global _QT_APP
+    _QT_APP = QCoreApplication.instance() or QCoreApplication([])
+    app = _QT_APP
     receiver.frames_received.connect(
         collect_batch, Qt.ConnectionType.QueuedConnection
     )
