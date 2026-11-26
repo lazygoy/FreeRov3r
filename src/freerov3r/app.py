@@ -207,6 +207,8 @@ class Receiver(QThread):
     readiness_failed = Signal(str)
     freeze_frame_completed = Signal(object)
     freeze_frame_failed = Signal(str)
+    vehicle_info_completed = Signal(object)
+    vehicle_info_failed = Signal(str)
 
     def __init__(self, adapter):
         super().__init__()
@@ -216,6 +218,7 @@ class Receiver(QThread):
         self._dtc_request_pending = False
         self._readiness_request_pending = False
         self._freeze_frame_request_pending = False
+        self._vehicle_info_request_pending = False
 
     def request_dtcs(self):
         """Queue a DTC read for execution by the adapter-owning thread."""
@@ -247,6 +250,16 @@ class Receiver(QThread):
         self._commands.put(("read_freeze_frame", tuple(pids), int(frame_number)))
         return True
 
+    def request_vehicle_info(self, pids=(0x02, 0x04, 0x06, 0x0A)):
+        """Queue a read-only Mode 09 request on the adapter-owning thread."""
+        if not self.isRunning() or not callable(getattr(self.adapter, "read_vehicle_info", None)):
+            return False
+        if self._vehicle_info_request_pending:
+            return False
+        self._vehicle_info_request_pending = True
+        self._commands.put(("read_vehicle_info", tuple(pids)))
+        return True
+
     def run(self):
         try:
             self.adapter.open()
@@ -274,6 +287,16 @@ class Receiver(QThread):
                     finally:
                         self._freeze_frame_request_pending = False
                     continue
+                if isinstance(command, tuple) and command[0] == "read_vehicle_info":
+                    try:
+                        self.vehicle_info_completed.emit(
+                            self.adapter.read_vehicle_info(command[1])
+                        )
+                    except Exception as exc:
+                        self.vehicle_info_failed.emit(str(exc))
+                    finally:
+                        self._vehicle_info_request_pending = False
+                    continue
                 if command == "read_readiness":
                     try:
                         self.readiness_completed.emit(self.adapter.read_readiness())
@@ -295,6 +318,8 @@ class Receiver(QThread):
                 self.readiness_failed.emit(str(exc))
             if self._freeze_frame_request_pending:
                 self.freeze_frame_failed.emit(str(exc))
+            if self._vehicle_info_request_pending:
+                self.vehicle_info_failed.emit(str(exc))
         finally:
             try:
                 self.adapter.close()
@@ -303,6 +328,7 @@ class Receiver(QThread):
             self._dtc_request_pending = False
             self._readiness_request_pending = False
             self._freeze_frame_request_pending = False
+            self._vehicle_info_request_pending = False
 
     def stop(self):
         self.running = False
@@ -1413,12 +1439,40 @@ class OBDTab(QWidget):
         layout.addWidget(freeze_group)
         self.read_freeze_frame_callback = None
 
+        vehicle_info_group = QGroupBox("VEHICLE / ECU IDENTIFICATION (MODE 09)")
+        vehicle_info_layout = QVBoxLayout(vehicle_info_group)
+        vehicle_info_actions = QHBoxLayout()
+        self.read_vehicle_info_btn = QPushButton("Read Vehicle Information")
+        self.read_vehicle_info_btn.setEnabled(False)
+        self.read_vehicle_info_btn.setToolTip(
+            "Read-only SAE J1979 Mode 09 requests for VIN, calibration IDs, CVNs and ECU name."
+        )
+        self.read_vehicle_info_btn.clicked.connect(self.request_vehicle_info_scan)
+        vehicle_info_actions.addWidget(self.read_vehicle_info_btn)
+        self.vehicle_info_status_label = QLabel(
+            "Connect an ELM327 OBD-II adapter to read ECU-reported identification."
+        )
+        self.vehicle_info_status_label.setWordWrap(True)
+        vehicle_info_actions.addWidget(self.vehicle_info_status_label, 1)
+        vehicle_info_layout.addLayout(vehicle_info_actions)
+        self.vehicle_info_table = QTableWidget(0, 6)
+        self.vehicle_info_table.setHorizontalHeaderLabels(
+            ["PID", "Information", "Value", "Response ECU", "Channel", "Raw"]
+        )
+        self.vehicle_info_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.vehicle_info_table.setMaximumHeight(220)
+        self.vehicle_info_table.setAlternatingRowColors(True)
+        self.vehicle_info_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        vehicle_info_layout.addWidget(self.vehicle_info_table)
+        layout.addWidget(vehicle_info_group)
+
         self.readiness_metadata_label = QLabel("MIL and DTC count: not yet read")
         self.readiness_metadata_label.setWordWrap(True)
         readiness_layout.addWidget(self.readiness_metadata_label)
         layout.addWidget(readiness_group)
         self.read_dtcs_callback = None
         self.read_readiness_callback = None
+        self.read_vehicle_info_callback = None
         self._refresh_favorite_combo()
 
     def request_dtc_scan(self):
@@ -1435,6 +1489,7 @@ class OBDTab(QWidget):
         self.read_dtcs_btn.setEnabled(bool(enabled))
         self.read_readiness_btn.setEnabled(bool(enabled))
         self.read_freeze_frame_btn.setEnabled(bool(enabled))
+        self.read_vehicle_info_btn.setEnabled(bool(enabled))
         if not enabled:
             self.dtc_status_label.setText("Connect an ELM327 OBD-II adapter to read trouble codes.")
             self.readiness_status_label.setText(
@@ -1472,6 +1527,50 @@ class OBDTab(QWidget):
             self.freeze_frame_status_label.setText(
                 "Freeze-frame request is unavailable or another read is already in progress."
             )
+
+    def request_vehicle_info_scan(self):
+        if self.read_vehicle_info_callback is None:
+            self.vehicle_info_status_label.setText(
+                "Start an ELM327 OBD-II connection before requesting vehicle information."
+            )
+            return
+        if self.read_vehicle_info_callback():
+            self.read_vehicle_info_btn.setEnabled(False)
+            self.vehicle_info_status_label.setText("Reading Mode 09 vehicle and ECU identification…")
+        else:
+            self.vehicle_info_status_label.setText(
+                "Vehicle-information request is unavailable or another read is already in progress."
+            )
+
+    def show_vehicle_info_results(self, results):
+        self.vehicle_info_table.setRowCount(0)
+        for result in results:
+            ecu = f"{result.get('arbitration_id', 0):08X}" + (
+                " (29-bit)" if result.get("is_extended_id") else " (11-bit)"
+            )
+            for item in result.get("items", []):
+                row = self.vehicle_info_table.rowCount()
+                self.vehicle_info_table.insertRow(row)
+                values = (
+                    f"09 {result.get('pid', 0):02X}",
+                    item.get("type", "").replace("_", " ").title(),
+                    item.get("value", ""),
+                    ecu,
+                    result.get("channel", ""),
+                    result.get("raw", ""),
+                )
+                for column, value in enumerate(values):
+                    self.vehicle_info_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self.vehicle_info_status_label.setText(
+            f"Read complete: {sum(len(result.get('items', [])) for result in results)} "
+            f"identification record(s) from {len(results)} ECU response(s)."
+            if results else "No valid Mode 09 vehicle-information responses were returned."
+        )
+        self.read_vehicle_info_btn.setEnabled(True)
+
+    def set_vehicle_info_scan_error(self, message):
+        self.vehicle_info_status_label.setText(f"Vehicle-information read failed: {message}")
+        self.read_vehicle_info_btn.setEnabled(True)
 
     def show_freeze_frame_results(self, results):
         self.freeze_frame_table.setRowCount(0)
@@ -3262,6 +3361,7 @@ class MainWindow(QMainWindow):
         self.obd_tab.read_dtcs_callback = self.request_dtc_scan
         self.obd_tab.read_readiness_callback = self.request_readiness_scan
         self.obd_tab.read_freeze_frame_callback = self.request_freeze_frame_scan
+        self.obd_tab.read_vehicle_info_callback = self.request_vehicle_info_scan
         self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
@@ -4304,6 +4404,8 @@ class MainWindow(QMainWindow):
         self.receiver.readiness_failed.connect(self._on_readiness_scan_failed)
         self.receiver.freeze_frame_completed.connect(self._on_freeze_frame_scan_completed)
         self.receiver.freeze_frame_failed.connect(self._on_freeze_frame_scan_failed)
+        self.receiver.vehicle_info_completed.connect(self._on_vehicle_info_scan_completed)
+        self.receiver.vehicle_info_failed.connect(self._on_vehicle_info_scan_failed)
         self.obd_tab.set_dtc_scan_enabled(interface == "elm327_obd")
         self.receiver.start()
         self.connect_btn.setText("Stop listening")
@@ -4331,6 +4433,49 @@ class MainWindow(QMainWindow):
         if self.active_interface != "elm327_obd" or receiver is None:
             return False
         return receiver.request_readiness()
+
+    def request_vehicle_info_scan(self):
+        receiver = self.receiver
+        if self.active_interface != "elm327_obd" or receiver is None:
+            return False
+        return receiver.request_vehicle_info()
+
+    def _on_vehicle_info_scan_completed(self, results):
+        self.obd_tab.show_vehicle_info_results(results)
+        detected_vins = {
+            validate_vin(item.get("value"))
+            for result in results if result.get("pid") == 0x02
+            for item in result.get("items", []) if item.get("type") == "vin"
+        }
+        detected_vins.discard(None)
+        if len(detected_vins) == 1:
+            self._apply_detected_vin(next(iter(detected_vins)))
+        self.record_vehicle_event(
+            "vehicle_info_scan_completed",
+            f"OBD-II Mode 09 identification read: {sum(len(item.get('items', [])) for item in results)} record(s)",
+            {
+                "interface": self.active_interface,
+                "service": "09",
+                "count": len(results),
+                "results": results,
+                "read_only": True,
+            },
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast(
+            f"Vehicle information read: {len(results)} ECU response(s)",
+            "success" if results else "warning",
+        )
+
+    def _on_vehicle_info_scan_failed(self, message):
+        self.obd_tab.set_vehicle_info_scan_error(message)
+        self.record_vehicle_event(
+            "vehicle_info_scan_failed",
+            "OBD-II Mode 09 vehicle-information read failed",
+            {"interface": self.active_interface, "error": str(message), "read_only": True},
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast("Vehicle-information read failed", "warning")
 
     def request_freeze_frame_scan(self, pids, frame_number=0):
         receiver = self.receiver

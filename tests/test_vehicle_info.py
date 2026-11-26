@@ -29,7 +29,7 @@ def test_decode_mode09_cvns_as_hex():
 
 
 def test_decode_mode09_ecu_name():
-    result = decode_j1979_vehicle_info(bytes((0x49, 0x0A, 0x01)) + b"ENGINE ECU")
+    result = decode_j1979_vehicle_info(bytes((0x49, 0x0A, 0x01)) + b"ENGINE ECU".ljust(20, b" "))
     assert result["items"] == [{"type": "ecu_name", "value": "ENGINE ECU"}]
 
 
@@ -42,3 +42,9 @@ def test_decode_mode09_ecu_name():
 def test_rejects_malformed_or_unsupported_mode09_payloads(payload):
     with pytest.raises(ValueError):
         decode_j1979_vehicle_info(payload)
+
+
+
+def test_mode09_ecu_name_requires_twenty_byte_record():
+    with pytest.raises(ValueError, match="expected 20 data bytes"):
+        decode_j1979_vehicle_info(bytes((0x49, 0x0A, 0x01)) + b"ENGINE ECU")

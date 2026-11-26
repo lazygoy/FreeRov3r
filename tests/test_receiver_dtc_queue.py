@@ -43,3 +43,35 @@ def test_receiver_runs_dtc_request_on_adapter_owner_thread():
     finally:
         receiver.stop()
     assert adapter.closed
+
+
+
+class VehicleInfoCapableFakeAdapter(DtcCapableFakeAdapter):
+    description = "fake vehicle-info adapter"
+
+    def __init__(self):
+        super().__init__()
+        self.vehicle_info_thread = None
+
+    def read_vehicle_info(self, pids=(0x02, 0x04, 0x06, 0x0A)):
+        self.vehicle_info_thread = threading.get_ident()
+        self.read_called.set()
+        return [{"service": "09", "pid": 0x02, "items": [
+            {"type": "vin", "value": "1GNEK13Z54R123456"}
+        ]}]
+
+
+def test_receiver_runs_mode09_request_on_adapter_owner_thread():
+    adapter = VehicleInfoCapableFakeAdapter()
+    receiver = Receiver(adapter)
+    receiver.start()
+    try:
+        deadline = time.monotonic() + 1
+        while not receiver.isRunning() and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert receiver.request_vehicle_info((0x02,))
+        assert adapter.read_called.wait(1)
+        assert adapter.vehicle_info_thread == adapter.open_thread
+    finally:
+        receiver.stop()
+    assert adapter.closed
