@@ -134,6 +134,14 @@ class SensorGraphPanel(QWidget):
             if self.vehicle_vin and sample_vin != self.vehicle_vin:
                 continue
             available.setdefault(sample.sensor_id, sample.name)
+        existing = {
+            self._item_sensor_id(self.sensor_list.item(i)): self.sensor_list.item(i).text()
+            for i in range(self.sensor_list.count())
+        }
+        expected = {sensor_id: f"{name} ({sensor_id})" for sensor_id, name in available.items()}
+        if existing == expected:
+            self.update_chart()
+            return
         self.sensor_list.blockSignals(True)
         self.sensor_list.clear()
         for sensor_id, name in sorted(available.items(), key=lambda item: item[1].casefold()):
@@ -191,7 +199,7 @@ class SensorGraphPanel(QWidget):
             samples = [
                 sample for sample in samples
                 if sample_time(sample, clock) >= start
-            ]
+            ][-2000:]
             if not samples:
                 continue
             series = QLineSeries()
