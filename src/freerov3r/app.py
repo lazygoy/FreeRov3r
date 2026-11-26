@@ -1285,6 +1285,10 @@ class SensorGraphTab(QWidget):
                         unit=row.get("unit", ""),
                         source=row.get("source", "imported"),
                         metadata={"vin": self.vehicle_vin or "UNASSIGNED"},
+                        monotonic_timestamp=(
+                            float(row["monotonic_timestamp"])
+                            if row.get("monotonic_timestamp") else None
+                        ),
                     )
                     self.sensor_capture.add(sample)
                     count += 1
@@ -4951,6 +4955,7 @@ class MainWindow(QMainWindow):
                     signal=f"Mode 01 PID {pid:02X}" + (f" {key}" if key != "value" else ""),
                     metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
                              "vin": self.capture_vin or "UNASSIGNED"},
+                    monotonic_timestamp=time.monotonic(),
                 ))
                 self.graph_tab.mark_sample(sensor_id)
                 known = any(
