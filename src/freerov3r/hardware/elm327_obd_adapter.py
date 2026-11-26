@@ -15,6 +15,7 @@ from ..models import CanFrame
 from ..diagnostics.obd2 import PID_DEFINITIONS, parse_mode01_supported_pids
 from ..diagnostics.dtc import decode_j1979_dtcs
 from ..diagnostics.readiness import decode_obd_readiness
+from ..diagnostics.freeze_frame import decode_freeze_frame_response
 from ..isotp import reassemble_isotp
 
 
@@ -263,6 +264,46 @@ class Elm327ObdAdapter(CanAdapter):
                 "channel": message["channel"],
             })
             results.append(result)
+        return results
+
+    def read_freeze_frame(self, pids, frame_number=0):
+        """Read selected Mode 02 freeze-frame PIDs using the open ELM327 link.
+
+        This explicit read-only operation must run on the adapter-owning
+        thread, with the normal polling loop paused. Only standard Mode 02
+        responses matching the requested PID and frame number are returned.
+        """
+        if self.connection is None:
+            raise RuntimeError("ELM327 OBD-II adapter is not open")
+        selected = tuple(dict.fromkeys(int(pid) for pid in pids))
+        invalid = [pid for pid in selected if pid not in PID_DEFINITIONS]
+        if invalid:
+            raise ValueError(f"Unsupported Mode 02 PID(s): {invalid}")
+        frame_number = int(frame_number)
+        if not 0 <= frame_number <= 0xFF:
+            raise ValueError("Freeze-frame number must be in the range 0..255")
+
+        results = []
+        for pid in selected:
+            response = self._command(f"02{pid:02X}{frame_number:02X}")
+            frames = self._parse_response_frames(response, self.port, time.time())
+            messages = reassemble_isotp(frames)
+            for message in messages:
+                if message.get("status") != "complete":
+                    continue
+                payload = bytes.fromhex(message.get("payload", ""))
+                if len(payload) < 3 or payload[:3] != bytes((0x42, pid, frame_number)):
+                    continue
+                try:
+                    results.append(decode_freeze_frame_response(
+                        payload,
+                        arbitration_id=message["arbitration_id"],
+                        is_extended_id=message["extended"],
+                        channel=message["channel"],
+                        frame_number=frame_number,
+                    ))
+                except ValueError:
+                    continue
         return results
 
     def receive(self, timeout=0.2):
