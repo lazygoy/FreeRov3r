@@ -1,7 +1,7 @@
 import threading
 import time
 
-from freerov3r.app import Receiver
+from freerov3r.app import FrameBatcher, Receiver
 
 
 class DtcCapableFakeAdapter:
@@ -118,3 +118,48 @@ def test_receiver_runs_mode06_request_on_adapter_owner_thread():
     finally:
         receiver.stop()
     assert adapter.closed
+
+
+class BurstFakeAdapter:
+    description = "fake burst adapter"
+
+    def __init__(self, frame_count=150):
+        self.remaining = frame_count
+
+    def open(self):
+        pass
+
+    def receive(self, timeout=0.15):
+        if self.remaining:
+            self.remaining -= 1
+            return object()
+        time.sleep(min(timeout, 0.005))
+        return None
+
+    def close(self):
+        pass
+
+
+def test_frame_batcher_flushes_on_size_and_preserves_all_frames():
+    batcher = FrameBatcher(max_frames=64, interval=10.0)
+    frames = [object() for _ in range(150)]
+    emitted = []
+
+    for frame in frames:
+        batcher.add(frame)
+        if batcher.should_flush(now=batcher.last_emit):
+            emitted.append(batcher.take(now=batcher.last_emit))
+
+    if batcher.frames:
+        emitted.append(batcher.take(now=batcher.last_emit))
+
+    assert [frame for batch in emitted for frame in batch] == frames
+    assert [len(batch) for batch in emitted] == [64, 64, 22]
+
+
+def test_frame_batcher_flushes_after_interval():
+    batcher = FrameBatcher(max_frames=64, interval=0.05)
+    batcher.add(object())
+
+    assert not batcher.should_flush(now=batcher.last_emit + 0.049)
+    assert batcher.should_flush(now=batcher.last_emit + 0.05)
