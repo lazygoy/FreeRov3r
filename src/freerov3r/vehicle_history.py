@@ -13,6 +13,14 @@ def filter_dtc_scan_events(events):
     return [event for event in events if event.get("type") in DTC_SCAN_EVENT_TYPES]
 
 
+CAN_ACTIVITY_EVENT_TYPES = {"capture_started", "capture_completed", "vin_detected"}
+
+
+def filter_can_activity_events(events):
+    """Return CAN capture lifecycle and VIN-detection events, preserving order."""
+    return [event for event in events if event.get("type") in CAN_ACTIVITY_EVENT_TYPES]
+
+
 def search_history_events(events, query):
     """Search all recorded event fields, including nested details, case-insensitively."""
     term = str(query or "").strip().casefold()
