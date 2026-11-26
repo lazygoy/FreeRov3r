@@ -1,12 +1,14 @@
 """Dockable multi-panel live sensor dashboard."""
 
 import math
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDockWidget, QGridLayout, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
+    QInputDialog, QFileDialog, QMessageBox,
 )
 
 try:
@@ -16,6 +18,7 @@ except ImportError:
     HAS_CHARTS = False
 
 from .sensors.scaling import sample_clock, sample_time
+from .sensors.correlation import correlate_sensor_series, make_event_marker
 from .sensor_waterfall import SensorWaterfallDialog
 
 
@@ -63,6 +66,189 @@ def normalize_dashboard_layout(layout):
             "auto_scale": bool(config.get("auto_scale", True)),
         })
     return {"version": 1, "panel_count": count, "panels": panels}
+
+
+class SensorCorrelationDialog(QDialog):
+    """Compare two captured signals and annotate the current capture session."""
+
+    def __init__(self, sensor_capture, vin_provider=None, parent=None):
+        super().__init__(parent)
+        self.sensor_capture = sensor_capture
+        self.vin_provider = vin_provider or (lambda: None)
+        self.setWindowTitle("Synchronized Sensor Comparison")
+        self.resize(900, 650)
+        layout = QVBoxLayout(self)
+        controls = QHBoxLayout()
+        self.sensor_a = QComboBox()
+        self.sensor_b = QComboBox()
+        self.max_gap = QComboBox()
+        for label, seconds in (("250 ms", 0.25), ("500 ms", 0.5), ("1 second", 1.0),
+                               ("2 seconds", 2.0), ("5 seconds", 5.0)):
+            self.max_gap.addItem(label, seconds)
+        controls.addWidget(QLabel("Signal A:"))
+        controls.addWidget(self.sensor_a, 1)
+        controls.addWidget(QLabel("Signal B:"))
+        controls.addWidget(self.sensor_b, 1)
+        controls.addWidget(QLabel("Max gap:"))
+        controls.addWidget(self.max_gap)
+        layout.addLayout(controls)
+        self.summary = QLabel("Select two signals with overlapping samples.")
+        layout.addWidget(self.summary)
+        if HAS_CHARTS:
+            self.chart = QChart()
+            self.chart.legend().setVisible(True)
+            self.chart.setAnimationOptions(QChart.NoAnimation)
+            self.chart_view = QChartView(self.chart)
+            self.chart_view.setRenderHint(QPainter.Antialiasing)
+            self.axis_x = QValueAxis()
+            self.axis_x.setTitleText("Elapsed time (s)")
+            self.axis_y = QValueAxis()
+            self.axis_y.setTitleText("Normalized value (0-100%)")
+            self.chart.addAxis(self.axis_x, Qt.AlignBottom)
+            self.chart.addAxis(self.axis_y, Qt.AlignLeft)
+            layout.addWidget(self.chart_view, 1)
+        else:
+            self.chart_view = None
+            layout.addWidget(QLabel("Qt Charts unavailable. Correlation values remain available."))
+        layout.addWidget(QLabel("Session event markers"))
+        self.events = QListWidget()
+        self.events.setMaximumHeight(115)
+        layout.addWidget(self.events)
+        actions = QHBoxLayout()
+        add_button = QPushButton("Add event marker")
+        add_button.clicked.connect(self.add_event)
+        actions.addWidget(add_button)
+        export_button = QPushButton("Export session notes")
+        export_button.clicked.connect(self.export_session)
+        actions.addWidget(export_button)
+        actions.addStretch(1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        actions.addWidget(close_button)
+        layout.addLayout(actions)
+        self.sensor_a.currentIndexChanged.connect(self.update_comparison)
+        self.sensor_b.currentIndexChanged.connect(self.update_comparison)
+        self.max_gap.currentIndexChanged.connect(self.update_comparison)
+        self.refresh_choices()
+
+    def _samples(self):
+        vin = self.vin_provider()
+        return [sample for sample in self.sensor_capture.samples
+                if not vin or (sample.metadata or {}).get("vin", "UNASSIGNED") == vin]
+
+    def refresh_choices(self):
+        names = {}
+        for sample in self._samples():
+            names.setdefault(sample.sensor_id, sample.name)
+        self.sensor_a.clear()
+        self.sensor_b.clear()
+        for sensor_id, name in sorted(names.items(), key=lambda item: item[1].casefold()):
+            label = f"{name} ({sensor_id})"
+            self.sensor_a.addItem(label, sensor_id)
+            self.sensor_b.addItem(label, sensor_id)
+        if self.sensor_b.count() > 1:
+            self.sensor_b.setCurrentIndex(1)
+        self.refresh_events()
+        self.update_comparison()
+
+    def update_comparison(self, *_):
+        if not self.sensor_a.count() or not self.sensor_b.count():
+            self.summary.setText("No captured sensor signals are available for this vehicle.")
+            return
+        a, b = self.sensor_a.currentData(), self.sensor_b.currentData()
+        if a == b:
+            self.summary.setText("Choose two different signals.")
+            if self.chart_view:
+                self.chart.removeAllSeries()
+            return
+        samples = self._samples()
+        gap = float(self.max_gap.currentData())
+        result = correlate_sensor_series(samples, a, b, max_gap_seconds=gap)
+        if result.coefficient is None:
+            self.summary.setText(
+                f"{result.sample_count} aligned samples. Correlation unavailable: "
+                "need at least 3 overlapping samples and non-constant signals."
+            )
+        else:
+            self.summary.setText(
+                f"Pearson r = {result.coefficient:+.4f} | {result.sample_count} aligned samples | "
+                f"{result.clock.replace('_', ' ')} | max interpolation gap {gap:g}s"
+            )
+        if not self.chart_view:
+            return
+        self.chart.removeAllSeries()
+        grouped = {}
+        for sample in samples:
+            if sample.sensor_id not in {a, b} or sample.quality != "valid":
+                continue
+            try:
+                stamp = float(getattr(sample, result.clock))
+                value = float(sample.value)
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if math.isfinite(stamp) and math.isfinite(value):
+                grouped.setdefault(sample.sensor_id, []).append((stamp, value))
+        if not grouped:
+            self.axis_x.setRange(0, 1)
+            return
+        start = min(min(stamp for stamp, _ in points) for points in grouped.values())
+        end = max(max(stamp for stamp, _ in points) for points in grouped.values())
+        for sensor_id, points in grouped.items():
+            points.sort()
+            low = min(value for _, value in points)
+            high = max(value for _, value in points)
+            span = high - low
+            series = QLineSeries()
+            first = next(sample for sample in samples if sample.sensor_id == sensor_id)
+            series.setName(f"{first.name} [{first.unit or 'unitless'}] ({low:.4g} to {high:.4g})")
+            for stamp, value in points[-5000:]:
+                normalized = 50.0 if span == 0 else (value - low) * 100.0 / span
+                series.append(stamp - start, normalized)
+            self.chart.addSeries(series)
+            series.attachAxis(self.axis_x)
+            series.attachAxis(self.axis_y)
+        self.axis_x.setRange(0, max(0.1, end - start))
+        self.axis_y.setRange(0, 100)
+
+    def refresh_events(self):
+        self.events.clear()
+        for event in self.sensor_capture.events:
+            try:
+                when = datetime.fromtimestamp(float(event["timestamp"])).astimezone().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except (KeyError, TypeError, ValueError, OSError):
+                when = str(event.get("timestamp", ""))
+            note = event.get("note", "")
+            self.events.addItem(f"{when} | {event.get('label', 'Event')}" +
+                                (f" | {note}" if note else ""))
+
+    def add_event(self):
+        label, accepted = QInputDialog.getText(self, "Capture event", "Event label:")
+        if not accepted or not label.strip():
+            return
+        note, note_accepted = QInputDialog.getMultiLineText(
+            self, "Session annotation", "Optional note:", ""
+        )
+        if not note_accepted:
+            note = ""
+        try:
+            self.sensor_capture.add_event(make_event_marker(self._samples(), label, note))
+        except ValueError as exc:
+            QMessageBox.warning(self, "Event marker", str(exc))
+            return
+        self.refresh_events()
+
+    def export_session(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export session annotations", "freerov3r-session.json", "JSON files (*.json)"
+        )
+        if not path:
+            return
+        try:
+            self.sensor_capture.export_session_json(path)
+        except OSError as exc:
+            QMessageBox.warning(self, "Export failed", str(exc))
 
 
 class _FloatingGraphWindow(QDialog):
@@ -286,6 +472,7 @@ class SensorDashboardDock(QDockWidget):
         self.save_settings_callback = save_settings_callback
         self._loading_config = False
         self._waterfall_dialog = None
+        self._correlation_dialog = None
         self.setObjectName("sensorDashboardDock")
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
         self.setFeatures(
@@ -321,6 +508,9 @@ class SensorDashboardDock(QDockWidget):
         self.waterfall_button = QPushButton("3D Waterfall")
         self.waterfall_button.clicked.connect(self.open_waterfall)
         controls.addWidget(self.waterfall_button)
+        self.compare_button = QPushButton("Compare / Events")
+        self.compare_button.clicked.connect(self.open_correlation)
+        controls.addWidget(self.compare_button)
         controls.addStretch(1)
         self.topmost = QCheckBox("Floating dashboard stays on top")
         self.topmost.toggled.connect(self._set_topmost)
@@ -350,6 +540,16 @@ class SensorDashboardDock(QDockWidget):
         self.refresh_timer.setInterval(750)
         self.refresh_timer.timeout.connect(self.refresh)
         self.refresh_timer.start()
+
+    def open_correlation(self):
+        if self._correlation_dialog is None:
+            self._correlation_dialog = SensorCorrelationDialog(
+                self.sensor_capture, vin_provider=self.vin_provider, parent=self
+            )
+        self._correlation_dialog.refresh_choices()
+        self._correlation_dialog.show()
+        self._correlation_dialog.raise_()
+        self._correlation_dialog.activateWindow()
 
     def open_waterfall(self):
         if self._waterfall_dialog is None:
