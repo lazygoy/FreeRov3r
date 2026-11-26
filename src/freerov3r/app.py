@@ -209,7 +209,7 @@ class Receiver(QThread):
     frame_received = Signal(object)
     frames_received = Signal(object)
     FRAME_BATCH_SIZE = 64
-    FRAME_BATCH_INTERVAL = 0.02
+    FRAME_BATCH_INTERVAL = 0.05
     status = Signal(str)
     dtcs_completed = Signal(object)
     dtcs_failed = Signal(str)
@@ -342,6 +342,7 @@ class Receiver(QThread):
                     self.FRAME_BATCH_INTERVAL if pending_frames else 0.15
                 )
                 if frame is not None:
+                    self.frame_received.emit(frame)  # Preserve the per-frame adapter signal.
                     pending_frames.append(frame)
                 now = time.monotonic()
                 if pending_frames and (
