@@ -4,6 +4,50 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+DTC_SCAN_EVENT_TYPES = {"dtc_scan_completed", "dtc_scan_failed"}
+
+
+def filter_dtc_scan_events(events):
+    """Return completed and failed OBD-II DTC scan events, preserving order."""
+    return [event for event in events if event.get("type") in DTC_SCAN_EVENT_TYPES]
+
+
+def format_dtc_scan_event(event):
+    """Format a stored DTC scan as readable text without inventing descriptions."""
+    details = event.get("details") or {}
+    lines = [
+        f"Event: {event.get('type', '')}",
+        f"Timestamp: {event.get('timestamp', '')}",
+        f"VIN: {event.get('vin', 'UNASSIGNED')}",
+        f"Summary: {event.get('summary', '')}",
+        f"Interface: {details.get('interface', 'Unknown')}",
+        f"Read-only: {'Yes' if details.get('read_only') else 'Not recorded'}",
+    ]
+    if event.get("type") == "dtc_scan_failed":
+        lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
+        return "\\n".join(lines)
+
+    services = details.get("services") or []
+    lines.extend([
+        f"Services: {', '.join(str(service) for service in services) or 'Not recorded'}",
+        f"Code records: {details.get('count', len(details.get('dtcs') or []))}",
+        "",
+        "TROUBLE CODES",
+    ])
+    codes = details.get("dtcs") or []
+    if not codes:
+        lines.append("No codes were returned.")
+    for code in codes:
+        lines.append(
+            f"{code.get('code', 'Unknown')} | {code.get('status', 'Unknown')} | "
+            f"ECU {int(code.get('arbitration_id', 0)):08X} "
+            f"({'29-bit' if code.get('is_extended_id') else '11-bit'}) | "
+            f"Channel {code.get('channel', 'Unknown')} | Raw {code.get('raw', '')}"
+        )
+    lines.extend(["", "OEM-specific descriptions are not inferred by this report."])
+    return "\\n".join(lines)
+
+
 class VehicleHistoryStore:
     def __init__(self, path: Path):
         self.path = Path(path)
