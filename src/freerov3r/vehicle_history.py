@@ -228,3 +228,107 @@ def filter_obd_scan_events(events):
         MODE06_SCAN_EVENT_TYPES
     )
     return [event for event in events if event.get("type") in scan_types]
+
+
+def format_freeze_frame_scan_event(event):
+    """Format stored Mode 02 measurements with their decoded PID labels and units."""
+    details = event.get("details") or {}
+    lines = [
+        f"Event: {event.get('type', '')}",
+        f"Timestamp: {event.get('timestamp', '')}",
+        f"VIN: {event.get('vin', 'UNASSIGNED')}",
+        f"Summary: {event.get('summary', '')}",
+        f"Interface: {details.get('interface', 'Unknown')}",
+        f"Read-only: {'Yes' if details.get('read_only') else 'Not recorded'}",
+    ]
+    if event.get("type") == "freeze_frame_scan_failed":
+        lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
+        return "\n".join(lines)
+
+    frame_number = details.get("frame_number", "Unknown")
+    results = details.get("results") or []
+    lines.extend([
+        f"Freeze-frame number: {frame_number}",
+        f"PID responses: {len(results)}",
+        "",
+        "FREEZE-FRAME MEASUREMENTS",
+    ])
+    measurement_count = 0
+    for result in results:
+        arbitration_id = result.get("arbitration_id")
+        ecu = "Unknown" if arbitration_id is None else (
+            f"{int(arbitration_id):08X} "
+            f"({'29-bit' if result.get('is_extended_id') else '11-bit'})"
+        )
+        lines.extend([
+            "",
+            f"PID: {result.get('pid', 'Unknown')}",
+            f"ECU: {ecu}",
+            f"Channel: {result.get('channel', 'Unknown')}",
+            f"Response frame: {result.get('frame_number', frame_number)}",
+        ])
+        measurements = result.get("measurements") or []
+        if not measurements:
+            lines.append("No decoded measurements were stored.")
+        for measurement in measurements:
+            measurement_count += 1
+            value = measurement.get("value", "Unknown")
+            unit = measurement.get("unit", "")
+            lines.append(
+                f"  {measurement.get('name', measurement.get('key', 'Unknown'))}: "
+                f"{value}{(' ' + str(unit)) if unit else ''}"
+            )
+        lines.append(f"Raw response: {result.get('raw', 'Not recorded')}")
+    if not results:
+        lines.append("No valid freeze-frame PID responses were returned.")
+    lines.extend(["", f"Decoded measurements: {measurement_count}"])
+    return "\n".join(lines)
+
+
+def format_vehicle_info_scan_event(event):
+    """Format standardized Mode 09 identification records without guessing."""
+    details = event.get("details") or {}
+    lines = [
+        f"Event: {event.get('type', '')}",
+        f"Timestamp: {event.get('timestamp', '')}",
+        f"VIN: {event.get('vin', 'UNASSIGNED')}",
+        f"Summary: {event.get('summary', '')}",
+        f"Interface: {details.get('interface', 'Unknown')}",
+        f"Read-only: {'Yes' if details.get('read_only') else 'Not recorded'}",
+    ]
+    if event.get("type") == "vehicle_info_scan_failed":
+        lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
+        return "\n".join(lines)
+
+    results = details.get("results") or []
+    record_count = sum(len(result.get("items") or []) for result in results)
+    lines.extend([
+        f"ECU responses: {len(results)}",
+        f"Identification records: {record_count}",
+        "",
+        "VEHICLE IDENTIFICATION",
+    ])
+    for result in results:
+        arbitration_id = result.get("arbitration_id")
+        ecu = "Unknown" if arbitration_id is None else (
+            f"{int(arbitration_id):08X} "
+            f"({'29-bit' if result.get('is_extended_id') else '11-bit'})"
+        )
+        lines.extend([
+            "",
+            f"PID: {int(result.get('pid', 0)):02X} | {result.get('name', 'Unknown')}",
+            f"ECU: {ecu}",
+            f"Channel: {result.get('channel', 'Unknown')}",
+            f"Record count: {result.get('count', len(result.get('items') or []))}",
+        ])
+        items = result.get("items") or []
+        if not items:
+            lines.append("  No identification records returned.")
+        for item in items:
+            lines.append(
+                f"  {item.get('type', 'record')}: {item.get('value', 'Unknown')}"
+            )
+        lines.append(f"Raw response: {result.get('raw', 'Not recorded')}")
+    if not results:
+        lines.append("No valid Mode 09 ECU responses were returned.")
+    return "\n".join(lines)
