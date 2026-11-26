@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import mean
 from .models import SensorSample
+from .correlation import EventMarker, normalize_event_markers
 
 @dataclass
 class SensorCapture:
@@ -23,7 +24,7 @@ class SensorCapture:
             self.dropped_samples += overflow
         self.total_samples_added = max(self.total_samples_added, len(self.samples) + self.dropped_samples)
 
-    def add(self, sample: SensorSample):
+    def add_event(self, marker):\n        """Attach an annotation to the session without changing raw samples."""\n        value = marker.to_dict() if isinstance(marker, EventMarker) else marker\n        self.events = normalize_event_markers([*self.events, value])\n\n    def export_session_json(self, path):\n        """Export session context and annotations separately from raw sample data."""\n        payload = {\n            "format": "freerov3r-sensor-session",\n            "version": 1,\n            "vehicle_context": self.vehicle_context,\n            "sample_count_retained": len(self.samples),\n            "total_samples_added": self.total_samples_added,\n            "dropped_samples": self.dropped_samples,\n            "events": normalize_event_markers(self.events),\n        }\n        Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")\n\n    def add(self, sample: SensorSample):
         self.samples.append(sample)
         self.total_samples_added += 1
         overflow = len(self.samples) - self.max_samples
