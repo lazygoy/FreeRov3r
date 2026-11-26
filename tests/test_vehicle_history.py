@@ -323,3 +323,21 @@ def test_capture_history_report_formats_lifecycle_and_vin_metadata():
     })
     assert "Detected VIN: SALXXXXXXXXXXXX1" in vin_report
     assert "OBD Mode 09 PID 02" in vin_report
+
+
+
+def test_can_activity_history_filter_includes_capture_and_vin_events_only():
+    from freerov3r.vehicle_history import filter_can_activity_events
+
+    events = [
+        {"type": "capture_started", "summary": "Capture started"},
+        {"type": "dtc_scan_completed", "summary": "DTC scan"},
+        {"type": "capture_completed", "summary": "Capture completed"},
+        {"type": "vin_detected", "summary": "VIN detected"},
+        {"type": "monitor_tests_scan_failed", "summary": "Mode 06 failed"},
+    ]
+
+    assert filter_can_activity_events(events) == [
+        events[0], events[2], events[3],
+    ]
+    assert filter_can_activity_events([]) == []
