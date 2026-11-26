@@ -3467,6 +3467,7 @@ class MainWindow(QMainWindow):
         self.obd_tab.read_readiness_callback = self.request_readiness_scan
         self.obd_tab.read_freeze_frame_callback = self.request_freeze_frame_scan
         self.obd_tab.read_vehicle_info_callback = self.request_vehicle_info_scan
+        self.obd_tab.read_monitor_tests_callback = self.request_monitor_tests_scan
         self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
