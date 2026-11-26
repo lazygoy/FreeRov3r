@@ -204,3 +204,47 @@ def test_secondary_oxygen_trim_pid_exposes_both_bank_values():
     assert [(item[1], item[3]) for item in measurements] == [
         ("bank_1", 0.0), ("bank_3", 50.0)
     ]
+
+
+def test_pid_4f_dynamic_scaling_is_applied_per_responding_ecu():
+    from freerov3r.diagnostics.obd2 import Mode01ScalingContext, decode_mode01_measurements
+
+    context = Mode01ScalingContext()
+    limits = CanFrame(0x7E8, bytes([6, 0x41, 0x4F, 4, 16, 64, 0]))
+    assert decode_mode01_measurements(limits, context) == []
+
+    wideband_voltage = CanFrame(0x7E8, bytes([6, 0x41, 0x24, 0x7D, 0x00, 0x9C, 0x40]))
+    values = decode_mode01_measurements(wideband_voltage, context)
+    assert values[0][3] == pytest.approx(32000 * 4 / 65535)
+    assert values[1][3] == pytest.approx(40000 * 16 / 65535)
+
+    wideband_current = CanFrame(0x7E8, bytes([6, 0x41, 0x34, 0x7D, 0x00, 0x9C, 0x40]))
+    values = decode_mode01_measurements(wideband_current, context)
+    assert values[0][3] == pytest.approx(32000 * 4 / 65535)
+    assert values[1][3] == pytest.approx(7232 * 64 / 32768)
+
+    # A second ECU without its own PID 4F response retains standard defaults.
+    other_ecu = CanFrame(0x7E9, wideband_voltage.data)
+    values = decode_mode01_measurements(other_ecu, context)
+    assert values[0][3] == pytest.approx(32000 * 2 / 65535)
+    assert values[1][3] == pytest.approx(40000 * 8 / 65535)
+
+    context.clear()
+    values = decode_mode01_measurements(wideband_voltage, context)
+    assert values[0][3] == pytest.approx(32000 * 2 / 65535)
+    assert values[1][3] == pytest.approx(40000 * 8 / 65535)
+
+
+def test_pid_4f_zero_limits_use_j1979_default_scaling():
+    from freerov3r.diagnostics.obd2 import Mode01ScalingContext, decode_mode01_measurements
+
+    context = Mode01ScalingContext()
+    limits = CanFrame(0x7E8, bytes([6, 0x41, 0x4F, 0, 0, 0, 0]))
+    decode_mode01_measurements(limits, context)
+    voltage_pid = CanFrame(0x7E8, bytes([6, 0x41, 0x24, 0x40, 0x00, 0x80, 0x00]))
+    current_pid = CanFrame(0x7E8, bytes([6, 0x41, 0x34, 0x40, 0x00, 0x9C, 0x40]))
+    voltage_values = decode_mode01_measurements(voltage_pid, context)
+    current_values = decode_mode01_measurements(current_pid, context)
+    assert voltage_values[0][3] == pytest.approx(0x4000 * 2 / 65535)
+    assert voltage_values[1][3] == pytest.approx(0x8000 * 8 / 65535)
+    assert current_values[1][3] == pytest.approx(7232 / 256)
