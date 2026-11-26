@@ -43,6 +43,7 @@ from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .sensors.scaling import normalize_values, sample_clock, sample_time
+from .sensors.analysis import summarize_sensor_samples
 from .sensor_dashboard import SensorDashboardDock
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
@@ -960,6 +961,26 @@ class SensorGraphTab(QWidget):
         right.addWidget(dashboard_btn)
         controls.addLayout(right, 1)
         layout.addLayout(controls)
+
+        stats_group = QGroupBox("LIVE SENSOR HEALTH")
+        stats_layout = QVBoxLayout(stats_group)
+        self.stats_table = QTableWidget(0, 9)
+        self.stats_table.setHorizontalHeaderLabels([
+            "Sensor", "Current", "Min", "Average", "Max", "Rate", "Age", "Samples", "Status"
+        ])
+        self.stats_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        for column in range(1, 9):
+            self.stats_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        self.stats_table.verticalHeader().setVisible(False)
+        self.stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.stats_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.stats_table.setAlternatingRowColors(True)
+        self.stats_table.setMaximumHeight(170)
+        self.stats_table.setToolTip("Valid finite samples only. Signals become stale after five seconds without an update.")
+        stats_layout.addWidget(self.stats_table)
+        layout.addWidget(stats_group)
+        self._last_stats_refresh = 0.0
+
         favorite_row = QHBoxLayout()
         favorite_row.addWidget(QLabel("Shared sensor group:"))
         self.favorite_combo = QComboBox()
@@ -1028,6 +1049,7 @@ class SensorGraphTab(QWidget):
                 item.setCheckState(Qt.Unchecked if sample.sensor_id in self.hidden_sensor_ids else Qt.Checked)
                 self.sensor_list.addItem(item)
         self.sensor_list.blockSignals(False)
+        self.update_statistics(force=True)
         if HAS_CHARTS:
             self.update_chart()
         elif hasattr(self, "placeholder"):
@@ -1059,6 +1081,39 @@ class SensorGraphTab(QWidget):
             item.setCheckState(Qt.Checked if self._sensor_id(item) in selected else Qt.Unchecked)
         self.sensor_list.blockSignals(False)
         self.update_chart()
+
+    def update_statistics(self, force=False):
+        """Refresh read-only sensor health summaries from the retained capture."""
+        if not hasattr(self, "stats_table"):
+            return
+        now = time.monotonic()
+        if not force and now - self._last_stats_refresh < 1.5:
+            return
+        self._last_stats_refresh = now
+        samples = []
+        for sample in self.sensor_capture.samples:
+            sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
+            if self.vehicle_vin and sample_vin != self.vehicle_vin:
+                continue
+            samples.append(sample)
+        summaries = summarize_sensor_samples(samples, stale_after=5.0)
+        self.stats_table.setRowCount(len(summaries))
+        for row, summary in enumerate(summaries):
+            values = (
+                summary.name, f"{summary.current:.4g} {summary.unit}".strip(),
+                f"{summary.minimum:.4g}", f"{summary.average:.4g}", f"{summary.maximum:.4g}",
+                f"{summary.rate_hz:.2f} Hz" if summary.rate_hz is not None else "—",
+                f"{summary.age_seconds:.1f} s", str(summary.sample_count),
+                "STALE" if summary.stale else "LIVE",
+            )
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if column == 8:
+                    item.setForeground(QColor("#d9a441") if summary.stale else QColor("#39d98a"))
+                    item.setTextAlignment(Qt.AlignCenter)
+                elif column in (1, 2, 3, 4, 5, 6, 7):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.stats_table.setItem(row, column, item)
 
     def mark_sample(self, sensor_id):
         self.last_sample_time[str(sensor_id)] = time.monotonic()
@@ -5036,6 +5091,8 @@ class MainWindow(QMainWindow):
         now = time.monotonic()
         elapsed = now - self.last_rate_time
         if elapsed >= 0.5:
+            if self.tabs.currentWidget() is self.graph_tab:
+                self.graph_tab.update_statistics()
             rate = (self.frame_counter - self.last_rate_count) / elapsed
             rolling_rate = self.can_monitor.rate()
             self.rate_label.setText(f"Rate: {rate:.1f} fps | Rolling: {rolling_rate:.1f} fps")
