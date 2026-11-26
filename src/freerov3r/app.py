@@ -34,7 +34,7 @@ from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter
-from .diagnostics.obd2 import (OBD_PIDS, PID_CATEGORIES_ALL, search_mode01_pids, decode_mode01)
+from .diagnostics.obd2 import (OBD_PIDS, PID_CATEGORIES_ALL, PID_MULTI_VALUE_KEYS, search_mode01_pids, decode_mode01_measurements)
 from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
@@ -1265,14 +1265,25 @@ class OBDTab(QWidget):
         ]
 
     def selected_sensor_ids(self):
-        return {f"obd_{pid:02X}" for pid in self.selected_pids()}
+        selected = set()
+        for pid in self.selected_pids():
+            keys = PID_MULTI_VALUE_KEYS.get(pid)
+            if keys:
+                selected.update(f"obd_{pid:02X}_{key}" for key in keys)
+            else:
+                selected.add(f"obd_{pid:02X}")
+        return selected
 
     def set_selected_sensor_ids(self, sensor_ids):
         selected = {str(value).lower() for value in sensor_ids}
         self._syncing_selection = True
         self.table.blockSignals(True)
         for pid, row in self.pid_rows.items():
-            self.table.item(row, 0).setCheckState(Qt.Checked if f"obd_{pid:02X}" in selected else Qt.Unchecked)
+            keys = PID_MULTI_VALUE_KEYS.get(pid, ())
+            checked = f"obd_{pid:02X}" in selected or any(
+                f"obd_{pid:02X}_{key}" in selected for key in keys
+            )
+            self.table.item(row, 0).setCheckState(Qt.Checked if checked else Qt.Unchecked)
         self.table.blockSignals(False)
         self._syncing_selection = False
 
@@ -1294,7 +1305,11 @@ class OBDTab(QWidget):
     def update_value(self, pid, value):
         row = self.pid_rows.get(pid)
         if row is not None:
-            self.table.item(row, 5).setText(f"{value:.2f}".rstrip("0").rstrip("."))
+            if isinstance(value, str):
+                display_value = value
+            else:
+                display_value = f"{value:.2f}".rstrip("0").rstrip(".")
+            self.table.item(row, 5).setText(display_value)
             self.last_sample_time[pid] = time.monotonic()
             self._update_activity_indicators()
 
@@ -3976,28 +3991,30 @@ class MainWindow(QMainWindow):
                 f"{ts:.6f}  {frame.arbitration_id:08X}  {frame_type}  "
                 f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
             )
-        decoded = decode_mode01(frame)
-        if decoded is not None:
-            pid, name, value, unit = decoded
-            self.obd_tab.update_value(pid, value)
-            sensor_id = f"obd_{pid:02X}"
+        measurements = decode_mode01_measurements(frame)
+        if measurements:
             simulated = self.active_interface == "simulator"
-            self.sensor_capture.add(SensorSample(
-                timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
-                value=value, unit=unit, source="simulated" if simulated else "ecu",
-                ecu="SIMULATED ECU" if simulated else None,
-                signal=f"Mode 01 PID {pid:02X}",
-                metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
-                         "vin": self.capture_vin or "UNASSIGNED"},
-            ))
-            self.graph_tab.mark_sample(sensor_id)
-            known = any(
-                self.graph_tab._sensor_id(self.graph_tab.sensor_list.item(i)) == sensor_id
-                for i in range(self.graph_tab.sensor_list.count())
-            )
-            if not known:
-                self.graph_tab.refresh_sensor_list()
-            self.sensor_log.appendPlainText(f"{name}: {value:.2f} {unit} [{sensor_id}]")
+            display_values = []
+            for pid, key, name, value, unit in measurements:
+                sensor_id = f"obd_{pid:02X}" if key == "value" else f"obd_{pid:02X}_{key}"
+                self.sensor_capture.add(SensorSample(
+                    timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
+                    value=value, unit=unit, source="simulated" if simulated else "ecu",
+                    ecu="SIMULATED ECU" if simulated else None,
+                    signal=f"Mode 01 PID {pid:02X}" + (f" {key}" if key != "value" else ""),
+                    metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
+                             "vin": self.capture_vin or "UNASSIGNED"},
+                ))
+                self.graph_tab.mark_sample(sensor_id)
+                known = any(
+                    self.graph_tab._sensor_id(self.graph_tab.sensor_list.item(i)) == sensor_id
+                    for i in range(self.graph_tab.sensor_list.count())
+                )
+                if not known:
+                    self.graph_tab.refresh_sensor_list()
+                display_values.append(f"{value:.2f} {unit}")
+                self.sensor_log.appendPlainText(f"{name}: {value:.2f} {unit} [{sensor_id}]")
+            self.obd_tab.update_value(measurements[0][0], " | ".join(display_values))
 
     def _update_receiver_health(self):
         """Publish live ESP32 adapter diagnostics to the Research workspace."""
