@@ -58,7 +58,7 @@ from .vehicle_history import (
     filter_readiness_scan_events, filter_freeze_frame_scan_events,
     filter_vehicle_info_scan_events, filter_obd_scan_events,
     format_readiness_scan_event, format_freeze_frame_scan_event,
-    format_vehicle_info_scan_event,
+    format_vehicle_info_scan_event, export_history_json, export_history_csv,
 )
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -2913,6 +2913,12 @@ class VehicleHistoryTab(QWidget):
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
         controls.addWidget(refresh_btn)
+        export_json_btn = QPushButton("Export JSON")
+        export_json_btn.clicked.connect(lambda: self.export_history("json"))
+        controls.addWidget(export_json_btn)
+        export_csv_btn = QPushButton("Export CSV")
+        export_csv_btn.clicked.connect(lambda: self.export_history("csv"))
+        controls.addWidget(export_csv_btn)
         layout.addLayout(controls)
 
         split = QHBoxLayout()
@@ -2940,8 +2946,7 @@ class VehicleHistoryTab(QWidget):
         self.vin_filter.blockSignals(False)
         self.refresh_events()
 
-    def refresh_events(self):
-        self.events_tree.clear()
+    def selected_events(self):
         selected_vin = self.vin_filter.currentData()
         events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
         event_filter = self.event_filter.currentData()
@@ -2957,6 +2962,36 @@ class VehicleHistoryTab(QWidget):
             events = filter_vehicle_info_scan_events(events)
         elif event_filter == "mode06":
             events = filter_mode06_scan_events(events)
+        return events
+
+    def export_history(self, format_name):
+        if format_name == "json":
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Export vehicle history as JSON", "vehicle_history.json",
+                "JSON files (*.json)",
+            )
+            exporter = export_history_json
+        else:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Export vehicle history as CSV", "vehicle_history.csv",
+                "CSV files (*.csv)",
+            )
+            exporter = export_history_csv
+        if not path:
+            return
+        try:
+            exported = exporter(path, self.selected_events())
+        except OSError as exc:
+            QMessageBox.warning(self, "History export failed", str(exc))
+            return
+        QMessageBox.information(
+            self, "History exported",
+            f"Exported {len(self.selected_events())} event(s) to:\n{exported}",
+        )
+
+    def refresh_events(self):
+        self.events_tree.clear()
+        events = self.selected_events()
         for event in reversed(events):
             timestamp = event.get("timestamp", "")
             item = QTreeWidgetItem([
