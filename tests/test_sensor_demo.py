@@ -5,7 +5,7 @@ def test_lr4_demo_generates_repeatable_multisensor_history():
     first = generate_lr4_demo_samples(duration_seconds=10, sample_rate_hz=2)
     second = generate_lr4_demo_samples(duration_seconds=10, sample_rate_hz=2)
 
-    assert len(first) == 11 * 8
+    assert len(first) == 21 * 8
     assert [(s.sensor_id, s.value) for s in first] == [
         (s.sensor_id, s.value) for s in second
     ]
