@@ -354,12 +354,12 @@ def test_elm327_obd_adapter_reads_mode06_supported_monitor_results(monkeypatch):
     import freerov3r.hardware.elm327_obd_adapter as module
 
     fake = FakeSerial(responses=[
-        b"ELM327 v1.5\\r>",
-        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
-        b"OK\\r>", b"OK\\r>",
-        b"7E8 06 41 00 00 10 00 00\\r>",
-        b"7E8 06 46 00 80 00 00 00\\r>",
-        b"7E8 0B 46 01 01 80 24 00 64 00 00 00 C8\\r>",
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 06 46 00 80 00 00 00\r>",
+        b"7E8 0B 46 01 01 80 24 00 64 00 00 00 C8\r>",
     ])
     monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
     adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
