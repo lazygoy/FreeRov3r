@@ -1,5 +1,6 @@
 from freerov3r.can_monitor import CanMonitor
 from freerov3r.models import CanFrame
+import pytest
 
 
 def frame(can_id, extended=False):
@@ -60,7 +61,7 @@ def test_id_stats_report_payload_changes_and_recent_median_interval():
 
     stats = monitor.id_stats(now=1.3)[0]
     assert stats.payload_changes == 1
-    assert stats.median_interval_ms == 150.0
+    assert stats.median_interval_ms == pytest.approx(150.0)
 
 
 def test_payload_change_tracking_is_separate_for_standard_and_extended_ids():
