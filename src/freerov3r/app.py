@@ -2895,6 +2895,16 @@ class VehicleHistoryTab(QWidget):
         super().__init__(parent)
         self.store = store
         layout = QVBoxLayout(self)
+        self.recovery_notice = QLabel()
+        self.recovery_notice.setWordWrap(True)
+        self.recovery_notice.setObjectName("historyRecoveryNotice")
+        self.recovery_notice.setStyleSheet(
+            "QLabel#historyRecoveryNotice { color: #8a4b08; "
+            "background: #fff4df; border: 1px solid #e7c98e; "
+            "border-radius: 5px; padding: 8px; }"
+        )
+        layout.addWidget(self.recovery_notice)
+        self.update_recovery_notice()
         controls = QHBoxLayout()
         controls.addWidget(QLabel("Vehicle VIN:"))
         self.vin_filter = QComboBox()
@@ -2941,7 +2951,27 @@ class VehicleHistoryTab(QWidget):
         layout.addLayout(split)
         self.refresh()
 
+    def update_recovery_notice(self):
+        if self.store.load_error:
+            self.recovery_notice.setText(
+                "Vehicle history could not be read. New history events will not be saved "
+                "until the file-access problem is fixed. Original file: "
+                f"{self.store.path}\\nError: {self.store.load_error}"
+            )
+            self.recovery_notice.setVisible(True)
+        elif self.store.recovery_backup_path:
+            self.recovery_notice.setText(
+                "A damaged vehicle-history file was preserved for recovery. "
+                "A new history file will be created when the next event is recorded. "
+                f"Backup: {self.store.recovery_backup_path}"
+            )
+            self.recovery_notice.setVisible(True)
+        else:
+            self.recovery_notice.clear()
+            self.recovery_notice.setVisible(False)
+
     def refresh(self):
+        self.update_recovery_notice()
         current = self.vin_filter.currentData()
         self.vin_filter.blockSignals(True)
         self.vin_filter.clear()
@@ -3812,11 +3842,20 @@ class MainWindow(QMainWindow):
 
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
         vehicle_vin = vin if vin is not None else self.settings.get("current_vin")
-        self.history_store.record(vehicle_vin, event_type, summary, details)
+        try:
+            self.history_store.record(vehicle_vin, event_type, summary, details)
+        except (OSError, RuntimeError) as exc:
+            if hasattr(self, "history_tab"):
+                self.history_tab.refresh()
+            self.statusBar().showMessage(
+                f"Vehicle history was not saved: {exc}", 15000
+            )
+            return False
         if hasattr(self, "history_tab"):
             self.history_tab.refresh()
         if hasattr(self, "solutions_tab"):
             self.solutions_tab.refresh()
+        return True
 
     def show_startup_splash_if_enabled(self):
         if not self.settings.get("show_startup_splash", True):
