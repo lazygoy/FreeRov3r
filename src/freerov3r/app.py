@@ -3148,6 +3148,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.graph_tab, "Graph")
         self.obd_tab = OBDTab(self.settings)
         self.obd_tab.read_dtcs_callback = self.request_dtc_scan
+        self.obd_tab.read_readiness_callback = self.request_readiness_scan
         self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
