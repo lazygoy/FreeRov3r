@@ -34,7 +34,7 @@ from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter
-from .diagnostics.obd2 import (OBD_PIDS, PID_CATEGORIES_ALL, PID_MULTI_VALUE_KEYS, search_mode01_pids, decode_mode01_measurements)
+from .diagnostics.obd2 import (OBD_PIDS, PID_CATEGORIES_ALL, PID_MULTI_VALUE_KEYS, search_mode01_pids, decode_mode01_measurements, Mode01ScalingContext)
 from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
@@ -2829,6 +2829,7 @@ class MainWindow(QMainWindow):
         self.session = CaptureSession()
         self.can_monitor = CanMonitor(capacity=20000)
         self.sensor_capture = SensorCapture()
+        self.obd_scaling_context = Mode01ScalingContext()
         self.history_store = VehicleHistoryStore(SETTINGS_DIR / "vehicle_history.json")
         self.receiver = None
         self.active_adapter = None
@@ -3938,6 +3939,7 @@ class MainWindow(QMainWindow):
             adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
 
         self.active_interface = interface
+        self.obd_scaling_context.clear()
         self.active_adapter = adapter
         self._last_receiver_diagnostics = {}
         self.research_tab.set_receiver_diagnostics({})
@@ -3991,7 +3993,7 @@ class MainWindow(QMainWindow):
                 f"{ts:.6f}  {frame.arbitration_id:08X}  {frame_type}  "
                 f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
             )
-        measurements = decode_mode01_measurements(frame)
+        measurements = decode_mode01_measurements(frame, self.obd_scaling_context)
         if measurements:
             simulated = self.active_interface == "simulator"
             display_values = []

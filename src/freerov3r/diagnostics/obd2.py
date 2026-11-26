@@ -217,6 +217,31 @@ PID_MULTI_VALUE_KEYS = {
 
 
 
+class Mode01ScalingContext:
+    """Per-ECU dynamic scaling advertised by Mode 01 PID 4F."""
+
+    def __init__(self):
+        self._limits = {}
+
+    def clear(self):
+        """Discard learned limits when the active vehicle/session changes."""
+        self._limits.clear()
+
+    def observe(self, frame):
+        data = frame.data
+        if (frame.is_extended_id or not 0x7E8 <= frame.arbitration_id <= 0x7EF
+                or len(data) < 7 or data[1:3] != bytes((0x41, 0x4F))):
+            return False
+        self._limits[frame.arbitration_id] = {
+            "lambda": float(data[3]),
+            "voltage": float(data[4]),
+            "current": float(data[5]),
+        }
+        return True
+
+    def limits_for(self, ecu_id):
+        return self._limits.get(int(ecu_id), {})
+
 def search_mode01_pids(query="", category="All"):
     """Return searchable PID rows as (hex_pid, name, unit, category).
 
@@ -275,7 +300,7 @@ OBD_PIDS = [
 ]
 
 
-def decode_mode01_measurements(frame: CanFrame):
+def decode_mode01_measurements(frame: CanFrame, scaling_context=None):
     """Return every decoded measurement as (pid, key, name, value, unit).
 
     A single Mode 01 PID can carry more than one independent measurement.
@@ -288,6 +313,10 @@ def decode_mode01_measurements(frame: CanFrame):
     if len(data) < 4 or data[1] != 0x41:
         return []
     pid = data[2]
+    if pid == 0x4F:
+        if scaling_context is not None:
+            scaling_context.observe(frame)
+        return []
     if pid not in PID_DEFINITIONS:
         return []
 
@@ -308,6 +337,10 @@ def decode_mode01_measurements(frame: CanFrame):
     a, b = data[3], data[4] if len(data) > 4 else 0
     ab = a * 256 + b
     name, unit = PID_DEFINITIONS[pid]
+    limits = scaling_context.limits_for(frame.arbitration_id) if scaling_context is not None else {}
+    lambda_max = limits.get("lambda") or 2.0
+    voltage_max = limits.get("voltage") or 8.0
+    current_max = limits.get("current") or 128.0
 
     def single(value):
         return [(pid, "value", name, value, unit)]
@@ -328,15 +361,15 @@ def decode_mode01_measurements(frame: CanFrame):
         sensor_number = pid - 0x23
         cd = data[5] * 256 + data[6]
         return [
-            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65535.0, "λ"),
-            (pid, "voltage", f"Wide-range oxygen sensor {sensor_number} voltage", cd * 8.0 / 65535.0, "V"),
+            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * lambda_max / 65535.0, "λ"),
+            (pid, "voltage", f"Wide-range oxygen sensor {sensor_number} voltage", cd * voltage_max / 65535.0, "V"),
         ]
     if pid in range(0x34, 0x3C):
         sensor_number = pid - 0x33
         cd = data[5] * 256 + data[6]
         return [
-            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65535.0, "λ"),
-            (pid, "current", f"Wide-range oxygen sensor {sensor_number} current", cd / 256.0 - 128.0, "mA"),
+            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * lambda_max / 65535.0, "λ"),
+            (pid, "current", f"Wide-range oxygen sensor {sensor_number} current", (cd - 0x8000) * current_max / 32768.0, "mA"),
         ]
     if pid in multi_two_byte_pids:
         bank_a, bank_b = {
