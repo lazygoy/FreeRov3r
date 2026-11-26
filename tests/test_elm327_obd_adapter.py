@@ -82,3 +82,33 @@ def test_elm327_obd_adapter_refuses_to_poll_unsupported_selection(monkeypatch):
 def test_elm327_obd_adapter_rejects_unknown_pids():
     with pytest.raises(ValueError):
         Elm327ObdAdapter("COM9", pids=[0xFE])
+
+
+def test_elm327_obd_adapter_polls_pid_4f_as_a_hidden_wideband_dependency(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\\r>",
+        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
+        b"OK\\r>", b"OK\\r>",
+        # PID 20 advertises PID 40; PID 40 advertises PID 4F.
+        b"7E8 06 41 00 00 00 00 01\\r>",
+        b"7E8 06 41 20 10 00 00 01\\r>",
+        b"7E8 06 41 40 00 02 00 00\\r>",
+        b"7E8 06 41 24 7D 00 9C 40\\r>",
+        b"7E8 06 41 4F 04 10 40 00\\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x24], request_interval=0.05)
+    adapter.open()
+    try:
+        assert adapter.pids == (0x24,)
+        assert adapter._poll_pids == (0x24, 0x4F)
+        first = adapter.receive(timeout=0.1)
+        second = adapter.receive(timeout=0.1)
+        assert first is not None and first.data[2] == 0x24
+        assert second is not None and second.data[2] == 0x4F
+        assert "0124" in fake.commands
+        assert "014F" in fake.commands
+    finally:
+        adapter.close()
