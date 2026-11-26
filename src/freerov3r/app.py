@@ -43,6 +43,7 @@ from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .sensors.scaling import normalize_values, sample_clock, sample_time
+from .sensor_dashboard import SensorDashboardDock
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
 from .diagnostics.l319_wiring import NETWORKS as L319_WIRING_NETWORKS, SOURCE_URL as L319_WIRING_SOURCE_URL, DEFAULT_ENGINE as L319_DEFAULT_ENGINE
@@ -876,6 +877,7 @@ class SensorGraphTab(QWidget):
         self.selection_changed_callback = None
         self.favorites_changed_callback = None
         self.navigate_to_obd_callback = None
+        self.open_dashboard_callback = None
         self.parent_settings = {}
 
         layout = QVBoxLayout(self)
@@ -952,6 +954,10 @@ class SensorGraphTab(QWidget):
         refresh_btn = QPushButton("Refresh List")
         refresh_btn.clicked.connect(self.refresh_sensor_list)
         right.addWidget(refresh_btn)
+        dashboard_btn = QPushButton("Open Multi-Graph Dashboard")
+        dashboard_btn.setToolTip("Open up to eight independently configured live graphs. The dock remains available across workspaces.")
+        dashboard_btn.clicked.connect(lambda: self.open_dashboard_callback() if self.open_dashboard_callback else None)
+        right.addWidget(dashboard_btn)
         controls.addLayout(right, 1)
         layout.addLayout(controls)
         favorite_row = QHBoxLayout()
@@ -3687,6 +3693,15 @@ class MainWindow(QMainWindow):
         self.quick_drawer.show()
         self.quick_drawer.set_current_workspace(self.tabs.tabText(self.tabs.currentIndex()))
         self.toast_manager = ToastManager(self)
+        self.sensor_dashboard_dock = SensorDashboardDock(
+            self.sensor_capture,
+            self,
+            initial_sensor_ids=self.graph_tab.selected_sensor_ids(),
+            vin_provider=lambda: self.settings.get("current_vin"),
+        )
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.sensor_dashboard_dock)
+        self.sensor_dashboard_dock.hide()
+        self.graph_tab.open_dashboard_callback = self.show_sensor_dashboard
 
     def _build_navigation_workspace(self):
         """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
@@ -3785,6 +3800,12 @@ class MainWindow(QMainWindow):
     def toggle_quick_drawer(self):
         if hasattr(self, "quick_drawer"):
             self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
+
+    def show_sensor_dashboard(self):
+        if hasattr(self, "sensor_dashboard_dock"):
+            self.sensor_dashboard_dock.refresh()
+            self.sensor_dashboard_dock.show()
+            self.sensor_dashboard_dock.raise_()
 
     def open_health_report(self):
         """Open module diagnostics and immediately run the health-report workflow."""
