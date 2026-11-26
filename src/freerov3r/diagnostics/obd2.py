@@ -31,6 +31,7 @@ PID_DEFINITIONS = {
     0x2F: ("Fuel tank level", "%"),
     0x30: ("Warm-ups since codes cleared", "count"),
     0x31: ("Distance since codes cleared", "km"),
+    0x32: ("Evaporative system vapor pressure", "Pa"),
     0x33: ("Barometric pressure", "kPa"),
     0x3C: ("Catalyst temperature bank 1 sensor 1", "°C"),
     0x3D: ("Catalyst temperature bank 2 sensor 1", "°C"),
@@ -102,6 +103,7 @@ PID_SEARCH_TERMS = {
     0x2F: "fuel tank level fuel",
     0x30: "warmups warm up cycles since clear reset",
     0x31: "distance since codes cleared reset",
+    0x32: "evap evaporative system vapor pressure signed pascals",
     0x33: "barometric baro atmospheric pressure",
     0x3C: "catalyst catalytic converter temperature bank 1 sensor 1",
     0x3D: "catalyst catalytic converter temperature bank 2 sensor 1",
@@ -205,7 +207,7 @@ def decode_mode01(frame: CanFrame):
         return None
 
     two_byte_pids = {
-        0x1F, 0x21, 0x22, 0x23, 0x31, 0x3C, 0x3D, 0x3E, 0x3F,
+        0x1F, 0x21, 0x22, 0x23, 0x31, 0x32, 0x3C, 0x3D, 0x3E, 0x3F,
         0x42, 0x4D, 0x4E, 0x53, 0x54, 0x59, 0x5D, 0x5E,
     }
     if pid in two_byte_pids and len(data) < 5:
@@ -233,6 +235,10 @@ def decode_mode01(frame: CanFrame):
         value = ab / 100.0
     elif pid in (0x1F, 0x21, 0x30, 0x31, 0x4D, 0x4E):
         value = float(ab if pid not in (0x30,) else a)
+    elif pid == 0x32:
+        # PID 32 is signed 16-bit evaporative pressure in quarter-pascals.
+        signed_ab = ab if ab < 0x8000 else ab - 0x10000
+        value = signed_ab / 4.0
     elif pid == 0x22:
         value = ab * 0.079
     elif pid in (0x23, 0x59):
