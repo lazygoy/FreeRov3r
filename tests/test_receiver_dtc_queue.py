@@ -75,3 +75,46 @@ def test_receiver_runs_mode09_request_on_adapter_owner_thread():
     finally:
         receiver.stop()
     assert adapter.closed
+
+
+
+class MonitorTestsCapableFakeAdapter(DtcCapableFakeAdapter):
+    description = "fake Mode 06 adapter"
+
+    def __init__(self):
+        super().__init__()
+        self.monitor_tests_thread = None
+
+    def read_monitor_tests(self):
+        self.monitor_tests_thread = threading.get_ident()
+        self.read_called.set()
+        return {
+            "supported_monitor_ids": [0x01],
+            "responses": [{
+                "monitor_id": 0x01,
+                "results": [{
+                    "test_id": 0x80,
+                    "unit_scaling_id": 0x24,
+                    "value_raw": 100,
+                    "minimum_raw": 0,
+                    "maximum_raw": 200,
+                    "status": "within_limits",
+                }],
+            }],
+        }
+
+
+def test_receiver_runs_mode06_request_on_adapter_owner_thread():
+    adapter = MonitorTestsCapableFakeAdapter()
+    receiver = Receiver(adapter)
+    receiver.start()
+    try:
+        deadline = time.monotonic() + 1
+        while not receiver.isRunning() and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert receiver.request_monitor_tests()
+        assert adapter.read_called.wait(1)
+        assert adapter.monitor_tests_thread == adapter.open_thread
+    finally:
+        receiver.stop()
+    assert adapter.closed
