@@ -43,7 +43,7 @@ class SensorCapture:
 
     def export_csv(self, path, vin=None):
         fields = ["vin", "timestamp", "sensor_id", "name", "value", "unit",
-                  "source", "ecu", "signal", "quality"]
+                  "source", "ecu", "signal", "quality", "monotonic_timestamp"]
         with Path(path).open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()

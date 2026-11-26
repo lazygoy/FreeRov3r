@@ -17,3 +17,24 @@ def normalize_values(values):
         return [50.0 for _ in cleaned], low, high
     span = high - low
     return [((value - low) / span) * 100.0 for value in cleaned], low, high
+
+
+def sample_clock(samples):
+    """Choose one consistent time domain for a plotted sample collection.
+
+    Prefer host monotonic time only when every sample has it. Imported or
+    legacy samples fall back together to wall-clock time, avoiding mixed axes.
+    """
+    samples = list(samples or [])
+    if samples and all(getattr(sample, "monotonic_timestamp", None) is not None
+                       for sample in samples):
+        return "monotonic_timestamp"
+    return "timestamp"
+
+
+def sample_time(sample, clock):
+    """Return a sample timestamp from the selected, consistent clock domain."""
+    value = getattr(sample, clock, None)
+    if value is None:
+        value = sample.timestamp
+    return float(value)
