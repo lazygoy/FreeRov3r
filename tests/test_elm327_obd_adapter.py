@@ -284,3 +284,67 @@ def test_elm327_obd_adapter_freeze_frame_requires_open_connection():
     adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
     with pytest.raises(RuntimeError, match="not open"):
         adapter.read_freeze_frame([0x0C])
+
+
+
+def test_elm327_obd_adapter_reads_mode09_vehicle_information(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 07 49 06 01 01 02 03 04\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        results = adapter.read_vehicle_info(pids=(0x06,))
+        assert len(results) == 1
+        assert results[0]["name"] == "Calibration verification number"
+        assert results[0]["items"] == [{"type": "cvn", "value": "01020304"}]
+        assert results[0]["arbitration_id"] == 0x7E8
+        assert fake.commands[-1] == "0906"
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_reassembles_mode09_vin_response(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 10 14 49 02 01 31 47 4E\r"
+        b"7E8 21 45 4B 31 33 5A 35 34\r"
+        b"7E8 22 52 31 32 33 34 35 36\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        results = adapter.read_vehicle_info(pids=(0x02,))
+        assert results[0]["items"] == [
+            {"type": "vin", "value": "1GNEK13Z54R123456"}
+        ]
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_rejects_unknown_mode09_pid_without_request(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial()
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        with pytest.raises(ValueError, match="Unsupported Mode 09 PID"):
+            adapter.read_vehicle_info(pids=(0x03,))
+        assert "0903" not in fake.commands
+    finally:
+        adapter.close()
