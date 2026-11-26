@@ -42,6 +42,7 @@ class Elm327ObdAdapter(CanAdapter):
         self.connection = None
         self._queue = deque()
         self._next_pid = 0
+        self._poll_pids = ()
         self._next_request = 0.0
         self.requests_sent = 0
         self.responses_received = 0
@@ -93,6 +94,15 @@ class Elm327ObdAdapter(CanAdapter):
                 "None of the selected PIDs were reported as supported "
                 f"(selected: {requested}). Polling was not started."
             )
+        poll_pids = list(self.pids)
+        wideband_selected = any(
+            0x24 <= pid <= 0x2B or 0x34 <= pid <= 0x3B
+            for pid in self.pids
+        )
+        if wideband_selected and 0x4F in discovered:
+            poll_pids.append(0x4F)
+        self._poll_pids = tuple(poll_pids)
+        self._next_pid = 0
         self.discovery_complete = True
 
     def open(self):
@@ -124,8 +134,8 @@ class Elm327ObdAdapter(CanAdapter):
                 self.connection = None
 
     def _poll_one(self):
-        pid = self.pids[self._next_pid]
-        self._next_pid = (self._next_pid + 1) % len(self.pids)
+        pid = self._poll_pids[self._next_pid]
+        self._next_pid = (self._next_pid + 1) % len(self._poll_pids)
         response = self._command(f"01{pid:02X}")
         self.requests_sent += 1
         now = time.time()
