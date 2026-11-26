@@ -39,7 +39,7 @@ class FakeAdapter:
         if not self._sent:
             self._sent = True
             self.frames_received += 1
-            return CanFrame(0x123, b"\x01", channel=self.channel_name)
+            return CanFrame(0x123, b"\\x01", channel=self.channel_name)
         time.sleep(min(timeout, 0.005))
         return None
 
@@ -79,3 +79,48 @@ def test_dual_adapter_rejects_receive_before_open():
     adapter = dual_module.Esp32DualSerialAdapter(["COM4", "COM5"])
     with pytest.raises(RuntimeError, match="not open"):
         adapter.receive()
+
+
+def test_dual_adapter_queue_is_bounded_and_reports_drops_by_channel(monkeypatch):
+    monkeypatch.setattr(dual_module, "Esp32SerialAdapter", FakeAdapter)
+    adapter = dual_module.Esp32DualSerialAdapter(
+        ["COM4", "COM5"], queue_capacity=2
+    )
+
+    assert adapter._queue_frame(CanFrame(0x100, b"\\x01", channel="HS-CAN"))
+    assert adapter._queue_frame(CanFrame(0x200, b"\\x02", channel="MS-CAN"))
+    assert not adapter._queue_frame(CanFrame(0x101, b"\\x03", channel="HS-CAN"))
+
+    diagnostics = adapter.diagnostics
+    assert diagnostics["queue_depth"] == 2
+    assert diagnostics["queue_capacity"] == 2
+    assert diagnostics["queue_high_water_mark"] == 2
+    assert diagnostics["queue_dropped_frames"] == 1
+    assert diagnostics["queue_dropped_by_channel"] == {"HS-CAN": 1}
+    assert adapter.receive(timeout=0).arbitration_id == 0x100
+    assert adapter.receive(timeout=0).arbitration_id == 0x200
+
+
+@pytest.mark.parametrize("capacity", [0, -1, True, 1.5, "10"])
+def test_dual_adapter_rejects_invalid_queue_capacity(capacity):
+    with pytest.raises(ValueError, match="positive integer"):
+        dual_module.Esp32DualSerialAdapter(
+            ["COM4", "COM5"], queue_capacity=capacity
+        )
+
+
+def test_open_clears_stale_queue_and_overflow_counters(monkeypatch):
+    monkeypatch.setattr(dual_module, "Esp32SerialAdapter", FakeAdapter)
+    adapter = dual_module.Esp32DualSerialAdapter(
+        ["COM4", "COM5"], queue_capacity=1
+    )
+    adapter._queue_frame(CanFrame(0x100, b"\\x01", channel="HS-CAN"))
+    adapter._queue_frame(CanFrame(0x101, b"\\x02", channel="HS-CAN"))
+    adapter.open()
+    try:
+        diagnostics = adapter.diagnostics
+        assert diagnostics["queue_depth"] == 0
+        assert diagnostics["queue_dropped_frames"] == 0
+        assert diagnostics["queue_high_water_mark"] == 0
+    finally:
+        adapter.close()
