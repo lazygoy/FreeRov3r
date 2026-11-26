@@ -956,7 +956,7 @@ class SensorGraphTab(QWidget):
             scale_row.addWidget(apply_btn)
             right.addLayout(scale_row)
 
-        load_btn = QPushButton("Load CSV")
+        load_btn = QPushButton("Import CSV / JSONL")
         load_btn.clicked.connect(self.load_csv)
         right.addWidget(load_btn)
         refresh_btn = QPushButton("Refresh List")
@@ -1468,32 +1468,26 @@ class SensorGraphTab(QWidget):
                 pass
 
     def load_csv(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Load sensor CSV", "", "CSV (*.csv)")
+        path, selected_filter = QFileDialog.getOpenFileName(
+            self, "Import sensor samples", "",
+            "Sensor data (*.csv *.jsonl);;CSV (*.csv);;JSON Lines (*.jsonl)"
+        )
         if not path:
             return
-        count = 0
-        with open(path, newline="", encoding="utf-8") as f:
-            for row in csv.DictReader(f):
-                try:
-                    sample = SensorSample(
-                        timestamp=float(row.get("timestamp", time.time())),
-                        sensor_id=row.get("sensor_id", "unknown"),
-                        name=row.get("name", row.get("sensor_id", "unknown")),
-                        value=float(row["value"]),
-                        unit=row.get("unit", ""),
-                        source=row.get("source", "imported"),
-                        metadata={"vin": self.vehicle_vin or "UNASSIGNED"},
-                        monotonic_timestamp=(
-                            float(row["monotonic_timestamp"])
-                            if row.get("monotonic_timestamp") else None
-                        ),
-                    )
-                    self.sensor_capture.add(sample)
-                    count += 1
-                except (KeyError, ValueError):
-                    continue
+        try:
+            if path.lower().endswith(".jsonl") or selected_filter.startswith("JSON Lines"):
+                count = self.sensor_capture.import_jsonl(path, default_vin=self.vehicle_vin)
+            else:
+                count = self.sensor_capture.import_csv(path, default_vin=self.vehicle_vin)
+        except OSError as exc:
+            QMessageBox.warning(self, "Import failed", f"Could not read sensor data: {exc}")
+            return
         self.refresh_sensor_list()
-        QMessageBox.information(self, "Loaded", f"Imported {count} samples.")
+        QMessageBox.information(
+            self, "Sensor import",
+            f"Imported {count} valid samples. Malformed or non-finite rows were skipped."
+        )
+
 
 
 class OBDTab(QWidget):
