@@ -14,6 +14,7 @@ from .base import CanAdapter
 from ..models import CanFrame
 from ..diagnostics.obd2 import PID_DEFINITIONS, parse_mode01_supported_pids
 from ..diagnostics.dtc import decode_j1979_dtcs
+from ..diagnostics.readiness import decode_obd_readiness
 from ..isotp import reassemble_isotp
 
 
@@ -234,6 +235,34 @@ class Elm327ObdAdapter(CanAdapter):
                         "is_extended_id": message["extended"],
                         "channel": message["channel"],
                     })
+        return results
+
+
+    def read_readiness(self):
+        """Read Mode 01 PID 01 monitor readiness using the open ELM327 link.
+
+        This explicit read-only request must run while the adapter's normal
+        polling receive loop is paused, just like read_dtcs().
+        """
+        if self.connection is None:
+            raise RuntimeError("ELM327 OBD-II adapter is not open")
+        response = self._command("0101")
+        frames = self._parse_response_frames(response, self.port, time.time())
+        messages = reassemble_isotp(frames)
+        results = []
+        for message in messages:
+            if message.get("status") != "complete":
+                continue
+            payload = bytes.fromhex(message.get("payload", ""))
+            if len(payload) < 2 or payload[:2] != bytes((0x41, 0x01)):
+                continue
+            result = decode_obd_readiness(payload)
+            result.update({
+                "arbitration_id": message["arbitration_id"],
+                "is_extended_id": message["extended"],
+                "channel": message["channel"],
+            })
+            results.append(result)
         return results
 
     def receive(self, timeout=0.2):
