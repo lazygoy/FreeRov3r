@@ -6,6 +6,7 @@ it never transmits diagnostic requests or replays captured frames.
 """
 import csv
 import difflib
+import hashlib
 import json
 import math
 import re
@@ -23,7 +24,9 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
 )
 
-from freerov3r.capture_storage import CaptureStorageError, write_json_atomic
+from freerov3r.capture_storage import (
+    CaptureStorageError, StreamingCaptureError, StreamingCaptureWriter, write_json_atomic,
+)
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
@@ -843,19 +846,19 @@ def load_capture_file(path):
     elif suffix in (".jsonl", ".ndjson"):
         # Stream line-delimited archives to avoid a second full-file text copy.
         last_nonempty_line_malformed = False
+        stream_digest = hashlib.sha256()
+        stream_frame_count = 0
         with path.open("r", encoding="utf-8-sig") as handle:
             for line in handle:
                 if not line.strip():
                     continue
                 try:
                     item = json.loads(line)
-                    malformed = False
                 except json.JSONDecodeError:
                     malformed_lines += 1
-                    malformed = True
                     last_nonempty_line_malformed = True
                     continue
-                last_nonempty_line_malformed = malformed
+                last_nonempty_line_malformed = False
                 if not isinstance(item, dict):
                     invalid_records += 1
                     continue
@@ -866,12 +869,28 @@ def load_capture_file(path):
                     else:
                         invalid_records += 1
                 else:
+                    if item.get("record_type") == "frame":
+                        stream_digest.update(line.rstrip("\\r\\n").encode("utf-8") + b"\\n")
+                        stream_frame_count += 1
                     normalized = _normalize_record(item)
                     if normalized is None:
                         invalid_records += 1
                     else:
                         records.append(normalized)
         possible_truncated_final_line = last_nonempty_line_malformed
+        stream_info = metadata.get("streaming_capture")
+        if isinstance(stream_info, dict) and stream_info.get("format") == StreamingCaptureWriter.FORMAT:
+            if stream_info.get("status") != "complete":
+                metadata.setdefault("import_warnings", []).append(
+                    "Streaming capture was not cleanly finalized; valid records were recovered."
+                )
+            elif (
+                stream_info.get("frame_count") != stream_frame_count
+                or stream_info.get("frames_sha256") != stream_digest.hexdigest()
+            ):
+                metadata.setdefault("import_warnings", []).append(
+                    "Streaming capture integrity check failed: frame count or SHA-256 digest does not match."
+                )
     elif suffix == ".csv":
         with path.open("r", newline="", encoding="utf-8-sig") as handle:
             for row in csv.DictReader(handle):
@@ -902,7 +921,7 @@ def load_capture_file(path):
             else:
                 records.append(normalized)
 
-    warnings = []
+    warnings = list(metadata.pop("import_warnings", []))
     if invalid_records:
         warnings.append(f"{invalid_records} invalid frame record(s) were skipped")
     if malformed_lines:
