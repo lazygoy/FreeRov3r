@@ -838,8 +838,8 @@ def test_load_jsonl_streams_lines_without_reading_entire_file(tmp_path, monkeypa
 
     path = tmp_path / "streamed.jsonl"
     path.write_text(
-        '{"record_type":"metadata","metadata":{"session_name":"streamed"}}\\n'
-        '{"timestamp":1.0,"arbitration_id":291,"data":"0102"}\\n'
+        '{"record_type":"metadata","metadata":{"session_name":"streamed"}}\n'
+        '{"timestamp":1.0,"arbitration_id":291,"data":"0102"}\n'
         '{"timestamp":2.0,"arbitration_id":292,"data":',
         encoding="utf-8",
     )
@@ -861,9 +861,9 @@ def test_load_jsonl_does_not_flag_nonfinal_malformed_line_as_truncated(tmp_path)
 
     path = tmp_path / "middle-damage.jsonl"
     path.write_text(
-        '{"timestamp":1.0,"arbitration_id":291,"data":"0102"}\\n'
-        '{broken json}\\n'
-        '{"timestamp":2.0,"arbitration_id":292,"data":"0304"}\\n',
+        '{"timestamp":1.0,"arbitration_id":291,"data":"0102"}\n'
+        '{broken json}\n'
+        '{"timestamp":2.0,"arbitration_id":292,"data":"0304"}\n',
         encoding="utf-8",
     )
 
