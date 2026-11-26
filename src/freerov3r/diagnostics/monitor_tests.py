@@ -27,10 +27,11 @@ def decode_mode06_results(payload, *, monitor_id, arbitration_id=None,
     monitor_id = int(monitor_id)
     if not 0 <= monitor_id <= 0xFF:
         raise ValueError("monitor_id must be in the range 0..255")
-    if len(payload) < 10 or payload[0] != 0x46:
-        raise ValueError("Expected Mode 06 positive response with at least one result record")
+    if len(payload) < 2 or payload[0] != 0x46:
+        raise ValueError("Expected Mode 06 positive response beginning with service 46")
+
     records = payload[1:]
-    if len(records) % 9:
+    if len(records) < 9 or len(records) % 9:
         raise ValueError(
             f"Mode 06 result data must contain complete 9-byte records; got {len(records)} bytes"
         )
