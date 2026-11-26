@@ -4587,10 +4587,11 @@ class MainWindow(QMainWindow):
             return
 
         if interface == "dual_simulator":
+            channel = "HS-CAN,MS-CAN"
             adapter = DualChannelSimulator()
         elif interface == "capture_replay":
             replay_path = channel
-            if not replay_path:
+            if not replay_path or not Path(replay_path).is_file():
                 replay_path, _ = QFileDialog.getOpenFileName(
                     self, "Select FreeRov3r capture", str(Path.home()),
                     "FreeRov3r captures (*.jsonl);;All files (*)",
