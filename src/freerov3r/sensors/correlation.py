@@ -154,7 +154,7 @@ def make_event_marker(samples, label, note=""):
             timed.append((stamp, mono))
     if not timed:
         raise ValueError("there are no timestamped samples in this capture")
-    stamp, mono = max(timed, key=lambda item: item[1] if item[1] is not None else item[0])
+    stamp, mono = max(timed, key=lambda item: item[0])
     return EventMarker(stamp, label[:120], str(note)[:2000], mono,
                        datetime.now(timezone.utc).isoformat())
 
