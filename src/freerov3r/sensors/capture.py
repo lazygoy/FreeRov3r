@@ -63,13 +63,13 @@ class SensorCapture:
         start = max(0, int(sequence_index) - self.dropped_samples)
         return self.samples[start:]
 
-    def export_csv(self, path, vin=None):
+    def export_csv(self, path, vin=None, samples=None):
         fields = ["vin", "timestamp", "sensor_id", "name", "value", "unit",
                   "source", "ecu", "signal", "quality", "monotonic_timestamp"]
         with Path(path).open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
-            for sample in self.samples:
+            for sample in (self.samples if samples is None else samples):
                 sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
                 if vin and sample_vin != vin:
                     continue
@@ -78,9 +78,11 @@ class SensorCapture:
                 row.pop("metadata", None)
                 writer.writerow(row)
 
-    def export_jsonl(self, path):
+    def export_jsonl(self, path, samples=None, vin=None):
         with Path(path).open("w", encoding="utf-8") as f:
-            for sample in self.samples:
+            for sample in (self.samples if samples is None else samples):
+                if vin and (sample.metadata or {}).get("vin", "UNASSIGNED") != vin:
+                    continue
                 f.write(json.dumps(asdict(sample), ensure_ascii=False) + "\n")
 
     def llm_report(self, include_context=True, vin=None):
