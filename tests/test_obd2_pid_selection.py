@@ -27,5 +27,10 @@ def test_pid_category_filter_is_applied_with_search():
 def test_pid_search_matches_hex_pid_and_unit():
     assert [row[0] for row in search_mode01_pids("0C")] == ["0C"]
     from freerov3r.diagnostics.obd2 import PID_DEFINITIONS
-    expected = {f"{pid:02X}" for pid, (_, unit) in PID_DEFINITIONS.items() if unit == "%"}
+
+    expected = {
+        f"{pid:02X}"
+        for pid, (_, unit) in PID_DEFINITIONS.items()
+        if "%" in unit
+    }
     assert {row[0] for row in search_mode01_pids("%")} == expected
