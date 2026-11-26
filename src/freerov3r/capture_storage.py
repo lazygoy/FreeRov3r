@@ -194,10 +194,11 @@ class AsyncStreamingCaptureWriter:
                 f"Background capture writer failed for {self.path}: {self._error}"
             ) from self._error
 
-    def _enqueue(self, item):
+    def _enqueue(self, item, *, allow_error=False):
         import queue
         while True:
-            self._check_error()
+            if not allow_error:
+                self._check_error()
             if self._thread is None or not self._thread.is_alive():
                 self._check_error()
                 raise CaptureStorageError("Background capture writer is not running.")
@@ -276,7 +277,7 @@ class AsyncStreamingCaptureWriter:
         # preventing a producer from deadlocking on a full queue.
 
     def _stop_and_join(self, command):
-        self._enqueue(command)
+        self._enqueue(command, allow_error=True)
         self._thread.join()
         self._closed = True
         self._check_error()
