@@ -2,6 +2,7 @@
 import csv
 import json
 import math
+import queue
 import sys
 import time
 from pathlib import Path
@@ -197,17 +198,43 @@ class ResponsiveBanner(QLabel):
 class Receiver(QThread):
     frame_received = Signal(object)
     status = Signal(str)
+    dtcs_completed = Signal(object)
+    dtcs_failed = Signal(str)
 
     def __init__(self, adapter):
         super().__init__()
         self.adapter = adapter
         self.running = True
+        self._commands = queue.Queue()
+        self._dtc_request_pending = False
+
+    def request_dtcs(self):
+        """Queue a DTC read for execution by the adapter-owning thread."""
+        if not self.isRunning() or not callable(getattr(self.adapter, "read_dtcs", None)):
+            return False
+        if self._dtc_request_pending:
+            return False
+        self._dtc_request_pending = True
+        self._commands.put("read_dtcs")
+        return True
 
     def run(self):
         try:
             self.adapter.open()
             self.status.emit(f"Connected: {self.adapter.description}")
             while self.running:
+                try:
+                    command = self._commands.get_nowait()
+                except queue.Empty:
+                    command = None
+                if command == "read_dtcs":
+                    try:
+                        self.dtcs_completed.emit(self.adapter.read_dtcs())
+                    except Exception as exc:
+                        self.dtcs_failed.emit(str(exc))
+                    finally:
+                        self._dtc_request_pending = False
+                    continue
                 frame = self.adapter.receive(0.15)
                 if frame is not None:
                     self.frame_received.emit(frame)
@@ -215,15 +242,18 @@ class Receiver(QThread):
             if hasattr(self.adapter, "last_error"):
                 self.adapter.last_error = str(exc)
             self.status.emit(f"Adapter error: {exc}")
+            if self._dtc_request_pending:
+                self.dtcs_failed.emit(str(exc))
         finally:
             try:
                 self.adapter.close()
             except Exception:
                 pass
+            self._dtc_request_pending = False
 
     def stop(self):
         self.running = False
-        self.wait(2000)
+        self.wait(2500)
 
 
 class VinQueryWorker(QThread):
@@ -1243,7 +1273,78 @@ class OBDTab(QWidget):
         clear_btn.clicked.connect(self.clear_values)
         btn_row.addWidget(clear_btn)
         layout.addLayout(btn_row)
+
+        dtc_group = QGroupBox("DIAGNOSTIC TROUBLE CODES")
+        dtc_layout = QVBoxLayout(dtc_group)
+        dtc_actions = QHBoxLayout()
+        self.read_dtcs_btn = QPushButton("Read Stored / Pending / Permanent Codes")
+        self.read_dtcs_btn.setEnabled(False)
+        self.read_dtcs_btn.setToolTip(
+            "Uses standard read-only OBD-II services 03, 07 and 0A on an active ELM327 OBD-II connection."
+        )
+        self.read_dtcs_btn.clicked.connect(self.request_dtc_scan)
+        dtc_actions.addWidget(self.read_dtcs_btn)
+        self.dtc_status_label = QLabel("Connect an ELM327 OBD-II adapter to read trouble codes.")
+        self.dtc_status_label.setWordWrap(True)
+        dtc_actions.addWidget(self.dtc_status_label, 1)
+        dtc_layout.addLayout(dtc_actions)
+        self.dtc_table = QTableWidget(0, 5)
+        self.dtc_table.setHorizontalHeaderLabels(
+            ["Code", "Status", "Response ECU", "Channel", "Raw"]
+        )
+        self.dtc_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.dtc_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.dtc_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.dtc_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.dtc_table.setMaximumHeight(190)
+        self.dtc_table.setAlternatingRowColors(True)
+        self.dtc_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        dtc_layout.addWidget(self.dtc_table)
+        layout.addWidget(dtc_group)
+        self.read_dtcs_callback = None
         self._refresh_favorite_combo()
+
+    def request_dtc_scan(self):
+        if self.read_dtcs_callback is None:
+            self.dtc_status_label.setText("Start an ELM327 OBD-II connection before requesting DTCs.")
+            return
+        if self.read_dtcs_callback():
+            self.read_dtcs_btn.setEnabled(False)
+            self.dtc_status_label.setText("Reading stored, pending and permanent DTCs…")
+        else:
+            self.dtc_status_label.setText("DTC read is unavailable or another read is already in progress.")
+
+    def set_dtc_scan_enabled(self, enabled):
+        self.read_dtcs_btn.setEnabled(bool(enabled))
+        if not enabled:
+            self.dtc_status_label.setText("Connect an ELM327 OBD-II adapter to read trouble codes.")
+
+    def show_dtc_results(self, codes):
+        self.dtc_table.setRowCount(0)
+        for code in codes:
+            row = self.dtc_table.rowCount()
+            self.dtc_table.insertRow(row)
+            values = (
+                code.get("code", ""),
+                code.get("status", ""),
+                f"{code.get('arbitration_id', 0):08X}"
+                + (" (29-bit)" if code.get("is_extended_id") else " (11-bit)"),
+                code.get("channel", ""),
+                code.get("raw", ""),
+            )
+            for column, value in enumerate(values):
+                self.dtc_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self.dtc_status_label.setText(
+            f"Read complete: {len(codes)} code record(s). "
+            "Descriptions are not inferred; verify OEM-specific meaning separately."
+            if codes else
+            "Read complete: no stored, pending or permanent codes were returned."
+        )
+        self.read_dtcs_btn.setEnabled(True)
+
+    def set_dtc_scan_error(self, message):
+        self.dtc_status_label.setText(f"DTC read failed: {message}")
+        self.read_dtcs_btn.setEnabled(True)
 
     def filter_pids(self, *_):
         query = self.search_edit.text()
@@ -2927,6 +3028,7 @@ class MainWindow(QMainWindow):
         self.graph_tab.refresh_favorite_groups()
         self.tabs.addTab(self.graph_tab, "Graph")
         self.obd_tab = OBDTab(self.settings)
+        self.obd_tab.read_dtcs_callback = self.request_dtc_scan
         self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
@@ -3851,6 +3953,7 @@ class MainWindow(QMainWindow):
     def toggle_capture(self):
         if self.receiver and self.receiver.isRunning():
             self.receiver.stop()
+            self.obd_tab.set_dtc_scan_enabled(False)
             diagnostics = getattr(self.active_adapter, "diagnostics", None)
             if isinstance(diagnostics, dict):
                 self._last_receiver_diagnostics = diagnostics
@@ -3962,6 +4065,9 @@ class MainWindow(QMainWindow):
         self.receiver = Receiver(adapter)
         self.receiver.frame_received.connect(self.on_frame)
         self.receiver.status.connect(self.status.setText)
+        self.receiver.dtcs_completed.connect(self._on_dtc_scan_completed)
+        self.receiver.dtcs_failed.connect(self._on_dtc_scan_failed)
+        self.obd_tab.set_dtc_scan_enabled(interface == "elm327_obd")
         self.receiver.start()
         self.connect_btn.setText("Stop listening")
         self.frame_counter = 0
@@ -3976,6 +4082,41 @@ class MainWindow(QMainWindow):
         self.settings_bitrate.setCurrentText(str(bitrate))
         self._refresh_workspace_header()
         self.show_toast("CAN listener started", "success")
+
+    def request_dtc_scan(self):
+        receiver = self.receiver
+        if self.active_interface != "elm327_obd" or receiver is None:
+            return False
+        return receiver.request_dtcs()
+
+    def _on_dtc_scan_completed(self, codes):
+        self.obd_tab.show_dtc_results(codes)
+        self.record_vehicle_event(
+            "dtc_scan_completed",
+            f"OBD-II DTC scan completed: {len(codes)} code record(s)",
+            {
+                "interface": self.active_interface,
+                "services": ["03", "07", "0A"],
+                "count": len(codes),
+                "dtcs": codes,
+                "read_only": True,
+            },
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast(
+            f"DTC scan complete: {len(codes)} code(s)",
+            "success" if codes else "info",
+        )
+
+    def _on_dtc_scan_failed(self, message):
+        self.obd_tab.set_dtc_scan_error(message)
+        self.record_vehicle_event(
+            "dtc_scan_failed",
+            "OBD-II DTC scan failed",
+            {"interface": self.active_interface, "error": str(message), "read_only": True},
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast("DTC scan failed", "warning")
 
     def on_frame(self, frame):
         detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
