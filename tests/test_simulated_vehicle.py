@@ -1,5 +1,6 @@
 from freerov3r.hardware.simulated_vehicle import SimulatedVehicleAdapter, decode_mode01
 from freerov3r.models import CanFrame
+import time
 
 
 def test_decode_standard_mode01_rpm_response():
@@ -22,6 +23,10 @@ def test_simulator_emits_decodable_obd_frames():
             frame = adapter.receive(timeout=0.01)
             assert frame is not None
             assert frame.arbitration_id == 0x7E8
+            assert frame.timestamp_clock_domain == "host_monotonic"
+            assert frame.timestamp_source == "simulator"
+            assert frame.timestamp is not None
+            assert frame.timestamp <= time.monotonic()
             assert len(frame.data) == 8
             decoded.append(decode_mode01(frame))
         assert all(item is not None for item in decoded)
