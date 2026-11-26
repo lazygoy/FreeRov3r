@@ -4442,6 +4442,14 @@ class MainWindow(QMainWindow):
 
     def _on_vehicle_info_scan_completed(self, results):
         self.obd_tab.show_vehicle_info_results(results)
+        detected_vins = {
+            validate_vin(item.get("value"))
+            for result in results if result.get("pid") == 0x02
+            for item in result.get("items", []) if item.get("type") == "vin"
+        }
+        detected_vins.discard(None)
+        if len(detected_vins) == 1:
+            self._apply_detected_vin(next(iter(detected_vins)))
         self.record_vehicle_event(
             "vehicle_info_scan_completed",
             f"OBD-II Mode 09 identification read: {sum(len(item.get('items', [])) for item in results)} record(s)",
