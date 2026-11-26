@@ -112,3 +112,27 @@ def test_elm327_obd_adapter_polls_pid_4f_as_a_hidden_wideband_dependency(monkeyp
         assert "014F" in fake.commands
     finally:
         adapter.close()
+
+
+
+def test_elm327_obd_adapter_accepts_29_bit_physical_response_headers(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"18DAF110 06 41 00 00 10 00 00\r>",
+        b"18DAF110 04 41 0C 1A F8\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C], request_interval=0.05)
+    adapter.open()
+    try:
+        frame = adapter.receive(timeout=0.1)
+        assert frame is not None
+        assert frame.arbitration_id == 0x18DAF110
+        assert frame.is_extended_id is True
+        assert frame.data == bytes([4, 0x41, 0x0C, 0x1A, 0xF8])
+    finally:
+        adapter.close()
