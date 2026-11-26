@@ -92,3 +92,58 @@ def test_dashboard_favorite_and_persistence_methods_belong_to_dock():
     assert callable(getattr(SensorDashboardDock, "_restore_saved_layout", None))
     assert callable(getattr(SensorDashboardDock, "load_favorite", None))
     assert callable(getattr(SensorDashboardDock, "save_layout_to_favorite", None))
+
+
+@pytest.fixture
+def qapp(monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    yield app
+
+
+def test_dashboard_initializes_persists_and_loads_sensor_favorites(qapp):
+    from types import SimpleNamespace
+
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    favorite_layout = {
+        "panel_count": 2,
+        "panels": [
+            {"sensor_ids": ["obd_0C"], "window_seconds": 10, "auto_scale": False},
+            {"sensor_ids": ["obd_05"], "window_seconds": 300, "auto_scale": True},
+        ],
+    }
+    settings = {
+        "obd_pid_favorites": {"Engine": ["obd_0C", "obd_05"]},
+        "sensor_dashboard_favorites": {"Engine": favorite_layout},
+        "sensor_dashboard_layout": favorite_layout,
+    }
+    saved = []
+    dock = SensorDashboardDock(
+        SimpleNamespace(samples=[]),
+        settings=settings,
+        save_settings_callback=lambda value: saved.append(dict(value)),
+    )
+
+    assert dock.panel_count.currentData() == 2
+    assert dock.panels[0].selected_sensor_ids() == {"obd_0C"}
+    assert dock.panels[1].selected_sensor_ids() == {"obd_05"}
+    assert dock.favorite_combo.findData("Engine") >= 0
+
+    dock.favorite_combo.setCurrentIndex(dock.favorite_combo.findData("Engine"))
+    dock.load_favorite()
+    dock.save_layout_to_favorite()
+    dock.persist_layout()
+
+    assert settings["sensor_dashboard_favorites"]["Engine"]["panel_count"] == 2
+    assert saved
+
+    restored = SensorDashboardDock(SimpleNamespace(samples=[]), settings=settings)
+    assert restored.panel_count.currentData() == 2
+    assert restored.panels[0].selected_sensor_ids() == {"obd_0C"}
+    assert restored.panels[1].selected_sensor_ids() == {"obd_05"}
+
+    restored.close()
+    dock.close()
