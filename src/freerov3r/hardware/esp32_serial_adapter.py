@@ -55,6 +55,11 @@ def parse_can_line(raw, channel=None):
             channel=channel,
             timestamp=time.monotonic(),
             device_timestamp_us=device_timestamp_us,
+            timestamp_clock_domain="host_monotonic",
+            timestamp_source="esp32_serial_receive",
+            device_timestamp_clock_domain=(
+                "device_uptime" if device_timestamp_us is not None else None
+            ),
         )
     except (UnicodeDecodeError, ValueError, TypeError):
         return None

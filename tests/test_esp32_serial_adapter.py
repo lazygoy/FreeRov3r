@@ -165,6 +165,9 @@ def test_parse_protocol_v2_preserves_device_timestamp():
     assert frame.channel == "HS-CAN"
     assert frame.device_timestamp_us == 123456789
     assert frame.timestamp is not None
+    assert frame.timestamp_clock_domain == "host_monotonic"
+    assert frame.timestamp_source == "esp32_serial_receive"
+    assert frame.device_timestamp_clock_domain == "device_uptime"
 
 
 def test_parse_protocol_v2_rejects_invalid_device_timestamp():
@@ -176,3 +179,6 @@ def test_legacy_frame_has_no_device_timestamp():
     frame = parse_can_line(b"S,00000123,1,AA\n")
     assert frame is not None
     assert frame.device_timestamp_us is None
+    assert frame.timestamp_clock_domain == "host_monotonic"
+    assert frame.timestamp_source == "esp32_serial_receive"
+    assert frame.device_timestamp_clock_domain is None

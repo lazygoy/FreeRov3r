@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class CanFrame:
     arbitration_id: int
@@ -10,3 +11,8 @@ class CanFrame:
     channel: str | None = None
     timestamp: float | None = None
     device_timestamp_us: int | None = None
+    timestamp_clock_domain: str = "unknown"
+    timestamp_source: str = "unknown"
+    source_timestamp: float | None = None
+    source_timestamp_clock_domain: str | None = None
+    device_timestamp_clock_domain: str | None = None

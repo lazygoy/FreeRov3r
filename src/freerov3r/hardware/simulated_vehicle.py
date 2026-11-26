@@ -78,4 +78,11 @@ class SimulatedVehicleAdapter(CanAdapter):
             a, b = raw & 0xFF, 0
         # ISO-TP single-frame payload: length, positive response, PID, A, B, padding.
         data = bytes((4, 0x41, pid, a, b, 0, 0, 0))
-        return CanFrame(0x7E8, data, channel=self.channel, timestamp=time.time())
+        return CanFrame(
+            0x7E8,
+            data,
+            channel=self.channel,
+            timestamp=now,
+            timestamp_clock_domain="host_monotonic",
+            timestamp_source="simulator",
+        )
