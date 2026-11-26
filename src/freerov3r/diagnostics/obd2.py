@@ -368,7 +368,7 @@ def decode_mode01_measurements(frame: CanFrame, scaling_context=None):
         sensor_number = pid - 0x33
         cd = data[5] * 256 + data[6]
         return [
-            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65535.0, "λ"),
+            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * lambda_max / 65535.0, "λ"),
             (pid, "current", f"Wide-range oxygen sensor {sensor_number} current", (cd - 0x8000) * current_max / 32768.0, "mA"),
         ]
     if pid in multi_two_byte_pids:
