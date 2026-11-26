@@ -154,7 +154,12 @@ class Elm327ObdAdapter(CanAdapter):
                 data = bytes(int(part, 16) for part in payload_parts)
             except ValueError:
                 continue
-            if not 0x7E8 <= can_id <= 0x7EF or len(data) < 4:
+            is_extended_id = len(parts[0]) == 8
+            is_obd_response_id = (
+                0x18DAF100 <= can_id <= 0x18DAF1FF
+                if is_extended_id else 0x7E8 <= can_id <= 0x7EF
+            )
+            if not is_obd_response_id or len(data) < 4:
                 continue
             if data[1] == 0x7F:
                 self.no_data_responses += 1
@@ -162,7 +167,8 @@ class Elm327ObdAdapter(CanAdapter):
             if data[1] != 0x41 or data[2] != pid:
                 continue
             self._queue.append(CanFrame(
-                arbitration_id=can_id, data=data, channel=self.port, timestamp=now
+                arbitration_id=can_id, data=data, is_extended_id=is_extended_id,
+                channel=self.port, timestamp=now
             ))
             self.responses_received += 1
 
