@@ -67,7 +67,7 @@ PID_CATEGORIES = {
     0x10: "Air & Intake", 0x11: "Engine", 0x1F: "Engine",
     0x21: "Emissions", 0x22: "Fuel", 0x23: "Fuel",
     0x2C: "Air & Intake", 0x2D: "Air & Intake", 0x2E: "Emissions",
-    0x2F: "Fuel", 0x30: "Emissions", 0x31: "Emissions",
+    0x2F: "Fuel", 0x30: "Emissions", 0x31: "Emissions", 0x32: "Emissions",
     0x33: "Air & Intake", 0x3C: "Temperatures", 0x3D: "Temperatures",
     0x3E: "Temperatures", 0x3F: "Temperatures", 0x42: "Electrical",
     0x46: "Temperatures", 0x4C: "Engine", 0x4D: "Emissions",
