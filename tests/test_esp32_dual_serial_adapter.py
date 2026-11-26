@@ -97,8 +97,10 @@ def test_dual_adapter_queue_is_bounded_and_reports_drops_by_channel(monkeypatch)
     assert diagnostics["queue_high_water_mark"] == 2
     assert diagnostics["queue_dropped_frames"] == 1
     assert diagnostics["queue_dropped_by_channel"] == {"HS-CAN": 1}
-    assert adapter.receive(timeout=0).arbitration_id == 0x100
-    assert adapter.receive(timeout=0).arbitration_id == 0x200
+    # Inspect the internal FIFO directly: public receive() correctly requires
+    # an opened adapter, while this test isolates queue overflow behavior.
+    assert adapter._frames.get_nowait().arbitration_id == 0x100
+    assert adapter._frames.get_nowait().arbitration_id == 0x200
 
 
 @pytest.mark.parametrize("capacity", [0, -1, True, 1.5, "10"])
