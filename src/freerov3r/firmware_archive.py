@@ -95,7 +95,7 @@ def _safe_relative_path(value: str | Path) -> Path:
     if (
         not raw
         or "\x00" in raw
-        or "\\" in raw
+        or ("\\" in raw and not isinstance(value, Path))
         or relative.is_absolute()
         or windows_path.is_absolute()
         or windows_path.drive
