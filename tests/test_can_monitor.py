@@ -52,8 +52,8 @@ def test_same_numeric_id_is_tracked_separately_by_frame_format():
 
 def test_id_stats_report_payload_changes_and_recent_median_interval():
     monitor = CanMonitor(rate_window=2)
-    first = CanFrame(arbitration_id=0x321, data=b"\\x01", timestamp=1.0)
-    changed = CanFrame(arbitration_id=0x321, data=b"\\x02", timestamp=1.1)
+    first = CanFrame(arbitration_id=0x321, data=b"\x01", timestamp=1.0)
+    changed = CanFrame(arbitration_id=0x321, data=b"\x02", timestamp=1.1)
     monitor.add(first, now=1.0)
     monitor.add(changed, now=1.1)
     monitor.add(changed, now=1.3)
@@ -66,7 +66,7 @@ def test_id_stats_report_payload_changes_and_recent_median_interval():
 def test_payload_change_tracking_is_separate_for_standard_and_extended_ids():
     monitor = CanMonitor(rate_window=2)
     monitor.add(frame(0x123), now=1.0)
-    monitor.add(CanFrame(arbitration_id=0x123, data=b"\\x02", is_extended_id=True), now=1.1)
+    monitor.add(CanFrame(arbitration_id=0x123, data=b"\x02", is_extended_id=True), now=1.1)
     monitor.add(frame(0x123), now=1.2)
 
     stats = {(item.arbitration_id, item.extended): item for item in monitor.id_stats(now=1.2)}
@@ -77,7 +77,7 @@ def test_payload_change_tracking_is_separate_for_standard_and_extended_ids():
 def test_reset_clears_payload_and_interval_history():
     monitor = CanMonitor()
     monitor.add(frame(0x100), now=1.0)
-    monitor.add(CanFrame(arbitration_id=0x100, data=b"\\x03"), now=1.1)
+    monitor.add(CanFrame(arbitration_id=0x100, data=b"\x03"), now=1.1)
     monitor.reset()
 
     assert monitor.id_stats(now=1.1) == []
