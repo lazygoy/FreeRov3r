@@ -4891,7 +4891,7 @@ class MainWindow(QMainWindow):
                 log_lines.append(line)
         self.frame_count_label.setText(f"Frames: {self.frame_counter}")
         if log_lines:
-            self.log.appendPlainText("\\n".join(log_lines))
+            self.log.appendPlainText("\n".join(log_lines))
 
     def on_frame(self, frame, update_display=True):
         detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
