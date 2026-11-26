@@ -36,6 +36,34 @@ def panel_grid_dimensions(count):
     return (1, 1) if count == 1 else (2, (count + 1) // 2)
 
 
+def normalize_dashboard_layout(layout):
+    """Validate persisted dashboard settings and fill missing panel defaults."""
+    if not isinstance(layout, dict):
+        layout = {}
+    count = layout.get("panel_count", 4)
+    if count not in PANEL_COUNTS:
+        count = 4
+    configs = layout.get("panels", [])
+    if not isinstance(configs, list):
+        configs = []
+    allowed_windows = {seconds for _, seconds in TIME_WINDOWS}
+    panels = []
+    for index in range(max(PANEL_COUNTS)):
+        config = configs[index] if index < len(configs) and isinstance(configs[index], dict) else {}
+        ids = config.get("sensor_ids", [])
+        if not isinstance(ids, (list, tuple, set)):
+            ids = []
+        window = config.get("window_seconds", 60)
+        if window not in allowed_windows:
+            window = 60
+        panels.append({
+            "sensor_ids": sorted({str(value) for value in ids if str(value).strip()}),
+            "window_seconds": window,
+            "auto_scale": bool(config.get("auto_scale", True)),
+        })
+    return {"version": 1, "panel_count": count, "panels": panels}
+
+
 class _FloatingGraphWindow(QDialog):
     def __init__(self, dock, panel):
         super().__init__(dock)
@@ -250,8 +278,13 @@ class SensorGraphPanel(QWidget):
         self.load_favorite_button.setEnabled(self.favorite_combo.currentData() is not None)
         self.save_favorite_button.setEnabled(self.favorite_combo.currentData() is not None)
 
+    def _favorite_selection_changed(self, *_):
+        enabled = self.favorite_combo.currentData() is not None
+        self.load_favorite_button.setEnabled(enabled)
+        self.save_favorite_button.setEnabled(enabled)
+
     def _layout_payload(self):
-        return {
+        return normalize_dashboard_layout({
             "version": 1,
             "panel_count": int(self.panel_count.currentData()),
             "panels": [
@@ -262,7 +295,7 @@ class SensorGraphPanel(QWidget):
                 }
                 for panel in self.panels
             ],
-        }
+        })
 
     def persist_layout(self, *_):
         if self._loading_config:
@@ -272,18 +305,15 @@ class SensorGraphPanel(QWidget):
             self.save_settings_callback(self.settings)
 
     def _restore_saved_layout(self):
-        layout = self.settings.get("sensor_dashboard_layout", {})
-        if not isinstance(layout, dict):
+        stored = self.settings.get("sensor_dashboard_layout")
+        if not isinstance(stored, dict):
             return
+        layout = normalize_dashboard_layout(stored)
         self._loading_config = True
         try:
-            count = layout.get("panel_count", 4)
-            if count not in PANEL_COUNTS:
-                count = 4
+            count = layout["panel_count"]
             self.panel_count.setCurrentIndex(PANEL_COUNTS.index(count))
-            configs = layout.get("panels", [])
-            if not isinstance(configs, list):
-                configs = []
+            configs = layout["panels"]
             for index, panel in enumerate(self.panels):
                 config = configs[index] if index < len(configs) and isinstance(configs[index], dict) else {}
                 ids = config.get("sensor_ids", [])
@@ -322,15 +352,12 @@ class SensorGraphPanel(QWidget):
             self.persist_layout()
 
     def _apply_layout(self, layout):
+        layout = normalize_dashboard_layout(layout)
         self._loading_config = True
         try:
-            count = layout.get("panel_count", 4)
-            if count not in PANEL_COUNTS:
-                count = 4
+            count = layout["panel_count"]
             self.panel_count.setCurrentIndex(PANEL_COUNTS.index(count))
-            configs = layout.get("panels", [])
-            if not isinstance(configs, list):
-                configs = []
+            configs = layout["panels"]
             for index, panel in enumerate(self.panels):
                 config = configs[index] if index < len(configs) and isinstance(configs[index], dict) else {}
                 ids = config.get("sensor_ids", [])
@@ -404,6 +431,7 @@ class SensorDashboardDock(QDockWidget):
         controls.addWidget(QLabel("Sensor favorite:"))
         self.favorite_combo = QComboBox()
         self.favorite_combo.setMinimumWidth(150)
+        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
         controls.addWidget(self.favorite_combo)
         self.load_favorite_button = QPushButton("Load")
         self.load_favorite_button.clicked.connect(self.load_favorite)
