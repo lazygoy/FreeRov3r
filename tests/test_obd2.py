@@ -172,7 +172,7 @@ def test_decode_narrowband_oxygen_sensor_returns_independent_values(
 @pytest.mark.parametrize(
     ("pid", "expected_keys", "expected_second_unit", "expected_second_value"),
     [
-        (0x24, ("lambda", "voltage"), "V", 4.0),
+        (0x24, ("lambda", "voltage"), "V", 0x8000 * 8.0 / 65535.0),
         (0x34, ("lambda", "current"), "mA", 0.0),
     ],
 )
@@ -182,7 +182,7 @@ def test_decode_wideband_oxygen_sensor_keeps_lambda_and_electrical_value_separat
     frame = CanFrame(0x7E8, bytes([6, 0x41, pid, 0x40, 0x00, 0x80, 0x00, 0]))
     measurements = decode_mode01_measurements(frame)
     assert tuple(item[1] for item in measurements) == expected_keys
-    assert measurements[0][3] == pytest.approx(0.5)
+    assert measurements[0][3] == pytest.approx(0x4000 * 2.0 / 65535.0)
     assert measurements[1][3] == pytest.approx(expected_second_value)
     assert measurements[1][4] == expected_second_unit
 
