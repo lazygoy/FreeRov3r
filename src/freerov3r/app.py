@@ -59,7 +59,7 @@ from .vehicle_history import (
     filter_vehicle_info_scan_events, filter_obd_scan_events,
     format_readiness_scan_event, format_freeze_frame_scan_event,
     format_vehicle_info_scan_event, export_history_json, export_history_csv,
-    search_history_events, format_capture_event,
+    search_history_events, format_capture_event, filter_can_activity_events,
 )
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -2903,6 +2903,7 @@ class VehicleHistoryTab(QWidget):
         controls.addWidget(QLabel("Event type:"))
         self.event_filter = QComboBox()
         self.event_filter.addItem("All events", "all")
+        self.event_filter.addItem("CAN activity", "can")
         self.event_filter.addItem("All OBD-II scans", "obd")
         self.event_filter.addItem("DTC scans", "dtc")
         self.event_filter.addItem("Readiness scans", "readiness")
@@ -2956,7 +2957,9 @@ class VehicleHistoryTab(QWidget):
         selected_vin = self.vin_filter.currentData()
         events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
         event_filter = self.event_filter.currentData()
-        if event_filter == "obd":
+        if event_filter == "can":
+            events = filter_can_activity_events(events)
+        elif event_filter == "obd":
             events = filter_obd_scan_events(events)
         elif event_filter == "dtc":
             events = filter_dtc_scan_events(events)
