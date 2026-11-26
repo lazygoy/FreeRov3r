@@ -136,3 +136,84 @@ def test_obd_history_filters_cover_all_supported_scan_families():
     assert [event["type"] for event in filter_readiness_scan_events(events)] == ["readiness_scan_failed"]
     assert [event["type"] for event in filter_freeze_frame_scan_events(events)] == ["freeze_frame_scan_completed"]
     assert [event["type"] for event in filter_vehicle_info_scan_events(events)] == ["vehicle_info_scan_failed"]
+
+
+def test_freeze_frame_history_has_readable_measurements_and_failure():
+    from freerov3r.vehicle_history import format_freeze_frame_scan_event
+
+    event = {
+        "type": "freeze_frame_scan_completed",
+        "timestamp": "2026-11-26T04:00:00+00:00",
+        "vin": "SALXXXXXXXXXXXX1",
+        "summary": "Freeze-frame scan",
+        "details": {
+            "interface": "ELM327 OBD-II",
+            "frame_number": 0,
+            "read_only": True,
+            "results": [{
+                "pid": "0C",
+                "frame_number": 0,
+                "arbitration_id": 2024,
+                "is_extended_id": False,
+                "channel": "COM4",
+                "raw": "420C1AF8",
+                "measurements": [
+                    {"key": "rpm", "name": "Engine RPM", "value": 1726, "unit": "rpm"},
+                    {"key": "speed", "name": "Vehicle speed", "value": 40, "unit": "km/h"},
+                ],
+            }],
+        },
+    }
+    report = format_freeze_frame_scan_event(event)
+    assert "Freeze-frame number: 0" in report
+    assert "Engine RPM: 1726 rpm" in report
+    assert "Vehicle speed: 40 km/h" in report
+    assert "ECU: 000007E8 (11-bit)" in report
+    assert "Raw response: 420C1AF8" in report
+    assert "Error: No response" in format_freeze_frame_scan_event({
+        "type": "freeze_frame_scan_failed", "details": {"error": "No response"}
+    })
+
+
+def test_vehicle_info_history_has_readable_mode09_records_and_failure():
+    from freerov3r.vehicle_history import format_vehicle_info_scan_event
+
+    event = {
+        "type": "vehicle_info_scan_completed",
+        "timestamp": "2026-11-26T04:10:00+00:00",
+        "vin": "SALXXXXXXXXXXXX1",
+        "summary": "Mode 09 identification read",
+        "details": {
+            "interface": "ELM327 OBD-II",
+            "service": "09",
+            "read_only": True,
+            "results": [{
+                "pid": 2,
+                "name": "Vehicle identification number",
+                "count": 1,
+                "arbitration_id": 2024,
+                "is_extended_id": False,
+                "channel": "COM4",
+                "items": [{"type": "vin", "value": "SALXXXXXXXXXXXX1"}],
+                "raw": "490201...",
+            }, {
+                "pid": 4,
+                "name": "Calibration identification",
+                "count": 1,
+                "arbitration_id": 2024,
+                "is_extended_id": False,
+                "channel": "COM4",
+                "items": [{"type": "calibration_id", "value": "CALID123"}],
+                "raw": "4904...",
+            }],
+        },
+    }
+    report = format_vehicle_info_scan_event(event)
+    assert "02 | Vehicle identification number" in report
+    assert "vin: SALXXXXXXXXXXXX1" in report
+    assert "calibration_id: CALID123" in report
+    assert "Identification records: 2" in report
+    assert "ECU: 000007E8 (11-bit)" in report
+    assert "Error: No response" in format_vehicle_info_scan_event({
+        "type": "vehicle_info_scan_failed", "details": {"error": "No response"}
+    })
