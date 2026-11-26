@@ -14,6 +14,7 @@ class SensorCapture:
     max_samples: int = 100000
     total_samples_added: int = 0
     dropped_samples: int = 0
+    events: list[dict] = field(default_factory=list)
 
     def __post_init__(self):
         if self.max_samples < 1:
@@ -24,7 +25,27 @@ class SensorCapture:
             self.dropped_samples += overflow
         self.total_samples_added = max(self.total_samples_added, len(self.samples) + self.dropped_samples)
 
-    def add_event(self, marker):\n        """Attach an annotation to the session without changing raw samples."""\n        value = marker.to_dict() if isinstance(marker, EventMarker) else marker\n        self.events = normalize_event_markers([*self.events, value])\n\n    def export_session_json(self, path):\n        """Export session context and annotations separately from raw sample data."""\n        payload = {\n            "format": "freerov3r-sensor-session",\n            "version": 1,\n            "vehicle_context": self.vehicle_context,\n            "sample_count_retained": len(self.samples),\n            "total_samples_added": self.total_samples_added,\n            "dropped_samples": self.dropped_samples,\n            "events": normalize_event_markers(self.events),\n        }\n        Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")\n\n    def add(self, sample: SensorSample):
+    def add_event(self, marker):
+        """Attach an annotation to the session without changing raw samples."""
+        value = marker.to_dict() if isinstance(marker, EventMarker) else marker
+        self.events = normalize_event_markers([*self.events, value])
+
+    def export_session_json(self, path):
+        """Export session context and annotations separately from raw sample data."""
+        payload = {
+            "format": "freerov3r-sensor-session",
+            "version": 1,
+            "vehicle_context": self.vehicle_context,
+            "sample_count_retained": len(self.samples),
+            "total_samples_added": self.total_samples_added,
+            "dropped_samples": self.dropped_samples,
+            "events": normalize_event_markers(self.events),
+        }
+        Path(path).write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def add(self, sample: SensorSample):
         self.samples.append(sample)
         self.total_samples_added += 1
         overflow = len(self.samples) - self.max_samples
