@@ -3636,8 +3636,8 @@ class MainWindow(QMainWindow):
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
         self.obd_tab.navigate_to_graph_callback = lambda: self.tabs.setCurrentWidget(self.graph_tab)
-        self.graph_tab.favorites_changed_callback = self.obd_tab._refresh_favorite_combo
-        self.obd_tab.favorites_changed_callback = self.graph_tab.refresh_favorite_groups
+        self.graph_tab.favorites_changed_callback = self._refresh_sensor_favorites
+        self.obd_tab.favorites_changed_callback = self._refresh_sensor_favorites
         self.graph_tab.set_selected_sensor_ids(self.obd_tab.selected_sensor_ids())
         self.tabs.addTab(self.obd_tab, "OBD-II")
         self.module_networks = {}
@@ -3802,6 +3802,15 @@ class MainWindow(QMainWindow):
     def toggle_quick_drawer(self):
         if hasattr(self, "quick_drawer"):
             self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
+
+    def _refresh_sensor_favorites(self, selected_name=None):
+        """Keep sensor favorites synchronized across Graph, OBD-II and dashboard."""
+        if hasattr(self, "graph_tab"):
+            self.graph_tab.refresh_favorite_groups(selected_name)
+        if hasattr(self, "obd_tab"):
+            self.obd_tab._refresh_favorite_combo(selected_name)
+        if hasattr(self, "sensor_dashboard_dock"):
+            self.sensor_dashboard_dock._refresh_favorites(selected_name)
 
     def show_sensor_dashboard(self):
         if hasattr(self, "sensor_dashboard_dock"):
