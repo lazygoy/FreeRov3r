@@ -244,7 +244,8 @@ def decode_mode01(frame: CanFrame):
     elif pid == 0x53:
         value = ab / 200.0
     elif pid == 0x54:
-        value = float(ab - 32767)
+        # PID 54 is a signed 16-bit two's-complement pressure value.
+        value = float(ab if ab < 0x8000 else ab - 0x10000)
     elif pid == 0x5D:
         value = ab / 128.0 - 210.0
     elif pid == 0x5E:
