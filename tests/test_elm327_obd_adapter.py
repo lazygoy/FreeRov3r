@@ -142,13 +142,13 @@ def test_elm327_obd_adapter_reads_stored_pending_and_permanent_dtcs(monkeypatch)
     import freerov3r.hardware.elm327_obd_adapter as module
 
     fake = FakeSerial(responses=[
-        b"ELM327 v1.5\\r>",
-        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
-        b"OK\\r>", b"OK\\r>",
-        b"7E8 06 41 00 00 10 00 00\\r>",
-        b"7E8 05 43 01 33 00 00\\r>",
-        b"7E8 03 47 01 33\\r>",
-        b"7E8 03 4A 01 33\\r>",
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 05 43 01 33 00 00\r>",
+        b"7E8 03 47 01 33\r>",
+        b"7E8 03 4A 01 33\r>",
     ])
     monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
     adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
@@ -170,11 +170,11 @@ def test_elm327_obd_adapter_reassembles_multiframe_dtc_response(monkeypatch):
     import freerov3r.hardware.elm327_obd_adapter as module
 
     fake = FakeSerial(responses=[
-        b"ELM327 v1.5\\r>",
-        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
-        b"OK\\r>", b"OK\\r>",
-        b"7E8 06 41 00 00 10 00 00\\r>",
-        b"7E8 10 09 43 01 33 01 34\\r7E8 21 01 35 01 36 00 00 00\\r>",
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 10 09 43 01 33 01 34\r7E8 21 01 35 01 36 00 00 00\r>",
     ])
     monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
     adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
