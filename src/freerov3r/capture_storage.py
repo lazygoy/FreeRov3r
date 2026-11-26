@@ -27,11 +27,11 @@ def write_json_atomic(path: str | Path, payload: Any) -> Path:
             suffix=".tmp",
             dir=destination.parent,
         )
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\\n") as handle:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             encoder = json.JSONEncoder(indent=2, ensure_ascii=False)
             for chunk in encoder.iterencode(payload):
                 handle.write(chunk)
-            handle.write("\\n")
+            handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_name, destination)
