@@ -52,7 +52,10 @@ try:
 except ImportError:
     QPdfDocument = QPdfView = None
     HAS_PDF_VIEWER = False
-from .vehicle_history import VehicleHistoryStore, filter_dtc_scan_events, format_dtc_scan_event
+from .vehicle_history import (
+    VehicleHistoryStore, filter_dtc_scan_events, format_dtc_scan_event,
+    format_readiness_scan_event,
+)
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .asset_loader import ASSET_DIR, load_asset_pixmap
@@ -2640,6 +2643,8 @@ class VehicleHistoryTab(QWidget):
             self.details.clear()
         elif event.get("type") in {"dtc_scan_completed", "dtc_scan_failed"}:
             self.details.setPlainText(format_dtc_scan_event(event))
+        elif event.get("type") in {"readiness_scan_completed", "readiness_scan_failed"}:
+            self.details.setPlainText(format_readiness_scan_event(event))
         else:
             self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False))
 
