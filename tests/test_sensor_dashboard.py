@@ -147,3 +147,20 @@ def test_dashboard_initializes_persists_and_loads_sensor_favorites(qapp):
 
     restored.close()
     dock.close()
+
+
+def test_legacy_sensor_favorite_loads_into_first_graph(qapp):
+    from types import SimpleNamespace
+
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    settings = {"obd_pid_favorites": {"Idle test": ["obd_0C", "obd_05"]}}
+    dock = SensorDashboardDock(SimpleNamespace(samples=[]), settings=settings)
+    dock.favorite_combo.setCurrentIndex(dock.favorite_combo.findData("Idle test"))
+    dock.load_favorite()
+
+    assert dock.panel_count.currentData() == 1
+    assert dock.panels[0].selected_sensor_ids() == {"obd_0C", "obd_05"}
+    assert all(not panel.selected_sensor_ids() for panel in dock.panels[1:])
+
+    dock.close()
