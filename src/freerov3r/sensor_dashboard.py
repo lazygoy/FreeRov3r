@@ -262,6 +262,90 @@ class SensorGraphPanel(QWidget):
         else:
             self.dock.restore_panel(self, self._floating_host)
 
+    def _set_topmost(self, checked):
+        if self._floating_host is None:
+            return
+        host = self._floating_host
+        host.setWindowFlag(Qt.WindowStaysOnTopHint, checked)
+        host.show()
+
+
+class SensorDashboardDock(QDockWidget):
+    """Application-wide dock containing up to eight independently configured graphs."""
+
+    def __init__(
+        self, sensor_capture, parent=None, initial_sensor_ids=None, vin_provider=None,
+        settings=None, save_settings_callback=None,
+    ):
+        super().__init__("Sensor Dashboard", parent)
+        self.sensor_capture = sensor_capture
+        self.vin_provider = vin_provider or (lambda: None)
+        self.initial_sensor_ids = set(initial_sensor_ids or ())
+        self.settings = settings if isinstance(settings, dict) else {}
+        self.save_settings_callback = save_settings_callback
+        self._loading_config = False
+        self.setObjectName("sensorDashboardDock")
+        self.setAllowedAreas(Qt.AllDockWidgetAreas)
+        self.setFeatures(
+            QDockWidget.DockWidgetClosable
+            | QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+        )
+
+        container = QWidget(self)
+        self.container = container
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(6, 6, 6, 6)
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Visible graphs:"))
+        self.panel_count = QComboBox()
+        for count in PANEL_COUNTS:
+            self.panel_count.addItem(str(count), count)
+        self.panel_count.setCurrentIndex(2)
+        self.panel_count.currentIndexChanged.connect(self.reflow)
+        self.panel_count.currentIndexChanged.connect(self.persist_layout)
+        controls.addWidget(self.panel_count)
+        controls.addWidget(QLabel("Sensor favorite:"))
+        self.favorite_combo = QComboBox()
+        self.favorite_combo.setMinimumWidth(150)
+        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
+        controls.addWidget(self.favorite_combo)
+        self.load_favorite_button = QPushButton("Load")
+        self.load_favorite_button.clicked.connect(self.load_favorite)
+        controls.addWidget(self.load_favorite_button)
+        self.save_favorite_button = QPushButton("Save layout")
+        self.save_favorite_button.clicked.connect(self.save_layout_to_favorite)
+        controls.addWidget(self.save_favorite_button)
+        controls.addStretch(1)
+        self.topmost = QCheckBox("Floating dashboard stays on top")
+        self.topmost.toggled.connect(self._set_topmost)
+        controls.addWidget(self.topmost)
+        outer.addLayout(controls)
+
+        self.grid_host = QWidget(container)
+        self.grid = QGridLayout(self.grid_host)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(6)
+        outer.addWidget(self.grid_host, 1)
+        self.setWidget(container)
+
+        self.panels = [
+            SensorGraphPanel(sensor_capture, index, self)
+            for index in range(max(PANEL_COUNTS))
+        ]
+        self._visible_count = 4
+        self._refresh_favorites()
+        self._restore_saved_layout()
+        self.refresh()
+        if self.initial_sensor_ids and not self.panels[0].selected_sensor_ids():
+            self.panels[0].refresh_sensor_choices(self.initial_sensor_ids)
+        self.reflow()
+
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.setInterval(750)
+        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_timer.start()
+
     def _refresh_favorites(self, selected_name=None):
         groups = self.settings.get("obd_pid_favorites", {})
         self.favorite_combo.blockSignals(True)
@@ -384,90 +468,6 @@ class SensorGraphPanel(QWidget):
         if callable(self.save_settings_callback):
             self.save_settings_callback(self.settings)
         self._refresh_favorites(name)
-
-    def _set_topmost(self, checked):
-        if self._floating_host is None:
-            return
-        host = self._floating_host
-        host.setWindowFlag(Qt.WindowStaysOnTopHint, checked)
-        host.show()
-
-
-class SensorDashboardDock(QDockWidget):
-    """Application-wide dock containing up to eight independently configured graphs."""
-
-    def __init__(
-        self, sensor_capture, parent=None, initial_sensor_ids=None, vin_provider=None,
-        settings=None, save_settings_callback=None,
-    ):
-        super().__init__("Sensor Dashboard", parent)
-        self.sensor_capture = sensor_capture
-        self.vin_provider = vin_provider or (lambda: None)
-        self.initial_sensor_ids = set(initial_sensor_ids or ())
-        self.settings = settings if isinstance(settings, dict) else {}
-        self.save_settings_callback = save_settings_callback
-        self._loading_config = False
-        self.setObjectName("sensorDashboardDock")
-        self.setAllowedAreas(Qt.AllDockWidgetAreas)
-        self.setFeatures(
-            QDockWidget.DockWidgetClosable
-            | QDockWidget.DockWidgetMovable
-            | QDockWidget.DockWidgetFloatable
-        )
-
-        container = QWidget(self)
-        self.container = container
-        outer = QVBoxLayout(container)
-        outer.setContentsMargins(6, 6, 6, 6)
-        controls = QHBoxLayout()
-        controls.addWidget(QLabel("Visible graphs:"))
-        self.panel_count = QComboBox()
-        for count in PANEL_COUNTS:
-            self.panel_count.addItem(str(count), count)
-        self.panel_count.setCurrentIndex(2)
-        self.panel_count.currentIndexChanged.connect(self.reflow)
-        self.panel_count.currentIndexChanged.connect(self.persist_layout)
-        controls.addWidget(self.panel_count)
-        controls.addWidget(QLabel("Sensor favorite:"))
-        self.favorite_combo = QComboBox()
-        self.favorite_combo.setMinimumWidth(150)
-        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
-        controls.addWidget(self.favorite_combo)
-        self.load_favorite_button = QPushButton("Load")
-        self.load_favorite_button.clicked.connect(self.load_favorite)
-        controls.addWidget(self.load_favorite_button)
-        self.save_favorite_button = QPushButton("Save layout")
-        self.save_favorite_button.clicked.connect(self.save_layout_to_favorite)
-        controls.addWidget(self.save_favorite_button)
-        controls.addStretch(1)
-        self.topmost = QCheckBox("Floating dashboard stays on top")
-        self.topmost.toggled.connect(self._set_topmost)
-        controls.addWidget(self.topmost)
-        outer.addLayout(controls)
-
-        self.grid_host = QWidget(container)
-        self.grid = QGridLayout(self.grid_host)
-        self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setSpacing(6)
-        outer.addWidget(self.grid_host, 1)
-        self.setWidget(container)
-
-        self.panels = [
-            SensorGraphPanel(sensor_capture, index, self)
-            for index in range(max(PANEL_COUNTS))
-        ]
-        self._visible_count = 4
-        self._refresh_favorites()
-        self._restore_saved_layout()
-        self.refresh()
-        if self.initial_sensor_ids and not self.panels[0].selected_sensor_ids():
-            self.panels[0].refresh_sensor_choices(self.initial_sensor_ids)
-        self.reflow()
-
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.setInterval(750)
-        self.refresh_timer.timeout.connect(self.refresh)
-        self.refresh_timer.start()
 
     def _set_topmost(self, checked):
         if checked and not self.isFloating():
