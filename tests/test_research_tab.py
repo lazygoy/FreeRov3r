@@ -924,7 +924,7 @@ def test_load_streaming_capture_detects_modified_frame(tmp_path):
     frame = json.loads(lines[1])
     frame["data"] = "FFFF"
     lines[1] = json.dumps(frame, separators=(",", ":"), sort_keys=True)
-    path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     metadata, frames = load_capture_file(path)
 
