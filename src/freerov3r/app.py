@@ -209,6 +209,8 @@ class Receiver(QThread):
     freeze_frame_failed = Signal(str)
     vehicle_info_completed = Signal(object)
     vehicle_info_failed = Signal(str)
+    monitor_tests_completed = Signal(object)
+    monitor_tests_failed = Signal(str)
 
     def __init__(self, adapter):
         super().__init__()
@@ -219,6 +221,7 @@ class Receiver(QThread):
         self._readiness_request_pending = False
         self._freeze_frame_request_pending = False
         self._vehicle_info_request_pending = False
+        self._monitor_tests_request_pending = False
 
     def request_dtcs(self):
         """Queue a DTC read for execution by the adapter-owning thread."""
@@ -260,6 +263,16 @@ class Receiver(QThread):
         self._commands.put(("read_vehicle_info", tuple(pids)))
         return True
 
+    def request_monitor_tests(self):
+        """Queue a read-only Mode 06 acquisition on the adapter-owning thread."""
+        if not self.isRunning() or not callable(getattr(self.adapter, "read_monitor_tests", None)):
+            return False
+        if self._monitor_tests_request_pending:
+            return False
+        self._monitor_tests_request_pending = True
+        self._commands.put("read_monitor_tests")
+        return True
+
     def run(self):
         try:
             self.adapter.open()
@@ -297,6 +310,14 @@ class Receiver(QThread):
                     finally:
                         self._vehicle_info_request_pending = False
                     continue
+                if command == "read_monitor_tests":
+                    try:
+                        self.monitor_tests_completed.emit(self.adapter.read_monitor_tests())
+                    except Exception as exc:
+                        self.monitor_tests_failed.emit(str(exc))
+                    finally:
+                        self._monitor_tests_request_pending = False
+                    continue
                 if command == "read_readiness":
                     try:
                         self.readiness_completed.emit(self.adapter.read_readiness())
@@ -320,6 +341,8 @@ class Receiver(QThread):
                 self.freeze_frame_failed.emit(str(exc))
             if self._vehicle_info_request_pending:
                 self.vehicle_info_failed.emit(str(exc))
+            if self._monitor_tests_request_pending:
+                self.monitor_tests_failed.emit(str(exc))
         finally:
             try:
                 self.adapter.close()
@@ -329,6 +352,7 @@ class Receiver(QThread):
             self._readiness_request_pending = False
             self._freeze_frame_request_pending = False
             self._vehicle_info_request_pending = False
+            self._monitor_tests_request_pending = False
 
     def stop(self):
         self.running = False
@@ -1466,6 +1490,34 @@ class OBDTab(QWidget):
         vehicle_info_layout.addWidget(self.vehicle_info_table)
         layout.addWidget(vehicle_info_group)
 
+        monitor_tests_group = QGroupBox("ON-BOARD MONITOR TEST RESULTS (MODE 06)")
+        monitor_tests_layout = QVBoxLayout(monitor_tests_group)
+        monitor_tests_actions = QHBoxLayout()
+        self.read_monitor_tests_btn = QPushButton("Read Monitor Tests")
+        self.read_monitor_tests_btn.setEnabled(False)
+        self.read_monitor_tests_btn.setToolTip(
+            "Read-only SAE J1979 Mode 06 requests. Values remain raw until a verified UASID scale is available."
+        )
+        self.read_monitor_tests_btn.clicked.connect(self.request_monitor_tests_scan)
+        monitor_tests_actions.addWidget(self.read_monitor_tests_btn)
+        self.monitor_tests_status_label = QLabel(
+            "Connect an ELM327 OBD-II adapter to read supported monitor test results."
+        )
+        self.monitor_tests_status_label.setWordWrap(True)
+        monitor_tests_actions.addWidget(self.monitor_tests_status_label, 1)
+        monitor_tests_layout.addLayout(monitor_tests_actions)
+        self.monitor_tests_table = QTableWidget(0, 9)
+        self.monitor_tests_table.setHorizontalHeaderLabels(
+            ["MID", "TID", "UASID", "Value (raw)", "Minimum (raw)", "Maximum (raw)", "Result", "ECU", "Channel"]
+        )
+        self.monitor_tests_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.monitor_tests_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        self.monitor_tests_table.setMaximumHeight(260)
+        self.monitor_tests_table.setAlternatingRowColors(True)
+        self.monitor_tests_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        monitor_tests_layout.addWidget(self.monitor_tests_table)
+        layout.addWidget(monitor_tests_group)
+
         self.readiness_metadata_label = QLabel("MIL and DTC count: not yet read")
         self.readiness_metadata_label.setWordWrap(True)
         readiness_layout.addWidget(self.readiness_metadata_label)
@@ -1473,6 +1525,7 @@ class OBDTab(QWidget):
         self.read_dtcs_callback = None
         self.read_readiness_callback = None
         self.read_vehicle_info_callback = None
+        self.read_monitor_tests_callback = None
         self._refresh_favorite_combo()
 
     def request_dtc_scan(self):
@@ -1490,6 +1543,7 @@ class OBDTab(QWidget):
         self.read_readiness_btn.setEnabled(bool(enabled))
         self.read_freeze_frame_btn.setEnabled(bool(enabled))
         self.read_vehicle_info_btn.setEnabled(bool(enabled))
+        self.read_monitor_tests_btn.setEnabled(bool(enabled))
         if not enabled:
             self.dtc_status_label.setText("Connect an ELM327 OBD-II adapter to read trouble codes.")
             self.readiness_status_label.setText(
@@ -1541,6 +1595,57 @@ class OBDTab(QWidget):
             self.vehicle_info_status_label.setText(
                 "Vehicle-information request is unavailable or another read is already in progress."
             )
+
+    def request_monitor_tests_scan(self):
+        if self.read_monitor_tests_callback is None:
+            self.monitor_tests_status_label.setText(
+                "Start an ELM327 OBD-II connection before requesting Mode 06 results."
+            )
+            return
+        if self.read_monitor_tests_callback():
+            self.read_monitor_tests_btn.setEnabled(False)
+            self.monitor_tests_status_label.setText("Reading supported Mode 06 monitor tests…")
+        else:
+            self.monitor_tests_status_label.setText(
+                "Mode 06 request is unavailable or another read is already in progress."
+            )
+
+    def show_monitor_test_results(self, result):
+        self.monitor_tests_table.setRowCount(0)
+        supported = result.get("supported_monitor_ids", [])
+        responses = result.get("responses", [])
+        for response in responses:
+            ecu = f"{response.get('arbitration_id', 0):08X}" + (
+                " (29-bit)" if response.get("is_extended_id") else " (11-bit)"
+            )
+            for record in response.get("results", []):
+                row = self.monitor_tests_table.rowCount()
+                self.monitor_tests_table.insertRow(row)
+                values = (
+                    f"{response.get('monitor_id', 0):02X}",
+                    f"{record.get('test_id', 0):02X}",
+                    f"{record.get('unit_scaling_id', 0):02X}",
+                    record.get("value_raw"),
+                    record.get("minimum_raw"),
+                    record.get("maximum_raw"),
+                    record.get("status", "unknown"),
+                    ecu,
+                    response.get("channel", ""),
+                )
+                for column, value in enumerate(values):
+                    self.monitor_tests_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self.monitor_tests_status_label.setText(
+            f"Read complete: {self.monitor_tests_table.rowCount()} test result(s) across "
+            f"{len(responses)} ECU response(s); {len(supported)} supported monitor ID(s). "
+            "Values are raw and have no inferred units."
+            if responses else
+            f"No valid Mode 06 result records returned. {len(supported)} supported monitor ID(s) reported."
+        )
+        self.read_monitor_tests_btn.setEnabled(True)
+
+    def set_monitor_tests_scan_error(self, message):
+        self.monitor_tests_status_label.setText(f"Mode 06 read failed: {message}")
+        self.read_monitor_tests_btn.setEnabled(True)
 
     def show_vehicle_info_results(self, results):
         self.vehicle_info_table.setRowCount(0)
@@ -4406,6 +4511,8 @@ class MainWindow(QMainWindow):
         self.receiver.freeze_frame_failed.connect(self._on_freeze_frame_scan_failed)
         self.receiver.vehicle_info_completed.connect(self._on_vehicle_info_scan_completed)
         self.receiver.vehicle_info_failed.connect(self._on_vehicle_info_scan_failed)
+        self.receiver.monitor_tests_completed.connect(self._on_monitor_tests_scan_completed)
+        self.receiver.monitor_tests_failed.connect(self._on_monitor_tests_scan_failed)
         self.obd_tab.set_dtc_scan_enabled(interface == "elm327_obd")
         self.receiver.start()
         self.connect_btn.setText("Stop listening")
@@ -4439,6 +4546,45 @@ class MainWindow(QMainWindow):
         if self.active_interface != "elm327_obd" or receiver is None:
             return False
         return receiver.request_vehicle_info()
+
+    def request_monitor_tests_scan(self):
+        receiver = self.receiver
+        if self.active_interface != "elm327_obd" or receiver is None:
+            return False
+        return receiver.request_monitor_tests()
+
+    def _on_monitor_tests_scan_completed(self, result):
+        self.obd_tab.show_monitor_test_results(result)
+        responses = result.get("responses", [])
+        count = sum(len(response.get("results", [])) for response in responses)
+        self.record_vehicle_event(
+            "monitor_tests_scan_completed",
+            f"OBD-II Mode 06 monitor test scan completed: {count} result(s)",
+            {
+                "interface": self.active_interface,
+                "service": "06",
+                "supported_monitor_ids": result.get("supported_monitor_ids", []),
+                "count": count,
+                "results": result,
+                "read_only": True,
+                "values_are_raw": True,
+            },
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast(
+            f"Mode 06 read: {count} test result(s)",
+            "success" if count else "warning",
+        )
+
+    def _on_monitor_tests_scan_failed(self, message):
+        self.obd_tab.set_monitor_tests_scan_error(message)
+        self.record_vehicle_event(
+            "monitor_tests_scan_failed",
+            "OBD-II Mode 06 monitor test read failed",
+            {"interface": self.active_interface, "error": str(message), "read_only": True},
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast("Mode 06 read failed", "warning")
 
     def _on_vehicle_info_scan_completed(self, results):
         self.obd_tab.show_vehicle_info_results(results)
