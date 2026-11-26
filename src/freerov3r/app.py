@@ -205,6 +205,31 @@ class ResponsiveBanner(QLabel):
 
 
 
+class FrameBatcher:
+    """Collect CAN frames until a size or elapsed-time threshold is reached."""
+
+    def __init__(self, max_frames=64, interval=0.05):
+        self.max_frames = max(1, int(max_frames))
+        self.interval = max(0.0, float(interval))
+        self.frames = []
+        self.last_emit = time.monotonic()
+
+    def add(self, frame):
+        self.frames.append(frame)
+
+    def should_flush(self, now=None):
+        if not self.frames:
+            return False
+        now = time.monotonic() if now is None else now
+        return len(self.frames) >= self.max_frames or now - self.last_emit >= self.interval
+
+    def take(self, now=None):
+        batch = self.frames
+        self.frames = []
+        self.last_emit = time.monotonic() if now is None else now
+        return batch
+
+
 class Receiver(QThread):
     frame_received = Signal(object)
     frames_received = Signal(object)
@@ -284,8 +309,7 @@ class Receiver(QThread):
         return True
 
     def run(self):
-        pending_frames = []
-        last_batch_emit = time.monotonic()
+        batcher = FrameBatcher(self.FRAME_BATCH_SIZE, self.FRAME_BATCH_INTERVAL)
         try:
             self.adapter.open()
             self.status.emit(f"Connected: {self.adapter.description}")
@@ -339,19 +363,13 @@ class Receiver(QThread):
                         self._readiness_request_pending = False
                     continue
                 frame = self.adapter.receive(
-                    self.FRAME_BATCH_INTERVAL if pending_frames else 0.15
+                    self.FRAME_BATCH_INTERVAL if batcher.frames else 0.15
                 )
                 if frame is not None:
                     self.frame_received.emit(frame)  # Preserve the per-frame adapter signal.
-                    pending_frames.append(frame)
-                now = time.monotonic()
-                if pending_frames and (
-                    len(pending_frames) >= self.FRAME_BATCH_SIZE
-                    or now - last_batch_emit >= self.FRAME_BATCH_INTERVAL
-                ):
-                    self.frames_received.emit(pending_frames)
-                    pending_frames = []
-                    last_batch_emit = now
+                    batcher.add(frame)
+                if batcher.should_flush():
+                    self.frames_received.emit(batcher.take())
         except Exception as exc:
             if hasattr(self.adapter, "last_error"):
                 self.adapter.last_error = str(exc)
@@ -367,8 +385,8 @@ class Receiver(QThread):
             if self._monitor_tests_request_pending:
                 self.monitor_tests_failed.emit(str(exc))
         finally:
-            if pending_frames:
-                self.frames_received.emit(pending_frames)
+            if batcher.frames:
+                self.frames_received.emit(batcher.take())
             try:
                 self.adapter.close()
             except Exception:
