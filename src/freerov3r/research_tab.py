@@ -1362,7 +1362,10 @@ class ResearchTab(QWidget):
                         "frames_retained": writer.frame_count,
                     })
                 except CaptureStorageError as exc:
-                    writer.close_incomplete()
+                    try:
+                        writer.close_incomplete()
+                    except CaptureStorageError:
+                        pass
                     self.status_label.setText(
                         f"Recording stopped, but automatic archive finalization failed: {exc}"
                     )
@@ -1405,7 +1408,10 @@ class ResearchTab(QWidget):
                 try:
                     self._stream_writer.append_frame(record)
                 except CaptureStorageError as exc:
-                    self._stream_writer.close_incomplete()
+                    try:
+                        self._stream_writer.close_incomplete()
+                    except CaptureStorageError:
+                        pass
                     self._stream_writer = None
                     self.status_label.setText(
                         f"Automatic archive write failed; in-memory recording continues: {exc}"
