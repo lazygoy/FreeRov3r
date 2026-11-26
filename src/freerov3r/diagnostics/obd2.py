@@ -328,14 +328,14 @@ def decode_mode01_measurements(frame: CanFrame):
         sensor_number = pid - 0x23
         cd = data[5] * 256 + data[6]
         return [
-            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65536.0, "λ"),
-            (pid, "voltage", f"Wide-range oxygen sensor {sensor_number} voltage", cd * 8.0 / 65536.0, "V"),
+            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65535.0, "λ"),
+            (pid, "voltage", f"Wide-range oxygen sensor {sensor_number} voltage", cd * 8.0 / 65535.0, "V"),
         ]
     if pid in range(0x34, 0x3C):
         sensor_number = pid - 0x33
         cd = data[5] * 256 + data[6]
         return [
-            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65536.0, "λ"),
+            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65535.0, "λ"),
             (pid, "current", f"Wide-range oxygen sensor {sensor_number} current", cd / 256.0 - 128.0, "mA"),
         ]
     if pid in multi_two_byte_pids:
