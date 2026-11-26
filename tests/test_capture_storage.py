@@ -111,3 +111,50 @@ def test_streaming_writer_refuses_to_overwrite_existing_file(tmp_path):
         writer.start()
 
     assert destination.read_text(encoding="utf-8") == "preserve me"
+
+
+
+def test_async_streaming_writer_preserves_order_and_finalizes_integrity(tmp_path):
+    from freerov3r.capture_storage import AsyncStreamingCaptureWriter
+
+    destination = tmp_path / "async.jsonl"
+    writer = AsyncStreamingCaptureWriter(destination, flush_interval_seconds=60)
+    writer.start({"session_name": "async"})
+    frames = [
+        {"arbitration_id": 0x100 + index, "data": f"{index:04x}", "timestamp": index / 10}
+        for index in range(250)
+    ]
+    for frame in frames:
+        writer.append_frame(frame)
+
+    assert writer.frame_count == len(frames)
+    writer.finish({"notes": "background writer"})
+
+    lines = [json.loads(line) for line in destination.read_text(encoding="utf-8").splitlines()]
+    archived = [item for item in lines if item.get("record_type") == "frame"]
+    assert archived == [{"record_type": "frame", **frame} for frame in frames]
+    footer = lines[-1]["metadata"]["streaming_capture"]
+    assert footer["status"] == "complete"
+    assert footer["frame_count"] == len(frames)
+    assert writer.is_open is False
+
+
+def test_async_streaming_writer_closes_incomplete_without_losing_queued_frames(tmp_path):
+    from freerov3r.capture_storage import AsyncStreamingCaptureWriter
+
+    destination = tmp_path / "async-interrupted.jsonl"
+    writer = AsyncStreamingCaptureWriter(destination, flush_interval_seconds=60)
+    writer.start({"session_name": "interrupted"})
+    frames = [
+        {"arbitration_id": 0x200 + index, "data": f"{index:02x}"}
+        for index in range(100)
+    ]
+    for frame in frames:
+        writer.append_frame(frame)
+    writer.close_incomplete()
+
+    lines = [json.loads(line) for line in destination.read_text(encoding="utf-8").splitlines()]
+    archived = [item for item in lines if item.get("record_type") == "frame"]
+    assert archived == [{"record_type": "frame", **frame} for frame in frames]
+    assert len(lines) == len(frames) + 1
+    assert writer.is_open is False
