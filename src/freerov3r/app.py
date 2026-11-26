@@ -59,7 +59,7 @@ from .vehicle_history import (
     filter_vehicle_info_scan_events, filter_obd_scan_events,
     format_readiness_scan_event, format_freeze_frame_scan_event,
     format_vehicle_info_scan_event, export_history_json, export_history_csv,
-    search_history_events,
+    search_history_events, format_capture_event,
 )
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -3027,6 +3027,8 @@ class VehicleHistoryTab(QWidget):
             self.details.setPlainText(format_freeze_frame_scan_event(event))
         elif event.get("type") in {"vehicle_info_scan_completed", "vehicle_info_scan_failed"}:
             self.details.setPlainText(format_vehicle_info_scan_event(event))
+        elif event.get("type") in {"capture_started", "capture_completed", "vin_detected"}:
+            self.details.setPlainText(format_capture_event(event))
         else:
             self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False))
 
