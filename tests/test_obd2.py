@@ -143,3 +143,64 @@ def test_evap_system_vapor_pressure_pid_32_uses_signed_quarter_pascal_value(a, b
     assert decoded[0] == 0x32
     assert decoded[2] == expected
     assert decoded[3] == "Pa"
+
+from freerov3r.diagnostics.obd2 import decode_mode01_measurements, PID_MULTI_VALUE_KEYS
+
+
+@pytest.mark.parametrize(
+    ("pid", "a", "b", "expected_voltage", "expected_trim"),
+    [
+        (0x14, 100, 128, 0.5, 0.0),
+        (0x15, 200, 0, 1.0, -100.0),
+        (0x1B, 255, 255, 1.275, None),
+    ],
+)
+def test_decode_narrowband_oxygen_sensor_returns_independent_values(
+    pid, a, b, expected_voltage, expected_trim
+):
+    frame = CanFrame(0x7E8, bytes([4, 0x41, pid, a, b, 0, 0, 0]))
+    measurements = decode_mode01_measurements(frame)
+    assert measurements[0][0:2] == (pid, "voltage")
+    assert measurements[0][3] == pytest.approx(expected_voltage)
+    if expected_trim is None:
+        assert len(measurements) == 1
+    else:
+        assert measurements[1][0:2] == (pid, "fuel_trim")
+        assert measurements[1][3] == pytest.approx(expected_trim)
+
+
+@pytest.mark.parametrize(
+    ("pid", "expected_keys", "expected_second_unit", "expected_second_value"),
+    [
+        (0x24, ("lambda", "voltage"), "V", 4.0),
+        (0x34, ("lambda", "current"), "mA", 0.0),
+    ],
+)
+def test_decode_wideband_oxygen_sensor_keeps_lambda_and_electrical_value_separate(
+    pid, expected_keys, expected_second_unit, expected_second_value
+):
+    frame = CanFrame(0x7E8, bytes([6, 0x41, pid, 0x40, 0x00, 0x80, 0x00, 0]))
+    measurements = decode_mode01_measurements(frame)
+    assert tuple(item[1] for item in measurements) == expected_keys
+    assert measurements[0][3] == pytest.approx(0.5)
+    assert measurements[1][3] == pytest.approx(expected_second_value)
+    assert measurements[1][4] == expected_second_unit
+
+
+def test_multi_value_pid_rejects_truncated_wideband_payload():
+    frame = CanFrame(0x7E8, bytes([6, 0x41, 0x24, 0x40, 0x00, 0x80]))
+    assert decode_mode01_measurements(frame) == []
+
+
+def test_legacy_scalar_decoder_remains_available_for_multi_value_pid():
+    frame = CanFrame(0x7E8, bytes([4, 0x41, 0x14, 100, 128, 0, 0, 0]))
+    assert decode_mode01(frame)[2] == pytest.approx(0.5)
+    assert PID_MULTI_VALUE_KEYS[0x14] == ("voltage", "fuel_trim")
+
+
+def test_secondary_oxygen_trim_pid_exposes_both_bank_values():
+    frame = CanFrame(0x7E8, bytes([4, 0x41, 0x55, 128, 192, 0, 0, 0]))
+    measurements = decode_mode01_measurements(frame)
+    assert [(item[1], item[3]) for item in measurements] == [
+        ("bank_1", 0.0), ("bank_3", 50.0)
+    ]
