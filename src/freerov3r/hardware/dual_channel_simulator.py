@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections import deque
 
 from .base import CanAdapter
 from ..models import CanFrame
@@ -36,7 +35,6 @@ class DualChannelSimulator(CanAdapter):
         self._start = 0.0
         self._next_due = []
         self._sequence = {}
-        self._schedule = deque()
         self.frames_generated = 0
 
     @property
@@ -57,7 +55,6 @@ class DualChannelSimulator(CanAdapter):
         self._start = time.monotonic()
         self._next_due = [self._start for _ in self.channels]
         self._sequence = {item["name"]: 0 for item in self.channels}
-        self._schedule.clear()
         self.frames_generated = 0
         self._opened = True
 
