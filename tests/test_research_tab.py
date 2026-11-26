@@ -872,3 +872,62 @@ def test_load_jsonl_does_not_flag_nonfinal_malformed_line_as_truncated(tmp_path)
     assert len(frames) == 2
     assert metadata["import_error_counts"]["malformed_lines"] == 1
     assert metadata["import_error_counts"]["possible_truncated_final_line"] is False
+
+
+def test_load_streaming_capture_verifies_integrity(tmp_path):
+    from freerov3r.capture_storage import StreamingCaptureWriter
+
+    path = tmp_path / "complete.jsonl"
+    writer = StreamingCaptureWriter(path)
+    writer.start({"session_name": "verified"})
+    writer.append_frame({"timestamp": 1.0, "arbitration_id": 291, "data": "0102"})
+    writer.append_frame({"timestamp": 2.0, "arbitration_id": 292, "data": "AABB"})
+    writer.finish({"notes": "test"})
+
+    metadata, frames = load_capture_file(path)
+
+    assert metadata["session_name"] == "verified"
+    assert metadata["notes"] == "test"
+    assert metadata["streaming_capture"]["status"] == "complete"
+    assert metadata["streaming_capture"]["frame_count"] == 2
+    assert len(frames) == 2
+    assert "import_warnings" not in metadata
+
+
+def test_load_interrupted_streaming_capture_recovers_frames_with_warning(tmp_path):
+    from freerov3r.capture_storage import StreamingCaptureWriter
+
+    path = tmp_path / "interrupted.jsonl"
+    writer = StreamingCaptureWriter(path)
+    writer.start({"session_name": "interrupted"})
+    writer.append_frame({"timestamp": 1.0, "arbitration_id": 291, "data": "0102"})
+    writer.close_incomplete()
+
+    metadata, frames = load_capture_file(path)
+
+    assert len(frames) == 1
+    assert metadata["streaming_capture"]["status"] == "recording"
+    assert any("not cleanly finalized" in warning for warning in metadata["import_warnings"])
+
+
+def test_load_streaming_capture_detects_modified_frame(tmp_path):
+    import json
+    from freerov3r.capture_storage import StreamingCaptureWriter
+
+    path = tmp_path / "modified.jsonl"
+    writer = StreamingCaptureWriter(path)
+    writer.start({"session_name": "modified"})
+    writer.append_frame({"timestamp": 1.0, "arbitration_id": 291, "data": "0102"})
+    writer.finish()
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    frame = json.loads(lines[1])
+    frame["data"] = "FFFF"
+    lines[1] = json.dumps(frame, separators=(",", ":"), sort_keys=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    metadata, frames = load_capture_file(path)
+
+    assert len(frames) == 1
+    assert frames[0]["data"] == "ffff"
+    assert any("integrity check failed" in warning for warning in metadata["import_warnings"])

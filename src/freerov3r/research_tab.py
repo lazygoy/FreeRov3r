@@ -6,6 +6,7 @@ it never transmits diagnostic requests or replays captured frames.
 """
 import csv
 import difflib
+import hashlib
 import json
 import math
 import re
@@ -23,7 +24,9 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
 )
 
-from freerov3r.capture_storage import CaptureStorageError, write_json_atomic
+from freerov3r.capture_storage import (
+    CaptureStorageError, StreamingCaptureWriter, write_json_atomic,
+)
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
@@ -843,19 +846,19 @@ def load_capture_file(path):
     elif suffix in (".jsonl", ".ndjson"):
         # Stream line-delimited archives to avoid a second full-file text copy.
         last_nonempty_line_malformed = False
+        stream_digest = hashlib.sha256()
+        stream_frame_count = 0
         with path.open("r", encoding="utf-8-sig") as handle:
             for line in handle:
                 if not line.strip():
                     continue
                 try:
                     item = json.loads(line)
-                    malformed = False
                 except json.JSONDecodeError:
                     malformed_lines += 1
-                    malformed = True
                     last_nonempty_line_malformed = True
                     continue
-                last_nonempty_line_malformed = malformed
+                last_nonempty_line_malformed = False
                 if not isinstance(item, dict):
                     invalid_records += 1
                     continue
@@ -866,12 +869,28 @@ def load_capture_file(path):
                     else:
                         invalid_records += 1
                 else:
+                    if item.get("record_type") == "frame":
+                        stream_digest.update(line.rstrip("\r\n").encode("utf-8") + b"\n")
+                        stream_frame_count += 1
                     normalized = _normalize_record(item)
                     if normalized is None:
                         invalid_records += 1
                     else:
                         records.append(normalized)
         possible_truncated_final_line = last_nonempty_line_malformed
+        stream_info = metadata.get("streaming_capture")
+        if isinstance(stream_info, dict) and stream_info.get("format") == StreamingCaptureWriter.FORMAT:
+            if stream_info.get("status") != "complete":
+                metadata.setdefault("import_warnings", []).append(
+                    "Streaming capture was not cleanly finalized; valid records were recovered."
+                )
+            elif (
+                stream_info.get("frame_count") != stream_frame_count
+                or stream_info.get("frames_sha256") != stream_digest.hexdigest()
+            ):
+                metadata.setdefault("import_warnings", []).append(
+                    "Streaming capture integrity check failed: frame count or SHA-256 digest does not match."
+                )
     elif suffix == ".csv":
         with path.open("r", newline="", encoding="utf-8-sig") as handle:
             for row in csv.DictReader(handle):
@@ -902,7 +921,7 @@ def load_capture_file(path):
             else:
                 records.append(normalized)
 
-    warnings = []
+    warnings = list(metadata.pop("import_warnings", []))
     if invalid_records:
         warnings.append(f"{invalid_records} invalid frame record(s) were skipped")
     if malformed_lines:
@@ -951,6 +970,8 @@ class ResearchTab(QWidget):
         self.metadata = {}
         self._recording_started_monotonic = None
         self.recording = False
+        self._stream_writer = None
+        self._stream_archive_path = None
         self.live_enabled = True
         self._pending_records = []
         self._pending_preview = []
@@ -1295,24 +1316,69 @@ class ResearchTab(QWidget):
 
     def toggle_recording(self):
         if not self.recording:
-            self.recording = True
+            started_at = datetime.now().astimezone().isoformat(timespec="seconds")
             self.markers.clear()
             self._recording_started_monotonic = time.monotonic()
             self.metadata.update({
                 "session_name": self.session_name.text().strip() or "Unnamed research session",
                 "operation": self.operation.currentText(),
                 "notes": self.notes.text().strip(),
-                "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "started_at": started_at,
                 "vin": self.metadata.get("vin"),
                 "interface": self.metadata.get("interface"),
+                "capture_timestamp_basis": "host_monotonic",
+                "device_timestamp_basis": "esp_timer_get_time microseconds since each board boot; clocks are independent and unsynchronized",
+                "firmware_protocol": 2,
             })
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            archive_path = Path.home() / ".freerov3r" / "captures" / f"research_{stamp}.jsonl"
+            writer = StreamingCaptureWriter(archive_path)
+            try:
+                writer.start(self.metadata)
+            except CaptureStorageError as exc:
+                QMessageBox.critical(self, "Automatic capture archive failed", str(exc))
+                self._recording_started_monotonic = None
+                return
+            self._stream_writer = writer
+            self._stream_archive_path = archive_path
+            self.recording = True
             self.record_button.setText("Stop research recording")
-            self.status_label.setText("RECORDING · Stores frames delivered by the main listener. This tab does not transmit or replay frames.")
+            self.status_label.setText(
+                "RECORDING · Automatically archiving frames to "
+                f"{archive_path}. Receive-only; no CAN frames are transmitted or replayed."
+            )
         else:
             self.recording = False
             self.metadata["stopped_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+            archive_path = None
+            archived_frame_count = 0
+            if self._stream_writer is not None:
+                writer = self._stream_writer
+                archived_frame_count = writer.frame_count
+                try:
+                    archive_path = writer.finish({
+                        **self.metadata,
+                        "frames_observed": writer.frame_count,
+                        "frames_retained": writer.frame_count,
+                    })
+                except CaptureStorageError as exc:
+                    try:
+                        writer.close_incomplete()
+                    except CaptureStorageError:
+                        pass
+                    self.status_label.setText(
+                        f"Recording stopped, but automatic archive finalization failed: {exc}"
+                    )
+                self._stream_writer = None
             self.record_button.setText("Start research recording")
-            self.status_label.setText("Recording stopped. Save the session or copy its REA analysis packet.")
+            if archive_path is not None:
+                self._stream_archive_path = archive_path
+                self.status_label.setText(
+                    f"Recording stopped. {archived_frame_count:,} frames archived to {archive_path}"
+                )
+            elif self._stream_archive_path is None:
+                self.status_label.setText("Recording stopped. No automatic archive was completed.")
+            self._recording_started_monotonic = None
 
 
     def mark_action(self):
@@ -1338,6 +1404,18 @@ class ResearchTab(QWidget):
         if self.recording:
             if self._recording_started_monotonic is not None:
                 record["elapsed_seconds"] = round(time.monotonic() - self._recording_started_monotonic, 6)
+            if self._stream_writer is not None:
+                try:
+                    self._stream_writer.append_frame(record)
+                except CaptureStorageError as exc:
+                    try:
+                        self._stream_writer.close_incomplete()
+                    except CaptureStorageError:
+                        pass
+                    self._stream_writer = None
+                    self.status_label.setText(
+                        f"Automatic archive write failed; in-memory recording continues: {exc}"
+                    )
             self.total_recorded_frames += 1
             if len(self._pending_records) >= self.MAX_PENDING_RECORDS:
                 self._pending_records.pop(0)
@@ -3611,6 +3689,11 @@ class ResearchTab(QWidget):
         QApplication.clipboard().setText(self.build_analysis_packet())
         self.status_label.setText("REA analysis packet copied to clipboard.")
 
+    def closeEvent(self, event):
+        if self.recording:
+            self.toggle_recording()
+        event.accept()
+
     def clear_data(self):
         answer = QMessageBox.question(
             self, "Clear research data",
@@ -3618,6 +3701,8 @@ class ResearchTab(QWidget):
         )
         if answer != QMessageBox.Yes:
             return
+        if self.recording:
+            self.toggle_recording()
         self.recording = False
         self.record_button.setText("Start research recording")
         self.frames.clear()
