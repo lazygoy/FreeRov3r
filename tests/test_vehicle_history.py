@@ -217,3 +217,39 @@ def test_vehicle_info_history_has_readable_mode09_records_and_failure():
     assert "Error: No response" in format_vehicle_info_scan_event({
         "type": "vehicle_info_scan_failed", "details": {"error": "No response"}
     })
+
+
+def test_history_json_export_preserves_complete_event_data(tmp_path):
+    import json
+    from freerov3r.vehicle_history import export_history_json
+
+    events = [{
+        "timestamp": "2026-11-26T05:00:00+00:00",
+        "vin": "SALXXXXXXXXXXXX1",
+        "type": "dtc_scan_completed",
+        "summary": "One code",
+        "details": {"dtcs": [{"code": "P0420"}]},
+    }]
+    destination = export_history_json(tmp_path / "exports" / "history.json", events)
+    assert json.loads(destination.read_text(encoding="utf-8")) == events
+
+
+def test_history_csv_export_keeps_nested_details_as_json(tmp_path):
+    import csv
+    import json
+    from freerov3r.vehicle_history import export_history_csv
+
+    events = [{
+        "timestamp": "2026-11-26T05:00:00+00:00",
+        "vin": "SALXXXXXXXXXXXX1",
+        "type": "dtc_scan_completed",
+        "summary": "One code",
+        "details": {"dtcs": [{"code": "P0420"}]},
+    }]
+    destination = export_history_csv(tmp_path / "history.csv", events)
+    with destination.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1
+    assert rows[0]["vin"] == "SALXXXXXXXXXXXX1"
+    assert rows[0]["type"] == "dtc_scan_completed"
+    assert json.loads(rows[0]["details"]) == {"dtcs": [{"code": "P0420"}]}

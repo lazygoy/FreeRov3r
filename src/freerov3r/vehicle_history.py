@@ -1,4 +1,5 @@
 """Local, VIN-keyed diagnostic event history. No network access."""
+import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -332,3 +333,37 @@ def format_vehicle_info_scan_event(event):
     if not results:
         lines.append("No valid Mode 09 ECU responses were returned.")
     return "\n".join(lines)
+
+
+def export_history_json(path, events):
+    """Export selected history events as a UTF-8 JSON array."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(list(events), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return destination
+
+
+def export_history_csv(path, events):
+    """Export selected history events with structured details kept as JSON."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=("timestamp", "vin", "type", "summary", "details"),
+        )
+        writer.writeheader()
+        for event in events:
+            writer.writerow({
+                "timestamp": event.get("timestamp", ""),
+                "vin": event.get("vin", "UNASSIGNED"),
+                "type": event.get("type", ""),
+                "summary": event.get("summary", ""),
+                "details": json.dumps(
+                    event.get("details") or {}, ensure_ascii=False, sort_keys=True
+                ),
+            })
+    return destination
