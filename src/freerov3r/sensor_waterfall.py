@@ -211,6 +211,7 @@ class SensorWaterfallDialog(QDialog):
     def __init__(self, sensor_capture, vin_provider=None, parent=None):
         super().__init__(parent)
         self.sensor_capture = sensor_capture
+        self.demo_samples = generate_lr4_demo_samples()
         self.vin_provider = vin_provider or (lambda: None)
         self.setWindowTitle("FreeRov3r | 3D Sensor Waterfall")
         self.resize(1100, 720)
@@ -257,7 +258,7 @@ class SensorWaterfallDialog(QDialog):
         vin = self.vin_provider()
         available = {}
         source = self.source_combo.currentData()
-        samples = (generate_lr4_demo_samples() if source == "demo"
+        samples = (self.demo_samples if source == "demo"
                    else self.sensor_capture.samples)
         if source == "demo":
             vin = None
@@ -294,7 +295,7 @@ class SensorWaterfallDialog(QDialog):
             if self.sensor_list.item(i).checkState() == Qt.Checked
         }
         lanes = prepare_waterfall_lanes(
-            (generate_lr4_demo_samples() if self.source_combo.currentData() == "demo"
+            (self.demo_samples if self.source_combo.currentData() == "demo"
              else self.sensor_capture.samples),
             selected_ids=selected,
             window_seconds=int(self.window_combo.currentData()),
