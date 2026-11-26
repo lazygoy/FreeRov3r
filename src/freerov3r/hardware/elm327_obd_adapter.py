@@ -178,7 +178,7 @@ class Elm327ObdAdapter(CanAdapter):
     def _parse_response_frames(response, channel, timestamp):
         """Parse header-enabled ELM327 CAN response lines into ISO-TP frames."""
         frames = []
-        for raw_line in response.replace(">", "\\n").replace("\\r", "\\n").splitlines():
+        for raw_line in response.replace(">", "\n").replace("\r", "\n").splitlines():
             parts = raw_line.strip().split()
             if len(parts) < 2 or len(parts[0]) not in (3, 8):
                 continue
