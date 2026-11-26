@@ -1,15 +1,142 @@
 """Crash-safe local storage helpers for CAN research captures."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
 class CaptureStorageError(Exception):
     """Raised when a capture archive cannot be safely written."""
+
+
+class StreamingCaptureWriter:
+    """Append-only JSONL writer for long-running CAN research captures.
+
+    Each frame is written as it arrives. Data is flushed and fsynced at a
+    bounded interval. A final metadata record contains the frame count and
+    SHA-256 digest, allowing imports to distinguish complete archives from
+    recordings interrupted by a crash or power loss.
+    """
+
+    FORMAT = "freerov3r-research-jsonl-v1"
+
+    def __init__(self, path: str | Path, *, flush_interval_seconds: float = 1.0):
+        if flush_interval_seconds <= 0:
+            raise ValueError("Flush interval must be greater than zero.")
+        self.path = Path(path)
+        self.flush_interval_seconds = float(flush_interval_seconds)
+        self._handle = None
+        self._last_flush = 0.0
+        self._frame_count = 0
+        self._digest = hashlib.sha256()
+
+    @property
+    def frame_count(self) -> int:
+        return self._frame_count
+
+    @property
+    def is_open(self) -> bool:
+        return self._handle is not None and not self._handle.closed
+
+    def _write_record(self, record: dict[str, Any]) -> bytes:
+        encoded = json.dumps(
+            record, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+        self._handle.write(encoded.decode("utf-8") + "\n")
+        return encoded
+
+    def _flush(self, *, force: bool = False) -> None:
+        if not self.is_open:
+            return
+        now = time.monotonic()
+        if force or now - self._last_flush >= self.flush_interval_seconds:
+            self._handle.flush()
+            os.fsync(self._handle.fileno())
+            self._last_flush = now
+
+    def start(self, metadata: dict[str, Any] | None = None) -> Path:
+        if self.is_open:
+            raise CaptureStorageError("Streaming capture is already open.")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._handle = self.path.open("x", encoding="utf-8", newline="\n")
+            self._write_record({
+                "record_type": "metadata",
+                "metadata": {
+                    **(metadata or {}),
+                    "streaming_capture": {
+                        "format": self.FORMAT,
+                        "status": "recording",
+                    },
+                },
+            })
+            self._flush(force=True)
+            return self.path
+        except (OSError, TypeError, ValueError) as exc:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+            raise CaptureStorageError(
+                f"Could not start streaming capture at {self.path}: {exc}"
+            ) from exc
+
+    def append_frame(self, frame: dict[str, Any]) -> None:
+        if not self.is_open:
+            raise CaptureStorageError("Streaming capture is not open.")
+        if not isinstance(frame, dict):
+            raise CaptureStorageError("A captured frame must be a dictionary.")
+        try:
+            record = {"record_type": "frame", **frame}
+            encoded = self._write_record(record)
+            self._digest.update(encoded + b"\n")
+            self._frame_count += 1
+            self._flush()
+        except (OSError, TypeError, ValueError) as exc:
+            raise CaptureStorageError(
+                f"Could not append frame to streaming capture {self.path}: {exc}"
+            ) from exc
+
+    def finish(self, metadata: dict[str, Any] | None = None) -> Path:
+        if not self.is_open:
+            raise CaptureStorageError("Streaming capture is not open.")
+        try:
+            details = {
+                **(metadata or {}),
+                "streaming_capture": {
+                    "format": self.FORMAT,
+                    "status": "complete",
+                    "frame_count": self._frame_count,
+                    "frames_sha256": self._digest.hexdigest(),
+                    "finished_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                },
+            }
+            self._write_record({"record_type": "metadata", "metadata": details})
+            self._flush(force=True)
+            self._handle.close()
+            self._handle = None
+            return self.path
+        except (OSError, TypeError, ValueError) as exc:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+            raise CaptureStorageError(
+                f"Could not finalize streaming capture {self.path}: {exc}"
+            ) from exc
+
+    def close_incomplete(self) -> None:
+        """Close the file without a completion marker, preserving recovery evidence."""
+        if self.is_open:
+            try:
+                self._flush(force=True)
+            finally:
+                self._handle.close()
+                self._handle = None
 
 
 def write_json_atomic(path: str | Path, payload: Any) -> Path:
