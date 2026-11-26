@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
     QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
-    QDialog, QFrame, QScrollArea, QSizePolicy, QInputDialog,
+    QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame, QScrollArea, QSizePolicy, QInputDialog,
 )
 
 try:
@@ -44,6 +44,7 @@ from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
 from .sensors.scaling import normalize_values, sample_clock, sample_time
 from .sensors.analysis import summarize_sensor_samples
+from .sensors.thresholds import evaluate_sensor_threshold, normalize_sensor_thresholds
 from .sensor_dashboard import SensorDashboardDock
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
@@ -964,20 +965,31 @@ class SensorGraphTab(QWidget):
 
         stats_group = QGroupBox("LIVE SENSOR HEALTH")
         stats_layout = QVBoxLayout(stats_group)
-        self.stats_table = QTableWidget(0, 9)
+        self.stats_table = QTableWidget(0, 10)
         self.stats_table.setHorizontalHeaderLabels([
-            "Sensor", "Current", "Min", "Average", "Max", "Rate", "Age", "Samples", "Status"
+            "Sensor", "Current", "Min", "Average", "Max", "Rate", "Age", "Samples", "Status", "Alert"
         ])
         self.stats_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for column in range(1, 9):
+        for column in range(1, 10):
             self.stats_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeToContents)
         self.stats_table.verticalHeader().setVisible(False)
         self.stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.stats_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.stats_table.setAlternatingRowColors(True)
         self.stats_table.setMaximumHeight(170)
-        self.stats_table.setToolTip("Valid finite samples only. Signals become stale after five seconds without an update.")
+        self.stats_table.setToolTip(
+            "Valid finite samples only. Signals become stale after five seconds. "
+            "Alerts use only thresholds you explicitly configure; no OEM limits are assumed."
+        )
         stats_layout.addWidget(self.stats_table)
+        threshold_row = QHBoxLayout()
+        self.threshold_button = QPushButton("Configure Alert for Selected Sensor")
+        self.threshold_button.clicked.connect(self.configure_sensor_threshold)
+        threshold_row.addWidget(self.threshold_button)
+        threshold_note = QLabel("User-defined only. Alerts are OFF until enabled.")
+        threshold_note.setWordWrap(True)
+        threshold_row.addWidget(threshold_note, 1)
+        stats_layout.addLayout(threshold_row)
         layout.addWidget(stats_group)
         self._last_stats_refresh = 0.0
 
@@ -1105,15 +1117,94 @@ class SensorGraphTab(QWidget):
                 f"{summary.rate_hz:.2f} Hz" if summary.rate_hz is not None else "—",
                 f"{summary.age_seconds:.1f} s", str(summary.sample_count),
                 "STALE" if summary.stale else "LIVE",
+                "N/A" if summary.stale else evaluate_sensor_threshold(
+                    summary.current,
+                    (self.parent_settings.get("sensor_thresholds", {}) or {}).get(summary.sensor_id, {}),
+                ),
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if column == 8:
+                if column == 0:
+                    item.setData(Qt.UserRole, summary.sensor_id)
+                elif column == 8:
                     item.setForeground(QColor("#d9a441") if summary.stale else QColor("#39d98a"))
                     item.setTextAlignment(Qt.AlignCenter)
+                elif column == 9:
+                    item.setTextAlignment(Qt.AlignCenter)
+                    if value in ("LOW", "HIGH"):
+                        item.setForeground(QColor("#e05a5a"))
+                    elif value == "OK":
+                        item.setForeground(QColor("#39d98a"))
+                    else:
+                        item.setForeground(QColor("#77818c"))
                 elif column in (1, 2, 3, 4, 5, 6, 7):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.stats_table.setItem(row, column, item)
+
+    def configure_sensor_threshold(self):
+        row = self.stats_table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Select a sensor", "Select a sensor row in the health table first.")
+            return
+        sensor_item = self.stats_table.item(row, 0)
+        if sensor_item is None:
+            return
+        sensor_id = sensor_item.data(Qt.UserRole)
+        if not sensor_id:
+            return
+        stored = self.parent_settings.get("sensor_thresholds", {})
+        config = normalize_sensor_thresholds(stored.get(sensor_id, {}) if isinstance(stored, dict) else {})
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Alert Threshold | {sensor_item.text()}")
+        form = QFormLayout(dialog)
+        enabled = QCheckBox("Enable user-defined alert")
+        enabled.setChecked(config["enabled"])
+        minimum_enabled = QCheckBox("Minimum")
+        maximum_enabled = QCheckBox("Maximum")
+        minimum = QDoubleSpinBox()
+        maximum = QDoubleSpinBox()
+        for control in (minimum, maximum):
+            control.setRange(-1000000000.0, 1000000000.0)
+            control.setDecimals(4)
+            control.setKeyboardTracking(False)
+        minimum_enabled.setChecked(config["minimum"] is not None)
+        maximum_enabled.setChecked(config["maximum"] is not None)
+        minimum.setValue(config["minimum"] if config["minimum"] is not None else 0.0)
+        maximum.setValue(config["maximum"] if config["maximum"] is not None else 0.0)
+        minimum.setEnabled(minimum_enabled.isChecked())
+        maximum.setEnabled(maximum_enabled.isChecked())
+        minimum_enabled.toggled.connect(minimum.setEnabled)
+        maximum_enabled.toggled.connect(maximum.setEnabled)
+        form.addRow(enabled)
+        min_row = QHBoxLayout()
+        min_row.addWidget(minimum_enabled)
+        min_row.addWidget(minimum)
+        form.addRow("Low alert:", min_row)
+        max_row = QHBoxLayout()
+        max_row.addWidget(maximum_enabled)
+        max_row.addWidget(maximum)
+        form.addRow("High alert:", max_row)
+        note = QLabel("These are your own alert limits, not Land Rover specifications.")
+        note.setWordWrap(True)
+        form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        low = minimum.value() if minimum_enabled.isChecked() else None
+        high = maximum.value() if maximum_enabled.isChecked() else None
+        if low is not None and high is not None and low >= high:
+            QMessageBox.warning(self, "Invalid alert limits", "The minimum must be lower than the maximum.")
+            return
+        thresholds = self.parent_settings.setdefault("sensor_thresholds", {})
+        if not isinstance(thresholds, dict):
+            thresholds = {}
+            self.parent_settings["sensor_thresholds"] = thresholds
+        thresholds[str(sensor_id)] = {"enabled": enabled.isChecked(), "minimum": low, "maximum": high}
+        save_settings(self.parent_settings)
+        self.update_statistics(force=True)
 
     def mark_sample(self, sensor_id):
         self.last_sample_time[str(sensor_id)] = time.monotonic()
@@ -3679,6 +3770,7 @@ class MainWindow(QMainWindow):
         self._build_sensors_tab()
         self.graph_tab = SensorGraphTab(self.sensor_capture)
         self.graph_tab.parent_settings = self.settings
+        self.graph_tab.update_statistics(force=True)
         self.graph_tab.refresh_favorite_groups()
         self.tabs.addTab(self.graph_tab, "Graph")
         self.obd_tab = OBDTab(self.settings)
