@@ -245,11 +245,11 @@ def test_elm327_obd_adapter_reads_mode02_freeze_frame_pid(monkeypatch):
     import freerov3r.hardware.elm327_obd_adapter as module
 
     fake = FakeSerial(responses=[
-        b"ELM327 v1.5\\r>",
-        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
-        b"OK\\r>", b"OK\\r>",
-        b"7E8 06 41 00 00 10 00 00\\r>",
-        b"7E8 05 42 0C 00 1A F8\\r>",
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 05 42 0C 00 1A F8\r>",
     ])
     monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
     adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
