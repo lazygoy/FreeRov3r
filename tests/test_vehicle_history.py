@@ -384,3 +384,36 @@ def test_unreadable_history_file_is_not_overwritten_when_quarantine_fails(tmp_pa
     else:
         raise AssertionError("record should not overwrite the unreadable history")
     assert path.read_text(encoding="utf-8") == "{ invalid"
+
+
+
+def test_structurally_invalid_history_is_preserved_before_recovery(tmp_path):
+    import json
+
+    path = tmp_path / "vehicle_history.json"
+    original = '[{"type": "dtc_scan_completed", "details": "not an object"}]'
+    path.write_text(original, encoding="utf-8")
+
+    store = VehicleHistoryStore(path)
+
+    assert store.events == []
+    assert store.recovery_backup_path is not None
+    assert store.recovery_backup_path.read_text(encoding="utf-8") == original
+    assert not path.exists()
+
+    store.record("SALXXXXXXXXXXXX1", "dtc_scan_completed", "Recovered history")
+    recovered = json.loads(path.read_text(encoding="utf-8"))
+    assert recovered[0]["summary"] == "Recovered history"
+
+
+def test_history_with_non_object_event_is_quarantined(tmp_path):
+    path = tmp_path / "vehicle_history.json"
+    original = '[{"type": "capture_started"}, 42]'
+    path.write_text(original, encoding="utf-8")
+
+    store = VehicleHistoryStore(path)
+
+    assert store.events == []
+    assert store.recovery_backup_path is not None
+    assert store.recovery_backup_path.read_text(encoding="utf-8") == original
+    assert not path.exists()
