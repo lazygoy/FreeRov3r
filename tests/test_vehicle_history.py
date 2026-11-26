@@ -345,3 +345,42 @@ def test_can_activity_history_filter_includes_capture_and_vin_events_only():
         events[0], events[2], events[3],
     ]
     assert filter_can_activity_events([]) == []
+
+
+
+def test_corrupt_history_is_preserved_before_new_history_is_written(tmp_path):
+    import json
+
+    path = tmp_path / "vehicle_history.json"
+    original = "{ this is not valid JSON"
+    path.write_text(original, encoding="utf-8")
+
+    store = VehicleHistoryStore(path)
+
+    assert store.events == []
+    assert store.recovery_backup_path is not None
+    assert store.recovery_backup_path.read_text(encoding="utf-8") == original
+    assert not path.exists()
+
+    store.record("SALXXXXXXXXXXXX1", "dtc_scan_completed", "New event")
+    assert json.loads(path.read_text(encoding="utf-8"))[0]["summary"] == "New event"
+
+
+def test_unreadable_history_file_is_not_overwritten_when_quarantine_fails(tmp_path, monkeypatch):
+    path = tmp_path / "vehicle_history.json"
+    path.write_text("{ invalid", encoding="utf-8")
+
+    def fail_replace(self, target):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(type(path), "replace", fail_replace)
+    store = VehicleHistoryStore(path)
+
+    assert store.load_error == "permission denied"
+    try:
+        store.record("SALXXXXXXXXXXXX1", "dtc_scan_completed", "Must not overwrite")
+    except RuntimeError as exc:
+        assert "refusing to overwrite" in str(exc)
+    else:
+        raise AssertionError("record should not overwrite the unreadable history")
+    assert path.read_text(encoding="utf-8") == "{ invalid"

@@ -116,17 +116,38 @@ class VehicleHistoryStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.events = []
+        self.recovery_backup_path = None
+        self.load_error = None
         self.load()
 
+    def _quarantine_corrupt_file(self):
+        """Preserve unreadable history before allowing a fresh history file."""
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        backup = self.path.with_name(f"{self.path.name}.corrupt-{stamp}")
+        try:
+            self.path.replace(backup)
+            self.recovery_backup_path = backup
+        except OSError as exc:
+            self.load_error = str(exc)
+
     def load(self):
+        self.events = []
+        self.recovery_backup_path = None
+        self.load_error = None
         if not self.path.exists():
-            self.events = []
             return
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            self.events = data if isinstance(data, list) else []
-        except (OSError, json.JSONDecodeError):
-            self.events = []
+        except json.JSONDecodeError:
+            self._quarantine_corrupt_file()
+            return
+        except OSError as exc:
+            self.load_error = str(exc)
+            return
+        if not isinstance(data, list):
+            self._quarantine_corrupt_file()
+            return
+        self.events = data
 
     def record(self, vin, event_type, summary, details=None):
         event = {
@@ -141,6 +162,11 @@ class VehicleHistoryStore:
         return event
 
     def save(self):
+        if self.load_error:
+            raise RuntimeError(
+                "Vehicle history could not be read; refusing to overwrite the original file: "
+                f"{self.load_error}"
+            )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
         temporary.write_text(json.dumps(self.events, indent=2, ensure_ascii=False), encoding="utf-8")
