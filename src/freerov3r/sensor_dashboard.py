@@ -16,6 +16,7 @@ except ImportError:
     HAS_CHARTS = False
 
 from .sensors.scaling import sample_clock, sample_time
+from .sensor_waterfall import SensorWaterfallDialog
 
 
 PANEL_COUNTS = (1, 2, 4, 6, 8)
@@ -284,6 +285,7 @@ class SensorDashboardDock(QDockWidget):
         self.settings = settings if isinstance(settings, dict) else {}
         self.save_settings_callback = save_settings_callback
         self._loading_config = False
+        self._waterfall_dialog = None
         self.setObjectName("sensorDashboardDock")
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
         self.setFeatures(
@@ -316,6 +318,9 @@ class SensorDashboardDock(QDockWidget):
         self.save_favorite_button = QPushButton("Save layout")
         self.save_favorite_button.clicked.connect(self.save_layout_to_favorite)
         controls.addWidget(self.save_favorite_button)
+        self.waterfall_button = QPushButton("3D Waterfall")
+        self.waterfall_button.clicked.connect(self.open_waterfall)
+        controls.addWidget(self.waterfall_button)
         controls.addStretch(1)
         self.topmost = QCheckBox("Floating dashboard stays on top")
         self.topmost.toggled.connect(self._set_topmost)
@@ -345,6 +350,15 @@ class SensorDashboardDock(QDockWidget):
         self.refresh_timer.setInterval(750)
         self.refresh_timer.timeout.connect(self.refresh)
         self.refresh_timer.start()
+
+    def open_waterfall(self):
+        if self._waterfall_dialog is None:
+            self._waterfall_dialog = SensorWaterfallDialog(
+                self.sensor_capture, vin_provider=self.vin_provider, parent=self
+            )
+        self._waterfall_dialog.show()
+        self._waterfall_dialog.raise_()
+        self._waterfall_dialog.activateWindow()
 
     def _refresh_favorites(self, selected_name=None):
         groups = self.settings.get("obd_pid_favorites", {})
