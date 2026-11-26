@@ -16,6 +16,7 @@ from ..diagnostics.obd2 import PID_DEFINITIONS, parse_mode01_supported_pids
 from ..diagnostics.dtc import decode_j1979_dtcs
 from ..diagnostics.readiness import decode_obd_readiness
 from ..diagnostics.freeze_frame import decode_freeze_frame_response
+from ..diagnostics.vehicle_info import decode_j1979_vehicle_info, PID_NAMES as VEHICLE_INFO_PID_NAMES
 from ..isotp import reassemble_isotp
 
 
@@ -301,6 +302,41 @@ class Elm327ObdAdapter(CanAdapter):
                         is_extended_id=message["extended"],
                         channel=message["channel"],
                         frame_number=frame_number,
+                    ))
+                except ValueError:
+                    continue
+        return results
+
+    def read_vehicle_info(self, pids=(0x02, 0x04, 0x06, 0x0A)):
+        """Read standardized Mode 09 vehicle identification data.
+
+        This explicit read-only request must run on the adapter-owning thread
+        while normal polling is paused. Only complete, matching physical ECU
+        responses are returned.
+        """
+        if self.connection is None:
+            raise RuntimeError("ELM327 OBD-II adapter is not open")
+        selected = tuple(dict.fromkeys(int(pid) for pid in pids))
+        invalid = [pid for pid in selected if pid not in VEHICLE_INFO_PID_NAMES]
+        if invalid:
+            raise ValueError(f"Unsupported Mode 09 PID(s): {invalid}")
+
+        results = []
+        for pid in selected:
+            response = self._command(f"09{pid:02X}")
+            frames = self._parse_response_frames(response, self.port, time.time())
+            for message in reassemble_isotp(frames):
+                if message.get("status") != "complete":
+                    continue
+                payload = bytes.fromhex(message.get("payload", ""))
+                if len(payload) < 3 or payload[:2] != bytes((0x49, pid)):
+                    continue
+                try:
+                    results.append(decode_j1979_vehicle_info(
+                        payload,
+                        arbitration_id=message["arbitration_id"],
+                        is_extended_id=message["extended"],
+                        channel=message["channel"],
                     ))
                 except ValueError:
                     continue
