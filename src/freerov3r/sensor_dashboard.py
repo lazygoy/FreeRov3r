@@ -57,7 +57,7 @@ def normalize_dashboard_layout(layout):
         if window not in allowed_windows:
             window = 60
         panels.append({
-            "sensor_ids": sorted({str(value) for value in ids if str(value).strip()}),
+            "sensor_ids": sorted({str(value).strip() for value in ids if value is not None and str(value).strip()}),
             "window_seconds": window,
             "auto_scale": bool(config.get("auto_scale", True)),
         })
