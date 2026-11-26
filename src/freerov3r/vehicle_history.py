@@ -198,3 +198,33 @@ def format_mode06_scan_event(event):
         lines.append("No valid Mode 06 result records were returned.")
     lines.extend(["", "Values are raw. No engineering units or scaling are inferred."])
     return "\n".join(lines)
+
+
+READINESS_SCAN_EVENT_TYPES = {"readiness_scan_completed", "readiness_scan_failed"}
+FREEZE_FRAME_SCAN_EVENT_TYPES = {"freeze_frame_scan_completed", "freeze_frame_scan_failed"}
+VEHICLE_INFO_SCAN_EVENT_TYPES = {"vehicle_info_scan_completed", "vehicle_info_scan_failed"}
+
+
+def filter_readiness_scan_events(events):
+    """Return completed and failed OBD-II readiness scans, preserving order."""
+    return [event for event in events if event.get("type") in READINESS_SCAN_EVENT_TYPES]
+
+
+def filter_freeze_frame_scan_events(events):
+    """Return completed and failed OBD-II freeze-frame scans, preserving order."""
+    return [event for event in events if event.get("type") in FREEZE_FRAME_SCAN_EVENT_TYPES]
+
+
+def filter_vehicle_info_scan_events(events):
+    """Return completed and failed OBD-II vehicle-information scans, preserving order."""
+    return [event for event in events if event.get("type") in VEHICLE_INFO_SCAN_EVENT_TYPES]
+
+
+def filter_obd_scan_events(events):
+    """Return all supported OBD-II scan event types, preserving event order."""
+    scan_types = (
+        DTC_SCAN_EVENT_TYPES | READINESS_SCAN_EVENT_TYPES |
+        FREEZE_FRAME_SCAN_EVENT_TYPES | VEHICLE_INFO_SCAN_EVENT_TYPES |
+        MODE06_SCAN_EVENT_TYPES
+    )
+    return [event for event in events if event.get("type") in scan_types]

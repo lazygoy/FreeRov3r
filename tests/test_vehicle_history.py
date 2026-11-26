@@ -110,3 +110,29 @@ def test_mode06_history_filter_and_readable_raw_report():
     assert "ECU: 000007E8 (11-bit)" in report
     assert "No engineering units or scaling are inferred." in report
     assert "Error: No response" in format_mode06_scan_event(scans[1])
+
+
+
+def test_obd_history_filters_cover_all_supported_scan_families():
+    from freerov3r.vehicle_history import (
+        filter_obd_scan_events, filter_readiness_scan_events,
+        filter_freeze_frame_scan_events, filter_vehicle_info_scan_events,
+    )
+
+    events = [
+        {"type": "capture"},
+        {"type": "dtc_scan_completed"},
+        {"type": "readiness_scan_failed"},
+        {"type": "freeze_frame_scan_completed"},
+        {"type": "vehicle_info_scan_failed"},
+        {"type": "monitor_tests_scan_completed"},
+        {"type": "unrelated_event"},
+    ]
+    assert [event["type"] for event in filter_obd_scan_events(events)] == [
+        "dtc_scan_completed", "readiness_scan_failed",
+        "freeze_frame_scan_completed", "vehicle_info_scan_failed",
+        "monitor_tests_scan_completed",
+    ]
+    assert [event["type"] for event in filter_readiness_scan_events(events)] == ["readiness_scan_failed"]
+    assert [event["type"] for event in filter_freeze_frame_scan_events(events)] == ["freeze_frame_scan_completed"]
+    assert [event["type"] for event in filter_vehicle_info_scan_events(events)] == ["vehicle_info_scan_failed"]

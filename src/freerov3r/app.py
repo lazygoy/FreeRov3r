@@ -55,6 +55,8 @@ except ImportError:
 from .vehicle_history import (
     VehicleHistoryStore, filter_dtc_scan_events, format_dtc_scan_event,
     filter_mode06_scan_events, format_mode06_scan_event,
+    filter_readiness_scan_events, filter_freeze_frame_scan_events,
+    filter_vehicle_info_scan_events, filter_obd_scan_events,
     format_readiness_scan_event,
 )
 from .diagnostics.vin_decoder import VinFrameDecoder
@@ -2899,7 +2901,11 @@ class VehicleHistoryTab(QWidget):
         controls.addWidget(QLabel("Event type:"))
         self.event_filter = QComboBox()
         self.event_filter.addItem("All events", "all")
+        self.event_filter.addItem("All OBD-II scans", "obd")
         self.event_filter.addItem("DTC scans", "dtc")
+        self.event_filter.addItem("Readiness scans", "readiness")
+        self.event_filter.addItem("Freeze-frame scans", "freeze_frame")
+        self.event_filter.addItem("Vehicle information scans", "vehicle_info")
         self.event_filter.addItem("Mode 06 scans", "mode06")
         self.event_filter.currentIndexChanged.connect(self.refresh_events)
         controls.addWidget(self.event_filter)
@@ -2938,8 +2944,16 @@ class VehicleHistoryTab(QWidget):
         selected_vin = self.vin_filter.currentData()
         events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
         event_filter = self.event_filter.currentData()
-        if event_filter == "dtc":
+        if event_filter == "obd":
+            events = filter_obd_scan_events(events)
+        elif event_filter == "dtc":
             events = filter_dtc_scan_events(events)
+        elif event_filter == "readiness":
+            events = filter_readiness_scan_events(events)
+        elif event_filter == "freeze_frame":
+            events = filter_freeze_frame_scan_events(events)
+        elif event_filter == "vehicle_info":
+            events = filter_vehicle_info_scan_events(events)
         elif event_filter == "mode06":
             events = filter_mode06_scan_events(events)
         for event in reversed(events):
