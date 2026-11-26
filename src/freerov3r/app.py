@@ -52,7 +52,7 @@ try:
 except ImportError:
     QPdfDocument = QPdfView = None
     HAS_PDF_VIEWER = False
-from .vehicle_history import VehicleHistoryStore
+from .vehicle_history import VehicleHistoryStore, filter_dtc_scan_events, format_dtc_scan_event
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .asset_loader import ASSET_DIR, load_asset_pixmap
@@ -2472,6 +2472,9 @@ class VehicleHistoryTab(QWidget):
         self.vin_filter = QComboBox()
         self.vin_filter.currentIndexChanged.connect(self.refresh_events)
         controls.addWidget(self.vin_filter, 1)
+        self.dtc_only_filter = QCheckBox("DTC scans only")
+        self.dtc_only_filter.toggled.connect(self.refresh_events)
+        controls.addWidget(self.dtc_only_filter)
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
         controls.addWidget(refresh_btn)
@@ -2506,6 +2509,8 @@ class VehicleHistoryTab(QWidget):
         self.events_tree.clear()
         selected_vin = self.vin_filter.currentData()
         events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
+        if self.dtc_only_filter.isChecked():
+            events = filter_dtc_scan_events(events)
         for event in reversed(events):
             timestamp = event.get("timestamp", "")
             item = QTreeWidgetItem([
@@ -2522,7 +2527,12 @@ class VehicleHistoryTab(QWidget):
     def show_details(self):
         item = self.events_tree.currentItem()
         event = item.data(0, Qt.UserRole) if item else None
-        self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False) if event else "")
+        if not event:
+            self.details.clear()
+        elif event.get("type") in {"dtc_scan_completed", "dtc_scan_failed"}:
+            self.details.setPlainText(format_dtc_scan_event(event))
+        else:
+            self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False))
 
 
 
