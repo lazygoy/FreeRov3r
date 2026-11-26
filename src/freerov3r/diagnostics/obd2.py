@@ -217,6 +217,14 @@ PID_MULTI_VALUE_KEYS = {
 
 
 
+def _is_mode01_response_id(arbitration_id, is_extended_id=False):
+    """Recognize ISO 15765-4 physical OBD response IDs (11-bit and 29-bit)."""
+    can_id = int(arbitration_id)
+    if is_extended_id:
+        return 0x18DAF100 <= can_id <= 0x18DAF1FF
+    return 0x7E8 <= can_id <= 0x7EF
+
+
 class Mode01ScalingContext:
     """Per-ECU dynamic scaling advertised by Mode 01 PID 4F."""
 
@@ -229,7 +237,7 @@ class Mode01ScalingContext:
 
     def observe(self, frame):
         data = frame.data
-        if (frame.is_extended_id or not 0x7E8 <= frame.arbitration_id <= 0x7EF
+        if (not _is_mode01_response_id(frame.arbitration_id, frame.is_extended_id)
                 or len(data) < 7 or data[1:3] != bytes((0x41, 0x4F))):
             return False
         self._limits[frame.arbitration_id] = {
@@ -308,7 +316,7 @@ def decode_mode01_measurements(frame: CanFrame, scaling_context=None):
     Unsupported frames, malformed payloads and unavailable values return [].
     """
     data = frame.data
-    if frame.is_extended_id or not 0x7E8 <= frame.arbitration_id <= 0x7EF:
+    if not _is_mode01_response_id(frame.arbitration_id, frame.is_extended_id):
         return []
     if len(data) < 4 or data[1] != 0x41:
         return []

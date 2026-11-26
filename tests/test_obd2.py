@@ -248,3 +248,19 @@ def test_pid_4f_zero_limits_use_j1979_default_scaling():
     assert voltage_values[0][3] == pytest.approx(0x4000 * 2 / 65535)
     assert voltage_values[1][3] == pytest.approx(0x8000 * 8 / 65535)
     assert current_values[1][3] == pytest.approx(7232 / 256)
+
+
+
+@pytest.mark.parametrize(
+    ("can_id", "extended"),
+    [(0x7E8, False), (0x18DAF110, True)],
+)
+def test_decode_mode01_accepts_standard_and_extended_physical_response_ids(can_id, extended):
+    frame = CanFrame(
+        can_id,
+        bytes([4, 0x41, 0x0C, 0x1A, 0xF8, 0, 0]),
+        is_extended_id=extended,
+    )
+    measurements = decode_mode01_measurements(frame)
+    assert measurements[0][1] == "value"
+    assert measurements[0][3] == pytest.approx(1726)
