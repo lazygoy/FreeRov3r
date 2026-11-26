@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 
 from .asset_loader import load_asset_pixmap
-from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QButtonGroup, QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 
 class QuickDrawer(QDockWidget):
@@ -75,6 +75,15 @@ class QuickDrawer(QDockWidget):
         section = QLabel("WORKSPACES")
         section.setObjectName("drawerSection")
         layout.addWidget(section)
+
+        self.nav_search = QLineEdit()
+        self.nav_search.setObjectName("drawerNavSearch")
+        self.nav_search.setPlaceholderText("Filter workspaces…")
+        self.nav_search.setClearButtonEnabled(True)
+        self.nav_search.setAccessibleName("Filter workspaces")
+        self.nav_search.setToolTip("Filter the workspace shortcuts below")
+        layout.addWidget(self.nav_search)
+
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons = {}
@@ -98,6 +107,14 @@ class QuickDrawer(QDockWidget):
             self.nav_group.addButton(button)
             self.nav_buttons[target] = button
             layout.addWidget(button)
+
+        self.nav_empty_label = QLabel("No matching workspace")
+        self.nav_empty_label.setObjectName("drawerNavEmpty")
+        self.nav_empty_label.setAlignment(Qt.AlignCenter)
+        self.nav_empty_label.hide()
+        layout.addWidget(self.nav_empty_label)
+        self.nav_search.textChanged.connect(self._filter_navigation)
+
         note = QLabel(
             "Passive monitoring only. ECU transmission, coding and programming remain "
             "disabled until vehicle-specific protocols are verified."
@@ -108,6 +125,15 @@ class QuickDrawer(QDockWidget):
         layout.addWidget(note)
         scroll.setWidget(body)
         self.setWidget(scroll)
+
+    def _filter_navigation(self, text):
+        query = str(text or "").strip().casefold()
+        visible_count = 0
+        for button in self.nav_buttons.values():
+            visible = not query or query in button.text().casefold()
+            button.setVisible(visible)
+            visible_count += int(visible)
+        self.nav_empty_label.setVisible(visible_count == 0)
 
     def set_current_workspace(self, name):
         button = self.nav_buttons.get(name)
