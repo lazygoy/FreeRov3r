@@ -7,6 +7,7 @@ it never transmits diagnostic requests or replays captured frames.
 import csv
 import difflib
 import json
+import math
 import re
 import time
 from collections import Counter
@@ -727,8 +728,13 @@ def summarize_operation_did_response_variation(operation_summaries):
 def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
-        "timestamp_clock": "host_monotonic",
+        "timestamp_clock": getattr(frame, "timestamp_clock_domain", "unknown"),
+        "timestamp_clock_domain": getattr(frame, "timestamp_clock_domain", "unknown"),
+        "timestamp_source": getattr(frame, "timestamp_source", "unknown"),
+        "source_timestamp": getattr(frame, "source_timestamp", None),
+        "source_timestamp_clock_domain": getattr(frame, "source_timestamp_clock_domain", None),
         "device_timestamp_us": getattr(frame, "device_timestamp_us", None),
+        "device_timestamp_clock_domain": getattr(frame, "device_timestamp_clock_domain", None),
         "arbitration_id": int(frame.arbitration_id),
         "extended": bool(frame.is_extended_id),
         "data": bytes(frame.data).hex(),
@@ -760,14 +766,28 @@ def _normalize_record(record):
             extended = extended_value.strip().lower() in ("1", "true", "yes", "ext", "extended")
         else:
             extended = bool(extended_value)
+        timestamp_clock = record.get(
+            "timestamp_clock_domain", record.get("timestamp_clock", "unknown")
+        )
         normalized = {
             "timestamp": float(record.get("timestamp", record.get("time", 0.0)) or 0.0),
             "arbitration_id": arbitration_id,
             "extended": extended,
             "data": payload.hex(),
             "channel": record.get("channel"),
-            "timestamp_clock": record.get("timestamp_clock", "unknown"),
+            "timestamp_clock": timestamp_clock,
+            "timestamp_clock_domain": timestamp_clock,
         }
+        normalized["timestamp_source"] = record.get("timestamp_source", "unknown")
+        normalized["source_timestamp_clock_domain"] = record.get("source_timestamp_clock_domain")
+        normalized["device_timestamp_clock_domain"] = record.get("device_timestamp_clock_domain")
+        if record.get("source_timestamp") is not None:
+            try:
+                source_timestamp = float(record["source_timestamp"])
+                if math.isfinite(source_timestamp):
+                    normalized["source_timestamp"] = source_timestamp
+            except (TypeError, ValueError):
+                pass
         if record.get("device_timestamp_us") is not None:
             try:
                 device_timestamp_us = int(record["device_timestamp_us"])
@@ -849,6 +869,8 @@ class ResearchTab(QWidget):
     """Local-only protocol capture, annotation, comparison and REA handoff."""
 
     MAX_DISPLAY_ROWS = 1500
+    MAX_CAPTURE_FRAMES = 100000
+    MAX_PENDING_RECORDS = 100000
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -865,6 +887,9 @@ class ResearchTab(QWidget):
         self.live_enabled = True
         self._pending_records = []
         self._pending_preview = []
+        self.total_recorded_frames = 0
+        self.dropped_recorded_frames = 0
+        self.dropped_pending_frames = 0
         self.dbc_library = DBCLibrary()
 
         self.refresh_timer = QTimer(self)
@@ -1246,6 +1271,11 @@ class ResearchTab(QWidget):
         if self.recording:
             if self._recording_started_monotonic is not None:
                 record["elapsed_seconds"] = round(time.monotonic() - self._recording_started_monotonic, 6)
+            self.total_recorded_frames += 1
+            if len(self._pending_records) >= self.MAX_PENDING_RECORDS:
+                self._pending_records.pop(0)
+                self.dropped_pending_frames += 1
+                self.dropped_recorded_frames += 1
             self._pending_records.append(record)
         elif self.live_enabled:
             self._pending_preview.append(record)
@@ -1255,8 +1285,10 @@ class ResearchTab(QWidget):
         if self._pending_records:
             self.frames.extend(self._pending_records)
             self._pending_records.clear()
-            if len(self.frames) > 100000:
-                self.frames = self.frames[-100000:]
+            overflow = len(self.frames) - self.MAX_CAPTURE_FRAMES
+            if overflow > 0:
+                del self.frames[:overflow]
+                self.dropped_recorded_frames += overflow
             changed = True
         if self._pending_preview:
             self.live_preview.extend(self._pending_preview)
@@ -1328,7 +1360,14 @@ class ResearchTab(QWidget):
         self.frame_table.setUpdatesEnabled(True)
         source_count = len(self.frames) if self.frames else len(self.live_preview)
         source_label = "recorded/imported" if self.frames else "live preview"
-        self.count_label.setText(f"{len(rows):,} displayed · {source_count:,} {source_label}")
+        dropped = (
+            self.dropped_recorded_frames
+            if self.recording or self.total_recorded_frames else 0
+        )
+        suffix = f" · {dropped:,} dropped" if dropped else ""
+        self.count_label.setText(
+            f"{len(rows):,} displayed · {source_count:,} {source_label}{suffix}"
+        )
         self._update_summary()
         self._update_timestamp_health()
 
@@ -2151,7 +2190,10 @@ class ResearchTab(QWidget):
                     or hint.startswith("Positive response") or hint.startswith("Possible")):
                 services[hint] += 1
         lines = [
-            f"Recorded frames: {len(self.frames):,}",
+            f"Recorded frames retained: {len(self.frames):,}",
+            f"Recorded frames observed: {self.total_recorded_frames:,}",
+            f"Recorded frames dropped: {self.dropped_recorded_frames:,} "
+            f"(pending overflow: {self.dropped_pending_frames:,})",
             f"Live preview frames: {len(self.live_preview):,}" if not self.frames else "Live preview paused while a recorded/imported set is active.",
             f"Unique CAN IDs: {len(counts):,}",
             f"Bookmarks: {len(self.bookmarks):,}  |  Operation markers: {len(self.markers):,}",
@@ -2221,6 +2263,9 @@ class ResearchTab(QWidget):
             QMessageBox.critical(self, "Import failed", str(exc))
             return
         self.frames = records
+        self.total_recorded_frames = len(records)
+        self.dropped_recorded_frames = 0
+        self.dropped_pending_frames = 0
         self.live_preview.clear()
         self._pending_preview.clear()
         self.metadata = dict(metadata)
@@ -2707,6 +2752,10 @@ class ResearchTab(QWidget):
                 "capture_timestamp_basis": "host_monotonic",
                 "device_timestamp_basis": "esp_timer_get_time microseconds since each board boot; clocks are independent and unsynchronized",
                 "firmware_protocol": 2,
+                "frames_observed": self.total_recorded_frames,
+                "frames_retained": len(self.frames),
+                "frames_dropped": self.dropped_recorded_frames,
+                "pending_frames_dropped": self.dropped_pending_frames,
                 "channel_names": sorted({str(frame.get("channel")) for frame in self.frames if frame.get("channel")}),
                 "channel_frame_counts": dict(Counter(str(frame.get("channel") or "unspecified") for frame in self.frames)),
             },
@@ -3481,6 +3530,9 @@ class ResearchTab(QWidget):
         self.recording = False
         self.record_button.setText("Start research recording")
         self.frames.clear()
+        self.total_recorded_frames = 0
+        self.dropped_recorded_frames = 0
+        self.dropped_pending_frames = 0
         self.live_preview.clear()
         self._pending_records.clear()
         self._pending_preview.clear()

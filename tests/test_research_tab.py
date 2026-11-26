@@ -659,3 +659,86 @@ def test_research_tab_receiver_health_displays_explicit_receiver_state(monkeypat
     tab.refresh_timer.stop()
     tab.close()
     app.processEvents()
+
+
+def test_capture_retention_reports_pending_and_buffer_overflow(monkeypatch):
+    import os
+    import time
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from freerov3r.models import CanFrame
+    from freerov3r.research_tab import ResearchTab
+
+    app = QApplication.instance() or QApplication([])
+    tab = ResearchTab()
+    tab.refresh_timer.stop()
+    tab.recording = True
+    tab._recording_started_monotonic = time.monotonic()
+    tab.MAX_PENDING_RECORDS = 2
+    tab.MAX_CAPTURE_FRAMES = 1
+    tab.refresh_table = lambda: None
+
+    for can_id in (0x100, 0x101, 0x102, 0x103):
+        tab.observe_frame(CanFrame(
+            can_id, bytes([can_id & 0xFF]), channel="HS-CAN",
+            timestamp=time.monotonic(),
+            timestamp_clock_domain="host_monotonic",
+            timestamp_source="esp32_serial_receive",
+            device_timestamp_us=can_id * 1000,
+            device_timestamp_clock_domain="device_uptime",
+        ))
+
+    assert tab.total_recorded_frames == 4
+    assert len(tab._pending_records) == 2
+    assert tab.dropped_pending_frames == 2
+    assert tab.dropped_recorded_frames == 2
+
+    tab._flush_pending_frames()
+
+    assert len(tab.frames) == 1
+    assert tab.frames[0]["arbitration_id"] == 0x103
+    assert tab.dropped_recorded_frames == 3
+    assert tab.dropped_pending_frames == 2
+    tab._update_summary()
+    summary = tab.summary.toPlainText()
+    assert "Recorded frames observed: 4" in summary
+    assert "Recorded frames retained: 1" in summary
+    assert "Recorded frames dropped: 3" in summary
+    assert "pending overflow: 2" in summary
+    assert tab.frames[0]["timestamp_clock_domain"] == "host_monotonic"
+    assert tab.frames[0]["timestamp_source"] == "esp32_serial_receive"
+    assert tab.frames[0]["device_timestamp_clock_domain"] == "device_uptime"
+    tab.close()
+    app.processEvents()
+
+
+def test_load_capture_file_preserves_timestamp_provenance(tmp_path):
+    import json
+    from freerov3r.research_tab import load_capture_file
+
+    path = tmp_path / "provenance.json"
+    path.write_text(json.dumps({
+        "frames": [{
+            "timestamp": 12.5,
+            "timestamp_clock_domain": "host_monotonic",
+            "timestamp_source": "python_can_receive",
+            "source_timestamp": 1700000000.25,
+            "source_timestamp_clock_domain": "unix_epoch",
+            "device_timestamp_us": 123456,
+            "device_timestamp_clock_domain": "device_uptime",
+            "arbitration_id": 0x123,
+            "extended": False,
+            "data": "0102",
+            "channel": "vcan0",
+        }]
+    }), encoding="utf-8")
+
+    _, frames = load_capture_file(path)
+    assert len(frames) == 1
+    frame = frames[0]
+    assert frame["timestamp_clock_domain"] == "host_monotonic"
+    assert frame["timestamp_source"] == "python_can_receive"
+    assert frame["source_timestamp"] == 1700000000.25
+    assert frame["source_timestamp_clock_domain"] == "unix_epoch"
+    assert frame["device_timestamp_us"] == 123456
+    assert frame["device_timestamp_clock_domain"] == "device_uptime"
