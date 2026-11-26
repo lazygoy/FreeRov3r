@@ -136,3 +136,68 @@ def test_elm327_obd_adapter_accepts_29_bit_physical_response_headers(monkeypatch
         assert frame.data == bytes([4, 0x41, 0x0C, 0x1A, 0xF8])
     finally:
         adapter.close()
+
+
+def test_elm327_obd_adapter_reads_stored_pending_and_permanent_dtcs(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\\r>",
+        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
+        b"OK\\r>", b"OK\\r>",
+        b"7E8 06 41 00 00 10 00 00\\r>",
+        b"7E8 05 43 01 33 00 00\\r>",
+        b"7E8 03 47 01 33\\r>",
+        b"7E8 03 4A 01 33\\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        codes = adapter.read_dtcs()
+        assert [(item["code"], item["status"]) for item in codes] == [
+            ("P0133", "Stored"),
+            ("P0133", "Pending"),
+            ("P0133", "Permanent"),
+        ]
+        assert [item["arbitration_id"] for item in codes] == [0x7E8] * 3
+        assert fake.commands[-3:] == ["03", "07", "0A"]
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_reassembles_multiframe_dtc_response(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\\r>",
+        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
+        b"OK\\r>", b"OK\\r>",
+        b"7E8 06 41 00 00 10 00 00\\r>",
+        b"7E8 10 09 43 01 33 01 34\\r7E8 21 01 35 01 36 00 00 00\\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        codes = adapter.read_dtcs(services=(0x03,))
+        assert [item["code"] for item in codes] == [
+            "P0133", "P0134", "P0135", "P0136"
+        ]
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_rejects_unsupported_dtc_service(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial()
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        with pytest.raises(ValueError, match="Unsupported DTC service"):
+            adapter.read_dtcs(services=(0x04,))
+        assert "04" not in fake.commands
+    finally:
+        adapter.close()
