@@ -7,6 +7,30 @@ from ..models import CanFrame
 
 
 PID_DEFINITIONS = {
+    0x14: ("Narrowband oxygen sensor 1", "V / %"),
+    0x15: ("Narrowband oxygen sensor 2", "V / %"),
+    0x16: ("Narrowband oxygen sensor 3", "V / %"),
+    0x17: ("Narrowband oxygen sensor 4", "V / %"),
+    0x18: ("Narrowband oxygen sensor 5", "V / %"),
+    0x19: ("Narrowband oxygen sensor 6", "V / %"),
+    0x1A: ("Narrowband oxygen sensor 7", "V / %"),
+    0x1B: ("Narrowband oxygen sensor 8", "V / %"),
+    0x24: ("Wide-range oxygen sensor 1", "λ / V"),
+    0x25: ("Wide-range oxygen sensor 2", "λ / V"),
+    0x26: ("Wide-range oxygen sensor 3", "λ / V"),
+    0x27: ("Wide-range oxygen sensor 4", "λ / V"),
+    0x28: ("Wide-range oxygen sensor 5", "λ / V"),
+    0x29: ("Wide-range oxygen sensor 6", "λ / V"),
+    0x2A: ("Wide-range oxygen sensor 7", "λ / V"),
+    0x2B: ("Wide-range oxygen sensor 8", "λ / V"),
+    0x34: ("Wide-range oxygen sensor 1", "λ / mA"),
+    0x35: ("Wide-range oxygen sensor 2", "λ / mA"),
+    0x36: ("Wide-range oxygen sensor 3", "λ / mA"),
+    0x37: ("Wide-range oxygen sensor 4", "λ / mA"),
+    0x38: ("Wide-range oxygen sensor 5", "λ / mA"),
+    0x39: ("Wide-range oxygen sensor 6", "λ / mA"),
+    0x3A: ("Wide-range oxygen sensor 7", "λ / mA"),
+    0x3B: ("Wide-range oxygen sensor 8", "λ / mA"),
     0x04: ("Calculated engine load", "%"),
     0x05: ("Engine coolant temperature", "°C"),
     0x06: ("Short-term fuel trim bank 1", "%"),
@@ -60,6 +84,30 @@ PID_DEFINITIONS = {
 # Categories are navigation aids, not claims that a particular vehicle supports
 # the PID. Support must be discovered from the responding ECU.
 PID_CATEGORIES = {
+    0x14: "Emissions",
+    0x15: "Emissions",
+    0x16: "Emissions",
+    0x17: "Emissions",
+    0x18: "Emissions",
+    0x19: "Emissions",
+    0x1A: "Emissions",
+    0x1B: "Emissions",
+    0x24: "Emissions",
+    0x25: "Emissions",
+    0x26: "Emissions",
+    0x27: "Emissions",
+    0x28: "Emissions",
+    0x29: "Emissions",
+    0x2A: "Emissions",
+    0x2B: "Emissions",
+    0x34: "Emissions",
+    0x35: "Emissions",
+    0x36: "Emissions",
+    0x37: "Emissions",
+    0x38: "Emissions",
+    0x39: "Emissions",
+    0x3A: "Emissions",
+    0x3B: "Emissions",
     0x04: "Engine", 0x05: "Temperatures",
     0x06: "Fuel", 0x07: "Fuel", 0x08: "Fuel", 0x09: "Fuel",
     0x0A: "Fuel", 0x0B: "Air & Intake", 0x0C: "Engine",
@@ -79,6 +127,30 @@ PID_CATEGORIES = {
 }
 
 PID_SEARCH_TERMS = {
+    0x14: "oxygen o2 narrowband sensor 1 voltage short term fuel trim stft",
+    0x15: "oxygen o2 narrowband sensor 2 voltage short term fuel trim stft",
+    0x16: "oxygen o2 narrowband sensor 3 voltage short term fuel trim stft",
+    0x17: "oxygen o2 narrowband sensor 4 voltage short term fuel trim stft",
+    0x18: "oxygen o2 narrowband sensor 5 voltage short term fuel trim stft",
+    0x19: "oxygen o2 narrowband sensor 6 voltage short term fuel trim stft",
+    0x1A: "oxygen o2 narrowband sensor 7 voltage short term fuel trim stft",
+    0x1B: "oxygen o2 narrowband sensor 8 voltage short term fuel trim stft",
+    0x24: "oxygen o2 wideband sensor 1 lambda equivalence ratio voltage",
+    0x25: "oxygen o2 wideband sensor 2 lambda equivalence ratio voltage",
+    0x26: "oxygen o2 wideband sensor 3 lambda equivalence ratio voltage",
+    0x27: "oxygen o2 wideband sensor 4 lambda equivalence ratio voltage",
+    0x28: "oxygen o2 wideband sensor 5 lambda equivalence ratio voltage",
+    0x29: "oxygen o2 wideband sensor 6 lambda equivalence ratio voltage",
+    0x2A: "oxygen o2 wideband sensor 7 lambda equivalence ratio voltage",
+    0x2B: "oxygen o2 wideband sensor 8 lambda equivalence ratio voltage",
+    0x34: "oxygen o2 wideband sensor 1 lambda equivalence ratio current milliamps",
+    0x35: "oxygen o2 wideband sensor 2 lambda equivalence ratio current milliamps",
+    0x36: "oxygen o2 wideband sensor 3 lambda equivalence ratio current milliamps",
+    0x37: "oxygen o2 wideband sensor 4 lambda equivalence ratio current milliamps",
+    0x38: "oxygen o2 wideband sensor 5 lambda equivalence ratio current milliamps",
+    0x39: "oxygen o2 wideband sensor 6 lambda equivalence ratio current milliamps",
+    0x3A: "oxygen o2 wideband sensor 7 lambda equivalence ratio current milliamps",
+    0x3B: "oxygen o2 wideband sensor 8 lambda equivalence ratio current milliamps",
     0x04: "load engine load calculated torque",
     0x05: "coolant water temperature engine ect",
     0x06: "short term fuel trim stft bank one b1",
@@ -131,6 +203,18 @@ PID_SEARCH_TERMS = {
 
 PID_CATEGORIES_ALL = ("All", "Engine", "Temperatures", "Air & Intake",
                       "Fuel", "Emissions", "Electrical", "Vehicle")
+
+# Stable measurement keys used to expose each value carried by a multi-value PID.
+PID_MULTI_VALUE_KEYS = {
+    **{pid: ("voltage", "fuel_trim") for pid in range(0x14, 0x1C)},
+    **{pid: ("lambda", "voltage") for pid in range(0x24, 0x2C)},
+    **{pid: ("lambda", "current") for pid in range(0x34, 0x3C)},
+    0x55: ("bank_1", "bank_3"),
+    0x56: ("bank_1", "bank_3"),
+    0x57: ("bank_2", "bank_4"),
+    0x58: ("bank_2", "bank_4"),
+}
+
 
 
 def search_mode01_pids(query="", category="All"):
@@ -191,37 +275,84 @@ OBD_PIDS = [
 ]
 
 
-def decode_mode01(frame: CanFrame):
-    """Return (pid, name, value, unit) for a supported 11-bit CAN response.
+def decode_mode01_measurements(frame: CanFrame):
+    """Return every decoded measurement as (pid, key, name, value, unit).
 
-    Values follow the SAE J1979 Mode 01 scaling. This numeric decoder
-    intentionally leaves bitfields and enumerated status PIDs out of scope.
+    A single Mode 01 PID can carry more than one independent measurement.
+    Measurement keys are stable sensor identifiers, not display labels.
+    Unsupported frames, malformed payloads and unavailable values return [].
     """
     data = frame.data
     if frame.is_extended_id or not 0x7E8 <= frame.arbitration_id <= 0x7EF:
-        return None
+        return []
     if len(data) < 4 or data[1] != 0x41:
-        return None
+        return []
     pid = data[2]
     if pid not in PID_DEFINITIONS:
-        return None
+        return []
 
+    multi_two_byte_pids = {0x55, 0x56, 0x57, 0x58}
     two_byte_pids = {
         0x1F, 0x21, 0x22, 0x23, 0x31, 0x32, 0x3C, 0x3D, 0x3E, 0x3F,
         0x42, 0x4D, 0x4E, 0x53, 0x54, 0x59, 0x5D, 0x5E,
+        *multi_two_byte_pids,
     }
+    four_byte_pids = set(range(0x24, 0x2C)) | set(range(0x34, 0x3C))
+    if pid in four_byte_pids and len(data) < 7:
+        return []
+    if pid in range(0x14, 0x1C) and len(data) < 5:
+        return []
     if pid in two_byte_pids and len(data) < 5:
-        return None
+        return []
 
     a, b = data[3], data[4] if len(data) > 4 else 0
     ab = a * 256 + b
     name, unit = PID_DEFINITIONS[pid]
 
+    def single(value):
+        return [(pid, "value", name, value, unit)]
+
+    if pid in range(0x14, 0x1C):
+        sensor_number = pid - 0x13
+        measurements = [
+            (pid, "voltage", f"Narrowband oxygen sensor {sensor_number} voltage", a / 200.0, "V"),
+        ]
+        if b != 0xFF:
+            measurements.append((
+                pid, "fuel_trim",
+                f"Narrowband oxygen sensor {sensor_number} short-term fuel trim",
+                (b - 128.0) * 100.0 / 128.0, "%",
+            ))
+        return measurements
+    if pid in range(0x24, 0x2C):
+        sensor_number = pid - 0x23
+        cd = data[5] * 256 + data[6]
+        return [
+            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65536.0, "λ"),
+            (pid, "voltage", f"Wide-range oxygen sensor {sensor_number} voltage", cd * 8.0 / 65536.0, "V"),
+        ]
+    if pid in range(0x34, 0x3C):
+        sensor_number = pid - 0x33
+        cd = data[5] * 256 + data[6]
+        return [
+            (pid, "lambda", f"Wide-range oxygen sensor {sensor_number} lambda", ab * 2.0 / 65536.0, "λ"),
+            (pid, "current", f"Wide-range oxygen sensor {sensor_number} current", cd / 256.0 - 128.0, "mA"),
+        ]
+    if pid in multi_two_byte_pids:
+        bank_a, bank_b = {
+            0x55: (1, 3), 0x56: (1, 3),
+            0x57: (2, 4), 0x58: (2, 4),
+        }[pid]
+        return [
+            (pid, f"bank_{bank_a}", f"Secondary oxygen sensor trim bank {bank_a}", (a - 128.0) * 100.0 / 128.0, "%"),
+            (pid, f"bank_{bank_b}", f"Secondary oxygen sensor trim bank {bank_b}", (b - 128.0) * 100.0 / 128.0, "%"),
+        ]
+
     if pid in (0x04, 0x11, 0x2C, 0x2E, 0x2F, 0x4C, 0x52, 0x5A, 0x5B):
         value = a * 100.0 / 255.0
     elif pid in (0x05, 0x0F, 0x46, 0x5C):
         value = a - 40.0
-    elif pid in (0x06, 0x07, 0x08, 0x09, 0x2D, 0x55, 0x56, 0x57, 0x58):
+    elif pid in (0x06, 0x07, 0x08, 0x09, 0x2D):
         value = (a - 128.0) * 100.0 / 128.0
     elif pid == 0x0A:
         value = a * 3.0
@@ -236,7 +367,6 @@ def decode_mode01(frame: CanFrame):
     elif pid in (0x1F, 0x21, 0x30, 0x31, 0x4D, 0x4E):
         value = float(ab if pid not in (0x30,) else a)
     elif pid == 0x32:
-        # PID 32 is signed 16-bit evaporative pressure in quarter-pascals.
         signed_ab = ab if ab < 0x8000 else ab - 0x10000
         value = signed_ab / 4.0
     elif pid == 0x22:
@@ -250,12 +380,24 @@ def decode_mode01(frame: CanFrame):
     elif pid == 0x53:
         value = ab / 200.0
     elif pid == 0x54:
-        # PID 54 is a signed 16-bit two's-complement pressure value.
         value = float(ab if ab < 0x8000 else ab - 0x10000)
     elif pid == 0x5D:
         value = ab / 128.0 - 210.0
     elif pid == 0x5E:
         value = ab / 20.0
     else:
+        return []
+    return single(value)
+
+
+def decode_mode01(frame: CanFrame):
+    """Backward-compatible scalar view of a Mode 01 response.
+
+    For a multi-value PID this returns its first measurement. New code that
+    needs all fields must use decode_mode01_measurements().
+    """
+    measurements = decode_mode01_measurements(frame)
+    if not measurements:
         return None
+    pid, _key, name, value, unit = measurements[0]
     return pid, name, value, unit
