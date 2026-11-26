@@ -113,3 +113,15 @@ def test_evap_vapor_pressure_pid_54_uses_signed_16_bit_value(a, b, expected):
     assert decoded[0] == 0x54
     assert decoded[2] == expected
     assert decoded[3] == "Pa"
+
+
+def test_catalyst_temperature_pid_bank_and_sensor_labels_match_j1979():
+    assert PID_DEFINITIONS[0x3C][0] == "Catalyst temperature bank 1 sensor 1"
+    assert PID_DEFINITIONS[0x3D][0] == "Catalyst temperature bank 2 sensor 1"
+    assert PID_DEFINITIONS[0x3E][0] == "Catalyst temperature bank 1 sensor 2"
+    assert PID_DEFINITIONS[0x3F][0] == "Catalyst temperature bank 2 sensor 2"
+
+
+def test_pid_59_is_distinguished_as_absolute_fuel_rail_pressure():
+    assert PID_DEFINITIONS[0x59] == ("Fuel rail absolute pressure", "kPa")
+    assert {row[0] for row in search_mode01_pids("absolute fuel rail pressure")} == {"59"}
