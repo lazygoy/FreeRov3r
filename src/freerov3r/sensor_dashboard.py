@@ -1,6 +1,7 @@
 """Dockable multi-panel live sensor dashboard."""
 
 import math
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
