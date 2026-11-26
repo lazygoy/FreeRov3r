@@ -114,11 +114,24 @@ class CanMonitor:
         return sorted(result, key=lambda item: (-item.frames_per_second, item.arbitration_id))
 
     @staticmethod
-    def matches(frame, id_filter="", frame_format="All"):
+    def matches(frame, id_filter="", frame_format="All", data_filter=""):
+        """Return whether a frame matches display-only ID, format, and payload filters.
+
+        Payload filters are hexadecimal byte sequences. Whitespace is optional;
+        a sequence matches anywhere within the frame payload.
+        """
         if frame_format == "Standard" and frame.is_extended_id:
             return False
         if frame_format == "Extended" and not frame.is_extended_id:
             return False
+        payload_value = (data_filter or "").strip()
+        if payload_value:
+            try:
+                payload = bytes.fromhex(payload_value)
+            except ValueError:
+                return False
+            if not payload or payload not in bytes(frame.data):
+                return False
         value = (id_filter or "").strip().replace("0x", "").replace("0X", "")
         if not value:
             return True
