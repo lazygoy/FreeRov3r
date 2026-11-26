@@ -5,11 +5,12 @@ import math
 from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
+    QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .sensors.scaling import sample_clock, sample_time
+from .sensors.demo import generate_lr4_demo_samples
 
 
 def _downsample_minmax(samples, clock, start, end, max_points):
@@ -142,7 +143,6 @@ class WaterfallPlot(QWidget):
         count = len(self.lanes)
         for index, lane in enumerate(reversed(self.lanes)):
             lane_index = index / max(1, count - 1)
-            base = 0.12 + lane_index * 0.68
             points = lane["points"]
             if len(points) < 1:
                 continue
@@ -152,7 +152,7 @@ class WaterfallPlot(QWidget):
             for point in ridge:
                 polygon.append(QPointF(*point))
             for point in reversed(baseline):
-                polygon.append(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(*point))
+                polygon.append(QPointF(*point))
             hue = (sum(lane["sensor_id"].encode("utf-8")) * 3) % 360
             color = QColor.fromHsv(hue, 190, 245)
             gradient = QLinearGradient(0, self.height() * 0.35, 0, self.height() * 0.84)
@@ -230,6 +230,11 @@ class SensorWaterfallDialog(QDialog):
         self.scale_combo.addItem("Native units (independent per sensor)", "native")
         self.scale_combo.addItem("Normalized (0–100%)", "normalized")
         controls.addWidget(self.scale_combo)
+        controls.addWidget(QLabel("Data source:"))
+        self.source_combo = QComboBox()
+        self.source_combo.addItem("Live sensor data", "live")
+        self.source_combo.addItem("Synthetic LR4 demo", "demo")
+        controls.addWidget(self.source_combo)
         controls.addStretch(1)
         layout.addLayout(controls)
         self.sensor_list = QListWidget()
@@ -239,6 +244,7 @@ class SensorWaterfallDialog(QDialog):
         self.plot = WaterfallPlot(self)
         layout.addWidget(self.plot, 1)
         self.window_combo.currentIndexChanged.connect(self.refresh_plot)
+        self.source_combo.currentIndexChanged.connect(self.refresh_sensor_choices)
         self.scale_combo.currentIndexChanged.connect(self.refresh_plot)
         self.refresh_sensor_choices()
         self.refresh_timer = QTimer(self)
@@ -250,7 +256,12 @@ class SensorWaterfallDialog(QDialog):
     def refresh_sensor_choices(self):
         vin = self.vin_provider()
         available = {}
-        for sample in self.sensor_capture.samples:
+        source = self.source_combo.currentData()
+        samples = (generate_lr4_demo_samples() if source == "demo"
+                   else self.sensor_capture.samples)
+        if source == "demo":
+            vin = None
+        for sample in samples:
             if vin and (sample.metadata or {}).get("vin", "UNASSIGNED") != vin:
                 continue
             available.setdefault(sample.sensor_id, sample.name)
@@ -283,10 +294,11 @@ class SensorWaterfallDialog(QDialog):
             if self.sensor_list.item(i).checkState() == Qt.Checked
         }
         lanes = prepare_waterfall_lanes(
-            self.sensor_capture.samples,
+            (generate_lr4_demo_samples() if self.source_combo.currentData() == "demo"
+             else self.sensor_capture.samples),
             selected_ids=selected,
             window_seconds=int(self.window_combo.currentData()),
             scale_mode=self.scale_combo.currentData(),
-            vin=self.vin_provider(),
+            vin=(None if self.source_combo.currentData() == "demo" else self.vin_provider()),
         )
         self.plot.set_lanes(lanes)
