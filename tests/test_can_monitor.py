@@ -83,7 +83,8 @@ def test_reset_clears_payload_and_interval_history():
 
     assert monitor.id_stats(now=1.1) == []
     assert monitor.payload_changes == {}
-    assert monitor.intervals == {}\n
+    assert monitor.intervals == {}
+
 def test_filter_matches_payload_byte_sequence_anywhere():
     sample = CanFrame(arbitration_id=0x321, data=b"\x10\xAA\x20\xBB")
     assert CanMonitor.matches(sample, data_filter="AA 20")
