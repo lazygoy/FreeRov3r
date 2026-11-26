@@ -77,7 +77,7 @@ def test_streaming_writer_writes_recoverable_jsonl_with_integrity(tmp_path):
     assert footer["frame_count"] == 2
     expected = b"".join(
         json.dumps({"record_type": "frame", **frame}, ensure_ascii=False,
-                   separators=(",", ":"), sort_keys=True).encode("utf-8") + b"\\n"
+                   separators=(",", ":"), sort_keys=True).encode("utf-8") + b"\n"
         for frame in frames
     )
     assert footer["frames_sha256"] == hashlib.sha256(expected).hexdigest()
