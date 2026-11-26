@@ -59,7 +59,6 @@ from freerov3r.diagnostics.obd2 import PID_CATEGORIES, PID_DEFINITIONS, search_m
         (0x4E, 3, 4, 772.0),
         (0x52, 128, 0, 12800.0 / 255.0),
         (0x53, 1, 0, 1.28),
-        (0x54, 128, 0, 1.0),
         (0x55, 128, 0, 0.0),
         (0x56, 0, 0, -100.0),
         (0x57, 255, 0, 99.21875),
@@ -96,3 +95,21 @@ def test_search_finds_new_fuel_trim_and_catalyst_pids():
 def test_two_byte_mode01_pid_rejects_truncated_response():
     frame = CanFrame(0x7E8, bytes([3, 0x41, 0x23, 0x01]))
     assert decode_mode01(frame) is None
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "expected"),
+    [
+        (0x80, 0x00, -32768.0),
+        (0x7F, 0xFF, 32767.0),
+        (0xFF, 0xFF, -1.0),
+        (0x00, 0x00, 0.0),
+    ],
+)
+def test_evap_vapor_pressure_pid_54_uses_signed_16_bit_value(a, b, expected):
+    frame = CanFrame(0x7E8, bytes([4, 0x41, 0x54, a, b, 0, 0, 0]))
+    decoded = decode_mode01(frame)
+    assert decoded is not None
+    assert decoded[0] == 0x54
+    assert decoded[2] == expected
+    assert decoded[3] == "Pa"
