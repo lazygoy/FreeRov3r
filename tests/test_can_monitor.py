@@ -84,3 +84,27 @@ def test_reset_clears_payload_and_interval_history():
     assert monitor.id_stats(now=1.1) == []
     assert monitor.payload_changes == {}
     assert monitor.intervals == {}
+
+def test_filter_matches_payload_byte_sequence_anywhere():
+    sample = CanFrame(arbitration_id=0x321, data=b"\x10\xAA\x20\xBB")
+    assert CanMonitor.matches(sample, data_filter="AA 20")
+    assert CanMonitor.matches(sample, data_filter="aa20")
+    assert not CanMonitor.matches(sample, data_filter="AA 21")
+    assert not CanMonitor.matches(sample, data_filter="GG")
+    assert CanMonitor.matches(sample, data_filter="")
+
+
+def test_payload_filter_combines_with_id_and_frame_format():
+    sample = CanFrame(
+        arbitration_id=0x18DAF110, data=b"\x62\xF1\x90",
+        is_extended_id=True,
+    )
+    assert CanMonitor.matches(
+        sample, "18DAF000-18DAFFFF", "Extended", "62 F1"
+    )
+    assert not CanMonitor.matches(
+        sample, "18DAF000-18DAFFFF", "Standard", "62 F1"
+    )
+    assert not CanMonitor.matches(
+        sample, "7E8", "Extended", "62 F1"
+    )

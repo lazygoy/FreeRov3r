@@ -4157,6 +4157,13 @@ class MainWindow(QMainWindow):
         self.can_format_filter.addItems(["All", "Standard", "Extended"])
         self.can_format_filter.currentTextChanged.connect(self.refresh_can_display)
         filter_row.addWidget(self.can_format_filter)
+        self.can_data_filter = QLineEdit()
+        self.can_data_filter.setPlaceholderText("Payload bytes, e.g. 01 0A FF")
+        self.can_data_filter.setToolTip(
+            "Hex byte sequence matched anywhere in the payload. Display only; capture/export remain unchanged."
+        )
+        self.can_data_filter.textChanged.connect(self.refresh_can_display)
+        filter_row.addWidget(self.can_data_filter)
         layout.addLayout(filter_row)
 
         self.monitor_summary = QLabel("Recent traffic: no frames")
@@ -5062,7 +5069,8 @@ class MainWindow(QMainWindow):
         rows = []
         for frame in self.can_monitor.frames:
             if not self.can_monitor.matches(
-                frame, self.can_id_filter.text(), self.can_format_filter.currentText()
+                frame, self.can_id_filter.text(), self.can_format_filter.currentText(),
+                self.can_data_filter.text(),
             ):
                 continue
             ts = frame.timestamp or 0
