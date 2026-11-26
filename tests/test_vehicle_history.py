@@ -281,3 +281,45 @@ def test_history_search_matches_vin_summary_and_nested_details_case_insensitivel
     assert search_history_events(events, "CAN CAPTURE") == [events[1]]
     assert search_history_events(events, "  ") == events
     assert search_history_events(events, "not present") == []
+
+
+
+def test_capture_history_report_formats_lifecycle_and_vin_metadata():
+    from freerov3r.vehicle_history import format_capture_event
+
+    completed = {
+        "type": "capture_completed",
+        "timestamp": "2026-11-26T07:00:00+00:00",
+        "vin": "SALXXXXXXXXXXXX1",
+        "summary": "CAN capture stopped",
+        "details": {
+            "interface": "ESP32 dual CAN",
+            "frames": 1250,
+            "sensor_samples": 84,
+            "sensor_samples_dropped_from_bounded_buffer": 3,
+            "duration_seconds": 61.5,
+            "archive_file": "vehicles/SALXXXXXXXXXXXX1/captures/capture.json",
+        },
+    }
+    report = format_capture_event(completed)
+    assert "Frames recorded: 1250" in report
+    assert "Sensor samples: 84" in report
+    assert "dropped from bounded buffer: 3" in report
+    assert "Duration: 61.5 seconds" in report
+    assert "capture.json" in report
+
+    started = format_capture_event({
+        "type": "capture_started",
+        "details": {"interface": "python-can", "channel": "can0", "bitrate": 500000},
+    })
+    assert "Status: Started" in started
+    assert "Channel: can0" in started
+    assert "Bitrate: 500000" in started
+
+    vin_report = format_capture_event({
+        "type": "vin_detected",
+        "vin": "SALXXXXXXXXXXXX1",
+        "details": {"vin": "SALXXXXXXXXXXXX1", "source": "OBD Mode 09 PID 02"},
+    })
+    assert "Detected VIN: SALXXXXXXXXXXXX1" in vin_report
+    assert "OBD Mode 09 PID 02" in vin_report

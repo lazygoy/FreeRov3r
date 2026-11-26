@@ -348,6 +348,49 @@ def format_vehicle_info_scan_event(event):
     return "\n".join(lines)
 
 
+def format_capture_event(event):
+    """Format CAN capture lifecycle and VIN-detection events from recorded metadata."""
+    details = event.get("details") or {}
+    lines = [
+        f"Event: {event.get('type', '')}",
+        f"Timestamp: {event.get('timestamp', '')}",
+        f"VIN: {event.get('vin', 'UNASSIGNED')}",
+        f"Summary: {event.get('summary', '')}",
+    ]
+    event_type = event.get("type")
+    if event_type == "vin_detected":
+        lines.extend([
+            "",
+            "VIN IDENTIFICATION",
+            f"Detected VIN: {details.get('vin', 'Not recorded')}",
+            f"Source: {details.get('source', 'Not recorded')}",
+        ])
+    else:
+        lines.extend([
+            "",
+            "CAN CAPTURE",
+            f"Interface: {details.get('interface', 'Unknown')}",
+        ])
+        if event_type == "capture_started":
+            lines.extend([
+                f"Channel: {details.get('channel', 'Unknown')}",
+                f"Bitrate: {details.get('bitrate', 'Unknown')}",
+                "Status: Started",
+            ])
+        elif event_type == "capture_completed":
+            lines.extend([
+                f"Frames recorded: {details.get('frames', 'Unknown')}",
+                f"Sensor samples: {details.get('sensor_samples', 'Unknown')}",
+                f"Sensor samples dropped from bounded buffer: {details.get('sensor_samples_dropped_from_bounded_buffer', 'Not recorded')}",
+                f"Duration: {details.get('duration_seconds', 'Unknown')} seconds",
+                f"Archive file: {details.get('archive_file', 'Not recorded')}",
+                "Status: Completed",
+            ])
+        else:
+            lines.append("Status: Unknown capture event")
+    return "\n".join(lines)
+
+
 def export_history_json(path, events):
     """Export selected history events as a UTF-8 JSON array."""
     destination = Path(path)
