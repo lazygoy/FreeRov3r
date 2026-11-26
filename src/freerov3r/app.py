@@ -207,6 +207,9 @@ class ResponsiveBanner(QLabel):
 
 class Receiver(QThread):
     frame_received = Signal(object)
+    frames_received = Signal(object)
+    FRAME_BATCH_SIZE = 64
+    FRAME_BATCH_INTERVAL = 0.02
     status = Signal(str)
     dtcs_completed = Signal(object)
     dtcs_failed = Signal(str)
@@ -281,6 +284,8 @@ class Receiver(QThread):
         return True
 
     def run(self):
+        pending_frames = []
+        last_batch_emit = time.monotonic()
         try:
             self.adapter.open()
             self.status.emit(f"Connected: {self.adapter.description}")
@@ -333,9 +338,19 @@ class Receiver(QThread):
                     finally:
                         self._readiness_request_pending = False
                     continue
-                frame = self.adapter.receive(0.15)
+                frame = self.adapter.receive(
+                    self.FRAME_BATCH_INTERVAL if pending_frames else 0.15
+                )
                 if frame is not None:
-                    self.frame_received.emit(frame)
+                    pending_frames.append(frame)
+                now = time.monotonic()
+                if pending_frames and (
+                    len(pending_frames) >= self.FRAME_BATCH_SIZE
+                    or now - last_batch_emit >= self.FRAME_BATCH_INTERVAL
+                ):
+                    self.frames_received.emit(pending_frames)
+                    pending_frames = []
+                    last_batch_emit = now
         except Exception as exc:
             if hasattr(self.adapter, "last_error"):
                 self.adapter.last_error = str(exc)
@@ -351,6 +366,8 @@ class Receiver(QThread):
             if self._monitor_tests_request_pending:
                 self.monitor_tests_failed.emit(str(exc))
         finally:
+            if pending_frames:
+                self.frames_received.emit(pending_frames)
             try:
                 self.adapter.close()
             except Exception:
@@ -4648,7 +4665,7 @@ class MainWindow(QMainWindow):
         self.refresh_can_display()
         self.modules_tab.set_simulation_enabled(interface == "simulator")
         self.receiver = Receiver(adapter)
-        self.receiver.frame_received.connect(self.on_frame)
+        self.receiver.frames_received.connect(self.on_frames)
         self.receiver.status.connect(self.status.setText)
         self.receiver.dtcs_completed.connect(self._on_dtc_scan_completed)
         self.receiver.dtcs_failed.connect(self._on_dtc_scan_failed)
@@ -4865,7 +4882,18 @@ class MainWindow(QMainWindow):
         )
         self.show_toast("DTC scan failed", "warning")
 
-    def on_frame(self, frame):
+    def on_frames(self, frames):
+        """Process receiver batches with one visible log/counter update."""
+        log_lines = []
+        for frame in frames:
+            line = self.on_frame(frame, update_display=False)
+            if line:
+                log_lines.append(line)
+        self.frame_count_label.setText(f"Frames: {self.frame_counter}")
+        if log_lines:
+            self.log.appendPlainText("\\n".join(log_lines))
+
+    def on_frame(self, frame, update_display=True):
         detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
         if detected_vin:
             self._apply_detected_vin(detected_vin)
@@ -4873,14 +4901,18 @@ class MainWindow(QMainWindow):
         self.can_monitor.add(frame)
         self.research_tab.observe_frame(frame)
         self.frame_counter += 1
-        self.frame_count_label.setText(f"Frames: {self.frame_counter}")
+        if update_display:
+            self.frame_count_label.setText(f"Frames: {self.frame_counter}")
         ts = frame.timestamp or 0
+        line = None
         if self.can_monitor.matches(frame, self.can_id_filter.text(), self.can_format_filter.currentText()):
             frame_type = "EXT" if frame.is_extended_id else "STD"
-            self.log.appendPlainText(
+            line = (
                 f"{ts:.6f}  {frame.arbitration_id:08X}  {frame_type}  "
                 f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
             )
+            if update_display:
+                self.log.appendPlainText(line)
         measurements = decode_mode01_measurements(frame, self.obd_scaling_context)
         if measurements:
             simulated = self.active_interface == "simulator"
@@ -4905,6 +4937,8 @@ class MainWindow(QMainWindow):
                 display_values.append(f"{value:.2f} {unit}")
                 self.sensor_log.appendPlainText(f"{name}: {value:.2f} {unit} [{sensor_id}]")
             self.obd_tab.update_value(measurements[0][0], " | ".join(display_values))
+
+        return line
 
     def _update_receiver_health(self):
         """Publish live ESP32 adapter diagnostics to the Research workspace."""
