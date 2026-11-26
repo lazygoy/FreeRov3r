@@ -3698,6 +3698,8 @@ class MainWindow(QMainWindow):
             self,
             initial_sensor_ids=self.graph_tab.selected_sensor_ids(),
             vin_provider=lambda: self.settings.get("current_vin"),
+            settings=self.settings,
+            save_settings_callback=save_settings,
         )
         self.addDockWidget(Qt.BottomDockWidgetArea, self.sensor_dashboard_dock)
         self.sensor_dashboard_dock.hide()
@@ -3804,6 +3806,7 @@ class MainWindow(QMainWindow):
     def show_sensor_dashboard(self):
         if hasattr(self, "sensor_dashboard_dock"):
             self.sensor_dashboard_dock.refresh()
+            self.sensor_dashboard_dock._refresh_favorites()
             self.sensor_dashboard_dock.show()
             self.sensor_dashboard_dock.raise_()
 
