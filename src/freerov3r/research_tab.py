@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from freerov3r.capture_storage import (
-    CaptureStorageError, StreamingCaptureError, StreamingCaptureWriter, write_json_atomic,
+    CaptureStorageError, StreamingCaptureWriter, write_json_atomic,
 )
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
@@ -970,6 +970,8 @@ class ResearchTab(QWidget):
         self.metadata = {}
         self._recording_started_monotonic = None
         self.recording = False
+        self._stream_writer = None
+        self._stream_archive_path = None
         self.live_enabled = True
         self._pending_records = []
         self._pending_preview = []
@@ -1314,24 +1316,73 @@ class ResearchTab(QWidget):
 
     def toggle_recording(self):
         if not self.recording:
-            self.recording = True
+            started_at = datetime.now().astimezone().isoformat(timespec="seconds")
             self.markers.clear()
             self._recording_started_monotonic = time.monotonic()
             self.metadata.update({
                 "session_name": self.session_name.text().strip() or "Unnamed research session",
                 "operation": self.operation.currentText(),
                 "notes": self.notes.text().strip(),
-                "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "started_at": started_at,
                 "vin": self.metadata.get("vin"),
                 "interface": self.metadata.get("interface"),
+                "capture_timestamp_basis": "host_monotonic",
+                "device_timestamp_basis": "esp_timer_get_time microseconds since each board boot; clocks are independent and unsynchronized",
+                "firmware_protocol": 2,
             })
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            archive_path = Path.home() / ".freerov3r" / "captures" / f"research_{stamp}.jsonl"
+            writer = StreamingCaptureWriter(archive_path)
+            try:
+                writer.start(self.metadata)
+            except CaptureStorageError as exc:
+                QMessageBox.critical(self, "Automatic capture archive failed", str(exc))
+                self._recording_started_monotonic = None
+                return
+            self._stream_writer = writer
+            self._stream_archive_path = archive_path
+            self.recording = True
             self.record_button.setText("Stop research recording")
-            self.status_label.setText("RECORDING · Stores frames delivered by the main listener. This tab does not transmit or replay frames.")
+            self.status_label.setText(
+                "RECORDING · Automatically archiving frames to "
+                f"{archive_path}. Receive-only; no CAN frames are transmitted or replayed."
+            )
         else:
             self.recording = False
             self.metadata["stopped_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+            archive_path = None
+            if self._stream_writer is not None:
+                writer = self._stream_writer
+                try:
+                    archive_path = writer.finish({
+                        **self.metadata,
+                        "frames_observed": writer.frame_count,
+                        "frames_retained": writer.frame_count,
+                    })
+                except CaptureStorageError as exc:
+                    writer.close_incomplete()
+                    self.status_label.setText(
+                        f"Recording stopped, but automatic archive finalization failed: {exc}"
+                    )
+                self._stream_writer = None
             self.record_button.setText("Start research recording")
-            self.status_label.setText("Recording stopped. Save the session or copy its REA analysis packet.")
+            if archive_path is not None:
+                self._stream_archive_path = archive_path
+                self.status_label.setText(
+                    f"Recording stopped. {self._stream_writer_frame_count(archive_path):,} frames archived to {archive_path}"
+                )
+            elif self._stream_archive_path is None:
+                self.status_label.setText("Recording stopped. No automatic archive was completed.")
+            self._recording_started_monotonic = None
+
+    @staticmethod
+    def _stream_writer_frame_count(path):
+        # The in-memory frame list may be capped; the durable archive is authoritative.
+        try:
+            with Path(path).open("r", encoding="utf-8") as handle:
+                return sum(1 for line in handle if '"record_type":"frame"' in line)
+        except OSError:
+            return 0
 
 
     def mark_action(self):
@@ -1357,6 +1408,15 @@ class ResearchTab(QWidget):
         if self.recording:
             if self._recording_started_monotonic is not None:
                 record["elapsed_seconds"] = round(time.monotonic() - self._recording_started_monotonic, 6)
+            if self._stream_writer is not None:
+                try:
+                    self._stream_writer.append_frame(record)
+                except CaptureStorageError as exc:
+                    self._stream_writer.close_incomplete()
+                    self._stream_writer = None
+                    self.status_label.setText(
+                        f"Automatic archive write failed; in-memory recording continues: {exc}"
+                    )
             self.total_recorded_frames += 1
             if len(self._pending_records) >= self.MAX_PENDING_RECORDS:
                 self._pending_records.pop(0)
@@ -3637,6 +3697,8 @@ class ResearchTab(QWidget):
         )
         if answer != QMessageBox.Yes:
             return
+        if self.recording:
+            self.toggle_recording()
         self.recording = False
         self.record_button.setText("Start research recording")
         self.frames.clear()
