@@ -817,10 +817,9 @@ def load_capture_file(path):
     malformed_lines = 0
     possible_truncated_final_line = False
 
-    if suffix in (".json", ".jsonl", ".ndjson"):
+    if suffix == ".json":
         text = path.read_text(encoding="utf-8-sig")
-        if suffix == ".json":
-            parsed = json.loads(text)
+        parsed = json.loads(text)
             if isinstance(parsed, dict):
                 raw_metadata = parsed.get("metadata", {})
                 if not isinstance(raw_metadata, dict):
@@ -841,22 +840,23 @@ def load_capture_file(path):
                     invalid_records += 1
                 else:
                     records.append(normalized)
-        else:
-            lines = text.splitlines()
-            last_content_line = max(
-                (index for index, line in enumerate(lines) if line.strip()),
-                default=-1,
-            )
-            for index, line in enumerate(lines):
+    elif suffix in (".jsonl", ".ndjson"):
+        # Stream line-delimited archives. Retain normalized records, but avoid
+        # also holding a second full-file text copy in memory.
+        last_nonempty_line_malformed = False
+        with path.open("r", encoding="utf-8-sig") as handle:
+            for line in handle:
                 if not line.strip():
                     continue
                 try:
                     item = json.loads(line)
+                    line_malformed = False
                 except json.JSONDecodeError:
                     malformed_lines += 1
-                    if index == last_content_line:
-                        possible_truncated_final_line = True
+                    line_malformed = True
+                    last_nonempty_line_malformed = True
                     continue
+                last_nonempty_line_malformed = line_malformed
                 if not isinstance(item, dict):
                     invalid_records += 1
                     continue
@@ -872,6 +872,7 @@ def load_capture_file(path):
                         invalid_records += 1
                     else:
                         records.append(normalized)
+        possible_truncated_final_line = last_nonempty_line_malformed
     elif suffix == ".csv":
         with path.open("r", newline="", encoding="utf-8-sig") as handle:
             for row in csv.DictReader(handle):
