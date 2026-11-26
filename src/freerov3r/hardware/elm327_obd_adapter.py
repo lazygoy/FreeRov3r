@@ -17,6 +17,7 @@ from ..diagnostics.dtc import decode_j1979_dtcs
 from ..diagnostics.readiness import decode_obd_readiness
 from ..diagnostics.freeze_frame import decode_freeze_frame_response
 from ..diagnostics.vehicle_info import decode_j1979_vehicle_info, PID_NAMES as VEHICLE_INFO_PID_NAMES
+from ..diagnostics.monitor_tests import decode_supported_monitor_ids, decode_mode06_results
 from ..isotp import reassemble_isotp
 
 
@@ -341,6 +342,55 @@ class Elm327ObdAdapter(CanAdapter):
                 except ValueError:
                     continue
         return results
+
+    def read_monitor_tests(self):
+        """Read supported SAE J1979 Mode 06 monitor tests and raw result limits.
+
+        Uses the CAN-specific Mode 06 OBDMID bitmap and 9-byte result record
+        format. Runs on the adapter-owning thread while normal polling is paused.
+        Values remain raw unless a verified UASID scaling definition is available.
+        """
+        if self.connection is None:
+            raise RuntimeError("ELM327 OBD-II adapter is not open")
+
+        def complete_payloads(response):
+            frames = self._parse_response_frames(response, self.port, time.time())
+            return [
+                (message, bytes.fromhex(message.get("payload", "")))
+                for message in reassemble_isotp(frames)
+                if message.get("status") == "complete"
+            ]
+
+        supported = set()
+        for base_mid in range(0x00, 0x100, 0x20):
+            response = self._command(f"06{base_mid:02X}")
+            for message, payload in complete_payloads(response):
+                if len(payload) != 6 or payload[:2] != bytes((0x46, base_mid)):
+                    continue
+                try:
+                    supported.update(decode_supported_monitor_ids(payload, base_mid))
+                except ValueError:
+                    continue
+            if base_mid == 0xE0 or base_mid + 0x20 not in supported:
+                break
+
+        results = []
+        for monitor_id in sorted(supported):
+            response = self._command(f"06{monitor_id:02X}")
+            for message, payload in complete_payloads(response):
+                if len(payload) < 2 or payload[:2] != bytes((0x46, monitor_id)):
+                    continue
+                try:
+                    results.append(decode_mode06_results(
+                        payload,
+                        monitor_id=monitor_id,
+                        arbitration_id=message["arbitration_id"],
+                        is_extended_id=message["extended"],
+                        channel=message["channel"],
+                    ))
+                except ValueError:
+                    continue
+        return {"supported_monitor_ids": sorted(supported), "responses": results}
 
     def receive(self, timeout=0.2):
         if self.connection is None:
