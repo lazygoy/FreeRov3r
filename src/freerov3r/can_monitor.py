@@ -1,6 +1,7 @@
 """Bounded, passive CAN traffic monitoring and display filtering."""
 from collections import Counter, deque
 from dataclasses import dataclass
+from statistics import median
 from .models import CanFrame
 
 
@@ -11,6 +12,8 @@ class CanIdStats:
     count: int
     frames_per_second: float
     last_seen: float
+    payload_changes: int
+    median_interval_ms: float | None
 
 
 class CanMonitor:
@@ -26,6 +29,9 @@ class CanMonitor:
         self.counts = Counter()
         self.last_seen = {}
         self.recent = {}
+        self.last_payload = {}
+        self.payload_changes = Counter()
+        self.intervals = {}
         self.total_received = 0
         self.dropped_from_buffer = 0
 
@@ -34,6 +40,9 @@ class CanMonitor:
         self.counts.clear()
         self.last_seen.clear()
         self.recent.clear()
+        self.last_payload.clear()
+        self.payload_changes.clear()
+        self.intervals.clear()
         self.total_received = 0
         self.dropped_from_buffer = 0
 
@@ -49,7 +58,19 @@ class CanMonitor:
             oldest = min(self.last_seen, key=self.last_seen.get)
             self.recent.pop(oldest, None)
             self.counts.pop(oldest, None)
+            self.last_payload.pop(oldest, None)
+            self.payload_changes.pop(oldest, None)
+            self.intervals.pop(oldest, None)
             self.last_seen.pop(oldest, None)
+        previous_seen = self.last_seen.get(key)
+        payload = bytes(frame.data)
+        if previous_seen is not None:
+            interval = now - previous_seen
+            if interval > 0:
+                self.intervals.setdefault(key, deque(maxlen=64)).append(interval)
+            if self.last_payload.get(key) != payload:
+                self.payload_changes[key] += 1
+        self.last_payload[key] = payload
         self.counts[key] += 1
         self.last_seen[key] = now
         samples = self.recent.setdefault(key, deque())
@@ -84,6 +105,11 @@ class CanMonitor:
                     count=self.counts[(arbitration_id, extended)],
                     frames_per_second=len(samples) / self.rate_window,
                     last_seen=self.last_seen[(arbitration_id, extended)],
+                    payload_changes=self.payload_changes[(arbitration_id, extended)],
+                    median_interval_ms=(
+                        median(self.intervals[(arbitration_id, extended)]) * 1000.0
+                        if self.intervals.get((arbitration_id, extended)) else None
+                    ),
                 ))
         return sorted(result, key=lambda item: (-item.frames_per_second, item.arbitration_id))
 
