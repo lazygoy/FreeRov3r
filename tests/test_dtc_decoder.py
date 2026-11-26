@@ -27,7 +27,8 @@ def test_decode_j1979_dtc_services(response, status, request_service):
 
 
 def test_decode_iso_tp_single_frame_and_ignore_zero_padding():
-    codes = decode_j1979_dtcs(bytes.fromhex("06 43 01 33 00 00 00"))
+    # PCI declares five payload bytes; the final 00 is CAN-frame padding.
+    codes = decode_j1979_dtcs(bytes.fromhex("05 43 01 33 00 00 00"))
     assert [item.code for item in codes] == ["P0133"]
 
 
