@@ -74,6 +74,6 @@ def test_rejects_wrong_monitor_id():
 def test_rejects_record_for_wrong_monitor_id():
     with pytest.raises(ValueError, match="record monitor ID"):
         decode_mode06_results(
-            bytes.fromhex("46 21 22 80 24 00 64 00 00 00 C8"),
+            bytes.fromhex("46 22 80 24 00 64 00 00 00 C8"),
             monitor_id=0x21,
         )
