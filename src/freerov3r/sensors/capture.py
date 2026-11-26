@@ -3,6 +3,8 @@ import csv
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from math import isfinite
+from time import time
 from statistics import mean
 from .models import SensorSample
 from .correlation import EventMarker, normalize_event_markers
@@ -84,6 +86,70 @@ class SensorCapture:
                 if vin and (sample.metadata or {}).get("vin", "UNASSIGNED") != vin:
                     continue
                 f.write(json.dumps(asdict(sample), ensure_ascii=False) + "\n")
+
+    @staticmethod
+    def _sample_from_mapping(row, default_vin=None):
+        """Build one validated sample from a CSV or JSONL mapping."""
+        if not isinstance(row, dict):
+            raise ValueError("sample row must be an object")
+        sensor_id = str(row.get("sensor_id", "")).strip()
+        if not sensor_id:
+            raise ValueError("sensor_id is required")
+        value = float(row["value"])
+        timestamp = float(row.get("timestamp", time()))
+        if not isfinite(value) or not isfinite(timestamp):
+            raise ValueError("sample value and timestamp must be finite")
+        mono_value = row.get("monotonic_timestamp")
+        mono = None if mono_value in (None, "") else float(mono_value)
+        if mono is not None and not isfinite(mono):
+            raise ValueError("monotonic timestamp must be finite")
+        metadata = row.get("metadata")
+        metadata = dict(metadata) if isinstance(metadata, dict) else {}
+        row_vin = row.get("vin")
+        if row_vin and not metadata.get("vin"):
+            metadata["vin"] = str(row_vin)
+        if default_vin and not metadata.get("vin"):
+            metadata["vin"] = str(default_vin)
+        return SensorSample(
+            timestamp=timestamp,
+            sensor_id=sensor_id,
+            name=str(row.get("name") or sensor_id),
+            value=value,
+            unit=str(row.get("unit", "")),
+            source=str(row.get("source") or "imported"),
+            ecu=row.get("ecu"),
+            signal=row.get("signal"),
+            quality=str(row.get("quality") or "valid"),
+            metadata=metadata,
+            monotonic_timestamp=mono,
+        )
+
+    def import_csv(self, path, default_vin=None):
+        """Import valid CSV sensor rows into the retained capture."""
+        imported = 0
+        with Path(path).open("r", newline="", encoding="utf-8-sig") as stream:
+            for row in csv.DictReader(stream):
+                try:
+                    self.add(self._sample_from_mapping(row, default_vin))
+                    imported += 1
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    continue
+        return imported
+
+    def import_jsonl(self, path, default_vin=None):
+        """Import valid JSON Lines sensor samples; malformed lines are skipped."""
+        imported = 0
+        with Path(path).open("r", encoding="utf-8-sig") as stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                    self.add(self._sample_from_mapping(row, default_vin))
+                    imported += 1
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError):
+                    continue
+        return imported
 
     def llm_report(self, include_context=True, vin=None):
         """Portable, provider-neutral analysis packet. No API calls or secrets."""
