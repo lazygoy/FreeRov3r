@@ -139,3 +139,62 @@ class VehicleHistoryStore:
 
     def vehicles(self):
         return sorted({event.get("vin", "UNASSIGNED") for event in self.events})
+
+
+MODE06_SCAN_EVENT_TYPES = {"monitor_tests_scan_completed", "monitor_tests_scan_failed"}
+
+
+def filter_mode06_scan_events(events):
+    """Return completed and failed OBD-II Mode 06 scans, preserving order."""
+    return [event for event in events if event.get("type") in MODE06_SCAN_EVENT_TYPES]
+
+
+def format_mode06_scan_event(event):
+    """Format a stored Mode 06 scan using raw values only; never infer units."""
+    details = event.get("details") or {}
+    lines = [
+        f"Event: {event.get('type', '')}",
+        f"Timestamp: {event.get('timestamp', '')}",
+        f"VIN: {event.get('vin', 'UNASSIGNED')}",
+        f"Summary: {event.get('summary', '')}",
+        f"Interface: {details.get('interface', 'Unknown')}",
+        f"Read-only: {'Yes' if details.get('read_only') else 'Not recorded'}",
+    ]
+    if event.get("type") == "monitor_tests_scan_failed":
+        lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
+        return "\\n".join(lines)
+
+    supported = details.get("supported_monitor_ids") or []
+    responses = details.get("results", {}).get("responses", [])
+    lines.extend([
+        f"Supported monitor IDs: {', '.join(f'{int(mid):02X}' for mid in supported) or 'None reported'}",
+        f"ECU responses: {len(responses)}",
+        "",
+        "MODE 06 TEST RESULTS (RAW)",
+    ])
+    result_count = 0
+    for response in responses:
+        arbitration_id = response.get("arbitration_id")
+        ecu = "Unknown" if arbitration_id is None else (
+            f"{int(arbitration_id):08X} "
+            f"({'29-bit' if response.get('is_extended_id') else '11-bit'})"
+        )
+        for result in response.get("results") or []:
+            result_count += 1
+            lines.extend([
+                "",
+                f"ECU: {ecu}",
+                f"Channel: {response.get('channel', 'Unknown')}",
+                f"MID: {int(response.get('monitor_id', result.get('monitor_id', 0))):02X}",
+                f"TID: {int(result.get('test_id', 0)):02X}",
+                f"UASID: {int(result.get('unit_scaling_id', 0)):02X}",
+                f"Value (raw): {result.get('value_raw', 'Unknown')}",
+                f"Minimum (raw): {result.get('minimum_raw', 'Unknown')}",
+                f"Maximum (raw): {result.get('maximum_raw', 'Unknown')}",
+                f"Limit comparison: {result.get('status', 'Unknown')}",
+                f"Record bytes: {result.get('raw', 'Not recorded')}",
+            ])
+    if not result_count:
+        lines.append("No valid Mode 06 result records were returned.")
+    lines.extend(["", "Values are raw. No engineering units or scaling are inferred."])
+    return "\\n".join(lines)
