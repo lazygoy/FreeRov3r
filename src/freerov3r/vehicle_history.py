@@ -12,6 +12,47 @@ def filter_dtc_scan_events(events):
     return [event for event in events if event.get("type") in DTC_SCAN_EVENT_TYPES]
 
 
+def format_readiness_scan_event(event):
+    """Format a stored PID 01 readiness scan without inferring test status."""
+    details = event.get("details") or {}
+    lines = [
+        f"Event: {event.get('type', '')}",
+        f"Timestamp: {event.get('timestamp', '')}",
+        f"VIN: {event.get('vin', 'UNASSIGNED')}",
+        f"Summary: {event.get('summary', '')}",
+        f"Interface: {details.get('interface', 'Unknown')}",
+        f"Read-only: {'Yes' if details.get('read_only') else 'Not recorded'}",
+    ]
+    if event.get("type") == "readiness_scan_failed":
+        lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
+        return "\\n".join(lines)
+
+    lines.extend(["", "READINESS RESULTS"])
+    results = details.get("results") or []
+    if not results:
+        lines.append("No valid PID 01 response was returned.")
+    for result in results:
+        lines.extend([
+            "",
+            f"ECU: {int(result.get('arbitration_id', 0)):08X} "
+            f"({'29-bit' if result.get('is_extended_id') else '11-bit'})",
+            f"Channel: {result.get('channel', 'Unknown')}",
+            f"Ignition: {result.get('ignition_type', 'Unknown')}",
+            f"MIL: {'ON' if result.get('mil_on') else 'OFF'}",
+            f"DTC count: {result.get('dtc_count', 'Unknown')}",
+            "Monitors:",
+        ])
+        for monitor in result.get("monitors") or []:
+            complete = monitor.get("complete")
+            state = "N/A" if complete is None else ("Complete" if complete else "Incomplete")
+            lines.append(
+                f"  {monitor.get('name', 'unknown')} | "
+                f"{'Supported' if monitor.get('supported') else 'Not supported'} | {state}"
+            )
+        lines.append(f"Raw: {result.get('raw', '')}")
+    return "\\n".join(lines)
+
+
 def format_dtc_scan_event(event):
     """Format a stored DTC scan as readable text without inventing descriptions."""
     details = event.get("details") or {}

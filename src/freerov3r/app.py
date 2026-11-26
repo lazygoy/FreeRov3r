@@ -52,7 +52,10 @@ try:
 except ImportError:
     QPdfDocument = QPdfView = None
     HAS_PDF_VIEWER = False
-from .vehicle_history import VehicleHistoryStore, filter_dtc_scan_events, format_dtc_scan_event
+from .vehicle_history import (
+    VehicleHistoryStore, filter_dtc_scan_events, format_dtc_scan_event,
+    format_readiness_scan_event,
+)
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .asset_loader import ASSET_DIR, load_asset_pixmap
@@ -200,6 +203,8 @@ class Receiver(QThread):
     status = Signal(str)
     dtcs_completed = Signal(object)
     dtcs_failed = Signal(str)
+    readiness_completed = Signal(object)
+    readiness_failed = Signal(str)
 
     def __init__(self, adapter):
         super().__init__()
@@ -207,6 +212,7 @@ class Receiver(QThread):
         self.running = True
         self._commands = queue.Queue()
         self._dtc_request_pending = False
+        self._readiness_request_pending = False
 
     def request_dtcs(self):
         """Queue a DTC read for execution by the adapter-owning thread."""
@@ -216,6 +222,16 @@ class Receiver(QThread):
             return False
         self._dtc_request_pending = True
         self._commands.put("read_dtcs")
+        return True
+
+    def request_readiness(self):
+        """Queue a readiness read on the adapter-owning thread."""
+        if not self.isRunning() or not callable(getattr(self.adapter, "read_readiness", None)):
+            return False
+        if self._readiness_request_pending:
+            return False
+        self._readiness_request_pending = True
+        self._commands.put("read_readiness")
         return True
 
     def run(self):
@@ -235,6 +251,14 @@ class Receiver(QThread):
                     finally:
                         self._dtc_request_pending = False
                     continue
+                if command == "read_readiness":
+                    try:
+                        self.readiness_completed.emit(self.adapter.read_readiness())
+                    except Exception as exc:
+                        self.readiness_failed.emit(str(exc))
+                    finally:
+                        self._readiness_request_pending = False
+                    continue
                 frame = self.adapter.receive(0.15)
                 if frame is not None:
                     self.frame_received.emit(frame)
@@ -244,12 +268,15 @@ class Receiver(QThread):
             self.status.emit(f"Adapter error: {exc}")
             if self._dtc_request_pending:
                 self.dtcs_failed.emit(str(exc))
+            if self._readiness_request_pending:
+                self.readiness_failed.emit(str(exc))
         finally:
             try:
                 self.adapter.close()
             except Exception:
                 pass
             self._dtc_request_pending = False
+            self._readiness_request_pending = False
 
     def stop(self):
         self.running = False
@@ -1301,7 +1328,38 @@ class OBDTab(QWidget):
         self.dtc_table.setEditTriggers(QTableWidget.NoEditTriggers)
         dtc_layout.addWidget(self.dtc_table)
         layout.addWidget(dtc_group)
+
+        readiness_group = QGroupBox("READINESS MONITORS (MODE 01 PID 01)")
+        readiness_layout = QVBoxLayout(readiness_group)
+        readiness_actions = QHBoxLayout()
+        self.read_readiness_btn = QPushButton("Read Readiness")
+        self.read_readiness_btn.setEnabled(False)
+        self.read_readiness_btn.setToolTip(
+            "Read-only OBD-II Mode 01 PID 01 request. Runs through the adapter-owning thread."
+        )
+        self.read_readiness_btn.clicked.connect(self.request_readiness_scan)
+        readiness_actions.addWidget(self.read_readiness_btn)
+        self.readiness_status_label = QLabel(
+            "Connect an ELM327 OBD-II adapter to read inspection readiness."
+        )
+        self.readiness_status_label.setWordWrap(True)
+        readiness_actions.addWidget(self.readiness_status_label, 1)
+        readiness_layout.addLayout(readiness_actions)
+        self.readiness_table = QTableWidget(0, 3)
+        self.readiness_table.setHorizontalHeaderLabels(["Monitor", "Supported", "Complete"])
+        self.readiness_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.readiness_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.readiness_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.readiness_table.setMaximumHeight(220)
+        self.readiness_table.setAlternatingRowColors(True)
+        self.readiness_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        readiness_layout.addWidget(self.readiness_table)
+        self.readiness_metadata_label = QLabel("MIL and DTC count: not yet read")
+        self.readiness_metadata_label.setWordWrap(True)
+        readiness_layout.addWidget(self.readiness_metadata_label)
+        layout.addWidget(readiness_group)
         self.read_dtcs_callback = None
+        self.read_readiness_callback = None
         self._refresh_favorite_combo()
 
     def request_dtc_scan(self):
@@ -1316,8 +1374,62 @@ class OBDTab(QWidget):
 
     def set_dtc_scan_enabled(self, enabled):
         self.read_dtcs_btn.setEnabled(bool(enabled))
+        self.read_readiness_btn.setEnabled(bool(enabled))
         if not enabled:
             self.dtc_status_label.setText("Connect an ELM327 OBD-II adapter to read trouble codes.")
+            self.readiness_status_label.setText(
+                "Connect an ELM327 OBD-II adapter to read inspection readiness."
+            )
+
+    def request_readiness_scan(self):
+        if self.read_readiness_callback is None:
+            self.readiness_status_label.setText(
+                "Start an ELM327 OBD-II connection before requesting readiness."
+            )
+            return
+        if self.read_readiness_callback():
+            self.read_readiness_btn.setEnabled(False)
+            self.readiness_status_label.setText("Reading Mode 01 PID 01 readiness…")
+        else:
+            self.readiness_status_label.setText(
+                "Readiness request is unavailable or another read is already in progress."
+            )
+
+    def show_readiness_results(self, results):
+        self.readiness_table.setRowCount(0)
+        for result in results:
+            for monitor in result.get("monitors", []):
+                row = self.readiness_table.rowCount()
+                self.readiness_table.insertRow(row)
+                values = (
+                    monitor.get("name", "").replace("_", " ").title(),
+                    "Yes" if monitor.get("supported") else "No",
+                    "N/A" if monitor.get("complete") is None else
+                    ("Complete" if monitor.get("complete") else "Incomplete"),
+                )
+                for column, value in enumerate(values):
+                    self.readiness_table.setItem(row, column, QTableWidgetItem(str(value)))
+        if not results:
+            self.readiness_metadata_label.setText("No valid PID 01 response was returned.")
+            self.readiness_status_label.setText("Read complete: no readiness response received.")
+        else:
+            primary = results[0]
+            mil = "ON" if primary.get("mil_on") else "OFF"
+            self.readiness_metadata_label.setText(
+                f"MIL: {mil} | DTC count: {primary.get('dtc_count', 'Unknown')} | "
+                f"Ignition: {primary.get('ignition_type', 'Unknown')} | "
+                f"ECU: {primary.get('arbitration_id', 0):08X} "
+                f"({'29-bit' if primary.get('is_extended_id') else '11-bit'}) | "
+                f"Channel: {primary.get('channel', 'Unknown')} | Raw: {primary.get('raw', '')}"
+            )
+            self.readiness_status_label.setText(
+                f"Read complete: {len(results)} ECU response(s). Unsupported monitors are shown as N/A."
+            )
+        self.read_readiness_btn.setEnabled(True)
+
+    def set_readiness_scan_error(self, message):
+        self.readiness_status_label.setText(f"Readiness read failed: {message}")
+        self.read_readiness_btn.setEnabled(True)
 
     def show_dtc_results(self, codes):
         self.dtc_table.setRowCount(0)
@@ -2531,6 +2643,8 @@ class VehicleHistoryTab(QWidget):
             self.details.clear()
         elif event.get("type") in {"dtc_scan_completed", "dtc_scan_failed"}:
             self.details.setPlainText(format_dtc_scan_event(event))
+        elif event.get("type") in {"readiness_scan_completed", "readiness_scan_failed"}:
+            self.details.setPlainText(format_readiness_scan_event(event))
         else:
             self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False))
 
@@ -3039,6 +3153,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.graph_tab, "Graph")
         self.obd_tab = OBDTab(self.settings)
         self.obd_tab.read_dtcs_callback = self.request_dtc_scan
+        self.obd_tab.read_readiness_callback = self.request_readiness_scan
         self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
@@ -4077,6 +4192,8 @@ class MainWindow(QMainWindow):
         self.receiver.status.connect(self.status.setText)
         self.receiver.dtcs_completed.connect(self._on_dtc_scan_completed)
         self.receiver.dtcs_failed.connect(self._on_dtc_scan_failed)
+        self.receiver.readiness_completed.connect(self._on_readiness_scan_completed)
+        self.receiver.readiness_failed.connect(self._on_readiness_scan_failed)
         self.obd_tab.set_dtc_scan_enabled(interface == "elm327_obd")
         self.receiver.start()
         self.connect_btn.setText("Stop listening")
@@ -4098,6 +4215,42 @@ class MainWindow(QMainWindow):
         if self.active_interface != "elm327_obd" or receiver is None:
             return False
         return receiver.request_dtcs()
+
+    def request_readiness_scan(self):
+        receiver = self.receiver
+        if self.active_interface != "elm327_obd" or receiver is None:
+            return False
+        return receiver.request_readiness()
+
+    def _on_readiness_scan_completed(self, results):
+        self.obd_tab.show_readiness_results(results)
+        self.record_vehicle_event(
+            "readiness_scan_completed",
+            f"OBD-II readiness scan completed: {len(results)} ECU response(s)",
+            {
+                "interface": self.active_interface,
+                "service": "01",
+                "pid": "01",
+                "count": len(results),
+                "results": results,
+                "read_only": True,
+            },
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast(
+            f"Readiness scan complete: {len(results)} ECU response(s)",
+            "success" if results else "warning",
+        )
+
+    def _on_readiness_scan_failed(self, message):
+        self.obd_tab.set_readiness_scan_error(message)
+        self.record_vehicle_event(
+            "readiness_scan_failed",
+            "OBD-II readiness scan failed",
+            {"interface": self.active_interface, "error": str(message), "read_only": True},
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast("Readiness scan failed", "warning")
 
     def _on_dtc_scan_completed(self, codes):
         self.obd_tab.show_dtc_results(codes)
