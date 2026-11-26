@@ -201,3 +201,40 @@ def test_elm327_obd_adapter_rejects_unsupported_dtc_service(monkeypatch):
         assert "04" not in fake.commands
     finally:
         adapter.close()
+
+
+
+def test_elm327_obd_adapter_reads_pid_01_readiness(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 06 41 01 81 00 0F 08\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        results = adapter.read_readiness()
+        assert len(results) == 1
+        result = results[0]
+        assert result["mil_on"] is True
+        assert result["dtc_count"] == 1
+        assert result["ignition_type"] == "spark"
+        assert result["arbitration_id"] == 0x7E8
+        assert result["channel"] == "COM9"
+        assert fake.commands[-1] == "0101"
+        monitors = {item["name"]: item for item in result["monitors"]}
+        assert monitors["misfire"]["complete"] is True
+        assert monitors["catalyst"]["complete"] is False
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_readiness_requires_open_connection():
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    with pytest.raises(RuntimeError, match="not open"):
+        adapter.read_readiness()
