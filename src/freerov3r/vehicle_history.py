@@ -387,6 +387,8 @@ def format_capture_event(event):
             ])
         elif event_type == "capture_completed":
             lines.extend([
+                f"Channel: {details.get('channel', 'Unknown')}",
+                f"Bitrate: {details.get('bitrate', 'Unknown')}",
                 f"Frames recorded: {details.get('frames', 'Unknown')}",
                 f"Sensor samples: {details.get('sensor_samples', 'Unknown')}",
                 f"Sensor samples dropped from bounded buffer: {details.get('sensor_samples_dropped_from_bounded_buffer', 'Not recorded')}",

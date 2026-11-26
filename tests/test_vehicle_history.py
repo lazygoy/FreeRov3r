@@ -294,6 +294,8 @@ def test_capture_history_report_formats_lifecycle_and_vin_metadata():
         "summary": "CAN capture stopped",
         "details": {
             "interface": "ESP32 dual CAN",
+            "channel": "HS-CAN",
+            "bitrate": 500000,
             "frames": 1250,
             "sensor_samples": 84,
             "sensor_samples_dropped_from_bounded_buffer": 3,
@@ -302,6 +304,8 @@ def test_capture_history_report_formats_lifecycle_and_vin_metadata():
         },
     }
     report = format_capture_event(completed)
+    assert "Channel: HS-CAN" in report
+    assert "Bitrate: 500000" in report
     assert "Frames recorded: 1250" in report
     assert "Sensor samples: 84" in report
     assert "dropped from bounded buffer: 3" in report
