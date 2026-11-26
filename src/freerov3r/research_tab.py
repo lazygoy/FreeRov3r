@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
 )
 
+from freerov3r.capture_storage import CaptureStorageError, write_json_atomic
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
@@ -2763,7 +2764,12 @@ class ResearchTab(QWidget):
             "bookmarks": self.bookmarks,
             "markers": self.markers,
         }
-        Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        try:
+            write_json_atomic(path, payload)
+        except CaptureStorageError as exc:
+            QMessageBox.critical(self, "Save research session failed", str(exc))
+            self.status_label.setText("Capture save failed. The previous archive, if any, was left unchanged.")
+            return
         self.status_label.setText(f"Saved {len(self.frames):,} frames to {Path(path).name}")
 
     def decode_did_responses(self):
