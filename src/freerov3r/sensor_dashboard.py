@@ -479,7 +479,6 @@ class SensorDashboardDock(QDockWidget):
         vin = self.vin_provider()
         for panel in self.panels:
             panel.set_vehicle_vin(vin)
-        self._refresh_favorites(self.favorite_combo.currentData())
 
     def reflow(self, *_):
         count = int(self.panel_count.currentData())
