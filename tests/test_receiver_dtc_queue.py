@@ -118,3 +118,41 @@ def test_receiver_runs_mode06_request_on_adapter_owner_thread():
     finally:
         receiver.stop()
     assert adapter.closed
+
+
+class BurstFakeAdapter:
+    description = "fake burst adapter"
+
+    def __init__(self, frame_count=150):
+        self.remaining = frame_count
+
+    def open(self):
+        pass
+
+    def receive(self, timeout=0.15):
+        if self.remaining:
+            self.remaining -= 1
+            return object()
+        time.sleep(min(timeout, 0.005))
+        return None
+
+    def close(self):
+        pass
+
+
+def test_receiver_batches_high_rate_frames():
+    adapter = BurstFakeAdapter()
+    receiver = Receiver(adapter)
+    batches = []
+    receiver.frames_received.connect(batches.append)
+    receiver.start()
+    try:
+        deadline = time.monotonic() + 2
+        while sum(len(batch) for batch in batches) < 150 and time.monotonic() < deadline:
+            time.sleep(0.005)
+    finally:
+        receiver.stop()
+
+    assert sum(len(batch) for batch in batches) == 150
+    assert len(batches) < 150
+    assert all(isinstance(batch, list) for batch in batches)
