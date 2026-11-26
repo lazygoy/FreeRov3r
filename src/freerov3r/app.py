@@ -35,6 +35,8 @@ from .hardware.python_can_adapter import PythonCanAdapter
 from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
 from .hardware.simulated_vehicle import SimulatedVehicleAdapter
+from .hardware.capture_replay_adapter import CaptureReplayAdapter
+from .hardware.dual_channel_simulator import DualChannelSimulator
 from .diagnostics.obd2 import (OBD_PIDS, PID_CATEGORIES_ALL, PID_MULTI_VALUE_KEYS, search_mode01_pids, decode_mode01_measurements, Mode01ScalingContext)
 from .session import CaptureSession
 from .can_monitor import CanMonitor
@@ -435,6 +437,8 @@ class VehicleSetupWizard(QDialog):
         self.interface_combo = QComboBox()
         self._interfaces = [
             ("virtual", "Virtual CAN (no hardware)", "freerov3r"),
+            ("dual_simulator", "Dual-channel CAN simulator (offline)", "offline"),
+            ("capture_replay", "Capture replay (JSONL, offline)", ""),
             ("simulator", "Simulated vehicle (demo)", "L319-DEMO"),
             ("esp32", "ESP32 single CAN channel", "COM3"),
             ("esp32_dual", "ESP32 dual CAN channels (two boards)", "COM3,COM4"),
@@ -3994,6 +3998,8 @@ class MainWindow(QMainWindow):
         controls = QHBoxLayout()
         self.backend = QComboBox()
         self.backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
+        self.backend.addItem("Dual-channel CAN simulator (offline)", ("dual_simulator", "offline"))
+        self.backend.addItem("Capture replay (JSONL, offline)", ("capture_replay", ""))
         self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.backend.addItem("ESP32 serial adapter (single CAN)", ("esp32", "COM3"))
         self.backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
@@ -4187,6 +4193,8 @@ class MainWindow(QMainWindow):
         connection_form = QFormLayout(connection_group)
         self.settings_backend = QComboBox()
         self.settings_backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
+        self.settings_backend.addItem("Dual-channel CAN simulator (offline)", ("dual_simulator", "offline"))
+        self.settings_backend.addItem("Capture replay (JSONL, offline)", ("capture_replay", ""))
         self.settings_backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.settings_backend.addItem("ESP32 serial adapter (single CAN)", ("esp32", "COM3"))
         self.settings_backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
@@ -4578,7 +4586,20 @@ class MainWindow(QMainWindow):
             self.show_toast("Select at least one OBD-II PID to poll", "warning")
             return
 
-        if interface == "simulator":
+        if interface == "dual_simulator":
+            adapter = DualChannelSimulator()
+        elif interface == "capture_replay":
+            replay_path = channel
+            if not replay_path:
+                replay_path, _ = QFileDialog.getOpenFileName(
+                    self, "Select FreeRov3r capture", str(Path.home()),
+                    "FreeRov3r captures (*.jsonl);;All files (*)",
+                )
+            if not replay_path:
+                return
+            channel = replay_path
+            adapter = CaptureReplayAdapter(replay_path)
+        elif interface == "simulator":
             adapter = SimulatedVehicleAdapter(channel=channel or "L319-DEMO")
         elif interface == "esp32":
             adapter = Esp32SerialAdapter(port=channel)
