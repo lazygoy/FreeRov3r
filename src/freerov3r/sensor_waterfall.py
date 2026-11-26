@@ -2,7 +2,7 @@
 
 import math
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
@@ -150,7 +150,7 @@ class WaterfallPlot(QWidget):
             ridge = [self._project(x, lane_index, z, self.rect()) for x, z in points]
             polygon = QPolygonF()
             for point in ridge:
-                polygon.append(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(*point))
+                polygon.append(QPointF(*point))
             for point in reversed(baseline):
                 polygon.append(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(*point))
             hue = (sum(lane["sensor_id"].encode("utf-8")) * 3) % 360
