@@ -13,6 +13,8 @@ import serial
 from .base import CanAdapter
 from ..models import CanFrame
 from ..diagnostics.obd2 import PID_DEFINITIONS, parse_mode01_supported_pids
+from ..diagnostics.dtc import decode_j1979_dtcs
+from ..isotp import reassemble_isotp
 
 
 DEFAULT_PIDS = tuple(PID_DEFINITIONS)
@@ -171,6 +173,68 @@ class Elm327ObdAdapter(CanAdapter):
                 channel=self.port, timestamp=now
             ))
             self.responses_received += 1
+
+    @staticmethod
+    def _parse_response_frames(response, channel, timestamp):
+        """Parse header-enabled ELM327 CAN response lines into ISO-TP frames."""
+        frames = []
+        for raw_line in response.replace(">", "\n").replace("\r", "\n").splitlines():
+            parts = raw_line.strip().split()
+            if len(parts) < 2 or len(parts[0]) not in (3, 8):
+                continue
+            try:
+                can_id = int(parts[0], 16)
+                if any(len(part) != 2 for part in parts[1:]):
+                    continue
+                data = bytes(int(part, 16) for part in parts[1:])
+            except ValueError:
+                continue
+            extended = len(parts[0]) == 8
+            physical_response = (
+                0x18DAF100 <= can_id <= 0x18DAF1FF
+                if extended else 0x7E8 <= can_id <= 0x7EF
+            )
+            if physical_response and data:
+                frames.append({
+                    "arbitration_id": can_id,
+                    "extended": extended,
+                    "channel": channel,
+                    "timestamp": timestamp + len(frames) * 0.000001,
+                    "data": data.hex(),
+                })
+        return frames
+
+    def read_dtcs(self, services=(0x03, 0x07, 0x0A)):
+        """Read stored, pending, and permanent DTCs using standard OBD services.
+
+        This is an explicit read-only operation. Call it while the adapter's
+        polling receive loop is paused; it uses the same serial connection.
+        Multi-frame responses are reassembled before DTC decoding.
+        """
+        if self.connection is None:
+            raise RuntimeError("ELM327 OBD-II adapter is not open")
+        selected = tuple(dict.fromkeys(int(service) for service in services))
+        invalid = [service for service in selected if service not in (0x03, 0x07, 0x0A)]
+        if invalid:
+            raise ValueError(f"Unsupported DTC service(s): {invalid}")
+
+        results = []
+        for service in selected:
+            response = self._command(f"{service:02X}")
+            frames = self._parse_response_frames(response, self.port, time.time())
+            messages = reassemble_isotp(frames)
+            for message in messages:
+                if message.get("status") != "complete":
+                    continue
+                payload = bytes.fromhex(message.get("payload", ""))
+                for dtc in decode_j1979_dtcs(payload, expected_service=service):
+                    results.append({
+                        **dtc.to_dict(),
+                        "arbitration_id": message["arbitration_id"],
+                        "is_extended_id": message["extended"],
+                        "channel": message["channel"],
+                    })
+        return results
 
     def receive(self, timeout=0.2):
         if self.connection is None:
