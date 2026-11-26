@@ -808,40 +808,78 @@ def _normalize_record(record):
 
 
 def load_capture_file(path):
-    """Load FreeRov3r JSON, JSONL, CSV, or common candump text captures."""
+    """Load captures while reporting malformed records instead of silently hiding them."""
     path = Path(path)
     suffix = path.suffix.lower()
     metadata = {}
     records = []
+    invalid_records = 0
+    malformed_lines = 0
+    possible_truncated_final_line = False
 
     if suffix in (".json", ".jsonl", ".ndjson"):
         text = path.read_text(encoding="utf-8-sig")
         if suffix == ".json":
             parsed = json.loads(text)
             if isinstance(parsed, dict):
-                metadata = dict(parsed.get("metadata", {}))
+                raw_metadata = parsed.get("metadata", {})
+                if not isinstance(raw_metadata, dict):
+                    raise ValueError("Capture metadata must be a JSON object.")
+                metadata = dict(raw_metadata)
                 metadata["bookmarks"] = parsed.get("bookmarks", {})
                 metadata["markers"] = parsed.get("markers", [])
                 source = parsed.get("frames", [])
-            else:
+            elif isinstance(parsed, list):
                 source = parsed
-            records = [_normalize_record(x) for x in source]
+            else:
+                raise ValueError("Capture JSON must contain an object or a frame list.")
+            if not isinstance(source, list):
+                raise ValueError("Capture frames must be a JSON array.")
+            for item in source:
+                normalized = _normalize_record(item)
+                if normalized is None:
+                    invalid_records += 1
+                else:
+                    records.append(normalized)
         else:
-            for line in text.splitlines():
+            lines = text.splitlines()
+            last_content_line = max(
+                (index for index, line in enumerate(lines) if line.strip()),
+                default=-1,
+            )
+            for index, line in enumerate(lines):
                 if not line.strip():
                     continue
                 try:
                     item = json.loads(line)
                 except json.JSONDecodeError:
+                    malformed_lines += 1
+                    if index == last_content_line:
+                        possible_truncated_final_line = True
+                    continue
+                if not isinstance(item, dict):
+                    invalid_records += 1
                     continue
                 if item.get("record_type") == "metadata":
-                    metadata = item.get("metadata", {})
+                    raw_metadata = item.get("metadata", {})
+                    if isinstance(raw_metadata, dict):
+                        metadata.update(raw_metadata)
+                    else:
+                        invalid_records += 1
                 else:
-                    records.append(_normalize_record(item))
+                    normalized = _normalize_record(item)
+                    if normalized is None:
+                        invalid_records += 1
+                    else:
+                        records.append(normalized)
     elif suffix == ".csv":
         with path.open("r", newline="", encoding="utf-8-sig") as handle:
             for row in csv.DictReader(handle):
-                records.append(_normalize_record(row))
+                normalized = _normalize_record(row)
+                if normalized is None:
+                    invalid_records += 1
+                else:
+                    records.append(normalized)
     else:
         # candump: (channel timestamp) CAN_ID#DATA or CAN_ID##FLAGS+DATA
         pattern = re.compile(r"^\s*(?:\((?P<time>\d+(?:\.\d+)?)\)\s+)?(?:\S+\s+)?(?P<id>[0-9A-Fa-f]+)(?P<sep>##|#)(?P<data>[0-9A-Fa-f]*)")
@@ -853,17 +891,33 @@ def load_capture_file(path):
             data = match.group("data")
             if match.group("sep") == "##":
                 data = data[1:] if data else ""
-            try:
-                records.append(_normalize_record({
-                    "timestamp": match.group("time") or 0,
-                    "arbitration_id": can_id,
-                    "extended": can_id > 0x7FF,
-                    "data": data,
-                }))
-            except ValueError:
-                continue
+            normalized = _normalize_record({
+                "timestamp": match.group("time") or 0,
+                "arbitration_id": can_id,
+                "extended": can_id > 0x7FF,
+                "data": data,
+            })
+            if normalized is None:
+                invalid_records += 1
+            else:
+                records.append(normalized)
 
-    return metadata, [x for x in records if x is not None]
+    warnings = []
+    if invalid_records:
+        warnings.append(f"{invalid_records} invalid frame record(s) were skipped")
+    if malformed_lines:
+        warnings.append(f"{malformed_lines} malformed JSON line(s) were skipped")
+    if possible_truncated_final_line:
+        warnings.append("The final non-empty JSONL line may be truncated")
+    if warnings:
+        metadata["import_warnings"] = warnings
+        metadata["import_error_counts"] = {
+            "invalid_records": invalid_records,
+            "malformed_lines": malformed_lines,
+            "possible_truncated_final_line": possible_truncated_final_line,
+        }
+
+    return metadata, records
 
 
 class ResearchTab(QWidget):
@@ -2274,7 +2328,11 @@ class ResearchTab(QWidget):
         self.markers = self.metadata.pop("markers", [])
         self.metadata["imported_from"] = path
         self.refresh_table()
-        self.status_label.setText(f"Imported {len(records):,} frames from {Path(path).name}")
+        warning_count = len(metadata.get("import_warnings", []))
+        suffix = f" | {warning_count} import warning(s)" if warning_count else ""
+        self.status_label.setText(
+            f"Imported {len(records):,} frames from {Path(path).name}{suffix}"
+        )
 
     def load_reference(self):
         path, _ = QFileDialog.getOpenFileName(
