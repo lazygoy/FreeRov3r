@@ -3447,6 +3447,8 @@ class MainWindow(QMainWindow):
         self.active_adapter = None
         self._last_receiver_diagnostics = {}
         self.capture_started_at = None
+        self.capture_channel = None
+        self.capture_bitrate = None
         self.capture_start_frames = 0
         self.capture_start_sample_index = 0
         self.capture_start_frame_index = 0
@@ -4505,7 +4507,10 @@ class MainWindow(QMainWindow):
             )
             self.record_vehicle_event(
                 "capture_completed", "CAN capture stopped",
-                {"interface": self.active_interface, "frames": len(capture_frames),
+                {"interface": self.active_interface,
+                 "channel": self.capture_channel or "Unknown",
+                 "bitrate": self.capture_bitrate or "Unknown",
+                 "frames": len(capture_frames),
                  "sensor_samples": len(capture_samples),
                  "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
                  "duration_seconds": round(elapsed, 2),
@@ -4513,6 +4518,8 @@ class MainWindow(QMainWindow):
                 vin=self.capture_vin or "UNASSIGNED",
             )
             self.capture_started_at = None
+            self.capture_channel = None
+            self.capture_bitrate = None
             self.capture_vin = None
             self.receiver = None
             self.active_adapter = None
@@ -4564,6 +4571,8 @@ class MainWindow(QMainWindow):
         self.capture_vin = self.settings.get("current_vin")
         self.research_tab.set_context(self.capture_vin, interface)
         self.capture_started_at = time.time()
+        self.capture_channel = channel
+        self.capture_bitrate = bitrate
         self.capture_start_frames = 0
         self.capture_start_sample_index = self.sensor_capture.total_samples_added
         self.capture_start_frame_index = len(self.session.frames)
