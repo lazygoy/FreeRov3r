@@ -920,6 +920,18 @@ def load_capture_file(path):
     return metadata, records
 
 
+def format_import_warnings(metadata, source_name):
+    """Format recovery warnings for display without hiding the structured metadata."""
+    warnings = metadata.get("import_warnings", []) if isinstance(metadata, dict) else []
+    if not warnings:
+        return ""
+    return (
+        f"Import report for {Path(source_name).name}:\\n\\n"
+        + "\\n".join(f"• {warning}" for warning in warnings)
+        + f"\\n\\nRetained frames: {metadata.get('frames_retained', 'not reported')}"
+    )
+
+
 class ResearchTab(QWidget):
     """Local-only protocol capture, annotation, comparison and REA handoff."""
 
@@ -2328,11 +2340,14 @@ class ResearchTab(QWidget):
         self.markers = self.metadata.pop("markers", [])
         self.metadata["imported_from"] = path
         self.refresh_table()
+        warning_report = format_import_warnings(metadata, path)
         warning_count = len(metadata.get("import_warnings", []))
         suffix = f" | {warning_count} import warning(s)" if warning_count else ""
         self.status_label.setText(
             f"Imported {len(records):,} frames from {Path(path).name}{suffix}"
         )
+        if warning_report:
+            QMessageBox.warning(self, "Capture import report", warning_report)
 
     def load_reference(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -2350,6 +2365,9 @@ class ResearchTab(QWidget):
         self.reference_metadata["imported_from"] = path
         self.refresh_table()
         self.status_label.setText(f"Comparison reference loaded: {Path(path).name} ({len(records):,} frames)")
+        warning_report = format_import_warnings(metadata, path)
+        if warning_report:
+            QMessageBox.warning(self, "Comparison capture import report", warning_report)
 
 
     def load_sequence_captures(self):
@@ -2361,12 +2379,16 @@ class ResearchTab(QWidget):
             return
         loaded = []
         failures = []
+        import_warnings = []
         for path in paths:
             try:
                 metadata, records = load_capture_file(path)
             except Exception as exc:
                 failures.append(f"{Path(path).name}: {exc}")
                 continue
+            warning_report = format_import_warnings(metadata, path)
+            if warning_report:
+                import_warnings.append(warning_report)
             markers = metadata.pop("markers", [])
             loaded.append({
                 "name": metadata.get("session_name") or Path(path).name,
@@ -2382,6 +2404,11 @@ class ResearchTab(QWidget):
         if failures:
             message += "\\n\\nCould not load:\\n" + "\\n".join(failures)
         self.status_label.setText(message.replace("\\n", "\n"))
+        if import_warnings:
+            QMessageBox.warning(
+                self, "Sequence capture import reports",
+                "\\n\\n".join(import_warnings),
+            )
 
     def _module_inventory_capture_set(self):
         """Return independently loaded captures for passive node comparison."""

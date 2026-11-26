@@ -805,3 +805,25 @@ def test_load_json_capture_rejects_invalid_archive_structure(tmp_path):
 
     with pytest.raises(ValueError, match="metadata"):
         load_capture_file(path)
+
+
+
+def test_format_import_warnings_includes_filename_and_each_warning():
+    from freerov3r.research_tab import format_import_warnings
+
+    report = format_import_warnings({
+        "import_warnings": [
+            "2 invalid frame record(s) were skipped",
+            "The final non-empty JSONL line may be truncated",
+        ],
+    }, "/captures/damaged.jsonl")
+
+    assert "damaged.jsonl" in report
+    assert "2 invalid frame record(s) were skipped" in report
+    assert "final non-empty JSONL line may be truncated" in report
+
+
+def test_format_import_warnings_is_empty_for_clean_import():
+    from freerov3r.research_tab import format_import_warnings
+
+    assert format_import_warnings({}, "clean.json") == ""
