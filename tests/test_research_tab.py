@@ -712,7 +712,7 @@ def test_capture_retention_reports_pending_and_buffer_overflow(monkeypatch):
     app.processEvents()
 
 
-def test_import_preserves_timestamp_provenance_and_resets_drop_counters(tmp_path):
+def test_load_capture_file_preserves_timestamp_provenance(tmp_path):
     import json
     from freerov3r.research_tab import load_capture_file
 
