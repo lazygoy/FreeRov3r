@@ -27,9 +27,9 @@ def decode_mode06_results(payload, *, monitor_id, arbitration_id=None,
     monitor_id = int(monitor_id)
     if not 0 <= monitor_id <= 0xFF:
         raise ValueError("monitor_id must be in the range 0..255")
-    if len(payload) < 2 or payload[:2] != bytes((0x46, monitor_id)):
-        raise ValueError("Mode 06 response does not match requested monitor ID")
-    records = payload[2:]
+    if len(payload) < 10 or payload[0] != 0x46:
+        raise ValueError("Expected Mode 06 positive response with at least one result record")
+    records = payload[1:]
     if len(records) % 9:
         raise ValueError(
             f"Mode 06 result data must contain complete 9-byte records; got {len(records)} bytes"
@@ -37,10 +37,16 @@ def decode_mode06_results(payload, *, monitor_id, arbitration_id=None,
 
     results = []
     for offset in range(0, len(records), 9):
-        tid, uasid = records[offset:offset + 2]
-        raw_value = int.from_bytes(records[offset + 2:offset + 4], "big")
-        raw_min = int.from_bytes(records[offset + 4:offset + 6], "big")
-        raw_max = int.from_bytes(records[offset + 6:offset + 8], "big")
+        record_mid = records[offset]
+        if record_mid != monitor_id:
+            raise ValueError(
+                f"Mode 06 record monitor ID 0x{record_mid:02X} does not match "
+                f"requested 0x{monitor_id:02X}"
+            )
+        tid, uasid = records[offset + 1:offset + 3]
+        raw_value = int.from_bytes(records[offset + 3:offset + 5], "big")
+        raw_min = int.from_bytes(records[offset + 5:offset + 7], "big")
+        raw_max = int.from_bytes(records[offset + 7:offset + 9], "big")
         signed = bool(uasid & 0x80)
 
         def interpret(raw):
