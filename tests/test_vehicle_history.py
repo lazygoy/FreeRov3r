@@ -253,3 +253,31 @@ def test_history_csv_export_keeps_nested_details_as_json(tmp_path):
     assert rows[0]["vin"] == "SALXXXXXXXXXXXX1"
     assert rows[0]["type"] == "dtc_scan_completed"
     assert json.loads(rows[0]["details"]) == {"dtcs": [{"code": "P0420"}]}
+
+
+
+def test_history_search_matches_vin_summary_and_nested_details_case_insensitively():
+    from freerov3r.vehicle_history import search_history_events
+
+    events = [
+        {
+            "timestamp": "2026-11-26T05:00:00+00:00",
+            "vin": "SALXXXXXXXXXXXX1",
+            "type": "dtc_scan_completed",
+            "summary": "One trouble code",
+            "details": {"dtcs": [{"code": "P0420", "status": "Stored"}]},
+        },
+        {
+            "timestamp": "2026-11-26T06:00:00+00:00",
+            "vin": "SALYYYYYYYYYYYY2",
+            "type": "capture",
+            "summary": "CAN capture",
+            "details": {"frames": 42},
+        },
+    ]
+
+    assert search_history_events(events, "p0420") == [events[0]]
+    assert search_history_events(events, "salyyyy") == [events[1]]
+    assert search_history_events(events, "CAN CAPTURE") == [events[1]]
+    assert search_history_events(events, "  ") == events
+    assert search_history_events(events, "not present") == []
