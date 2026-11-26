@@ -59,6 +59,7 @@ from .vehicle_history import (
     filter_vehicle_info_scan_events, filter_obd_scan_events,
     format_readiness_scan_event, format_freeze_frame_scan_event,
     format_vehicle_info_scan_event, export_history_json, export_history_csv,
+    search_history_events,
 )
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -2910,6 +2911,11 @@ class VehicleHistoryTab(QWidget):
         self.event_filter.addItem("Mode 06 scans", "mode06")
         self.event_filter.currentIndexChanged.connect(self.refresh_events)
         controls.addWidget(self.event_filter)
+        self.search_filter = QLineEdit()
+        self.search_filter.setPlaceholderText("Search VIN, event, summary, or details...")
+        self.search_filter.setClearButtonEnabled(True)
+        self.search_filter.textChanged.connect(self.refresh_events)
+        controls.addWidget(self.search_filter, 1)
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
         controls.addWidget(refresh_btn)
@@ -2962,6 +2968,7 @@ class VehicleHistoryTab(QWidget):
             events = filter_vehicle_info_scan_events(events)
         elif event_filter == "mode06":
             events = filter_mode06_scan_events(events)
+        events = search_history_events(events, self.search_filter.text())
         return events
 
     def export_history(self, format_name):
