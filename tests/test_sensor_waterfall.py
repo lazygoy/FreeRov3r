@@ -41,7 +41,7 @@ def test_waterfall_normalized_mode_maps_each_sensor_to_zero_to_one_hundred():
 
 def test_waterfall_filters_selection_vin_quality_and_non_finite_values():
     samples = [
-        sample("rpm", "RPM", 800, 1),
+        SensorSample(1, "rpm", "RPM", 800, "", "simulated", metadata={"vin": "THIS"}, monotonic_timestamp=1),
         SensorSample(2, "temp", "Coolant", 80, "C", "ecu",
                      metadata={"vin": "OTHER"}),
         SensorSample(3, "bad", "Bad", float("nan"), "", "ecu"),
