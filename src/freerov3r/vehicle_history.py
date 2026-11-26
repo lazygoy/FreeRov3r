@@ -157,6 +157,8 @@ class VehicleHistoryStore:
         self.events = data
 
     def record(self, vin, event_type, summary, details=None):
+        if details is not None and not isinstance(details, dict):
+            raise TypeError("Vehicle history event details must be a dictionary")
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "vin": vin or "UNASSIGNED",

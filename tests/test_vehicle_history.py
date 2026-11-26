@@ -417,3 +417,22 @@ def test_history_with_non_object_event_is_quarantined(tmp_path):
     assert store.recovery_backup_path is not None
     assert store.recovery_backup_path.read_text(encoding="utf-8") == original
     assert not path.exists()
+
+
+
+def test_record_rejects_non_object_details_without_poisoning_history(tmp_path):
+    import json
+    import pytest
+
+    path = tmp_path / "vehicle_history.json"
+    store = VehicleHistoryStore(path)
+
+    with pytest.raises(TypeError, match="details must be a dictionary"):
+        store.record("SALXXXXXXXXXXXX1", "capture_completed", "Invalid", ["not", "an", "object"])
+
+    assert store.events == []
+    assert not path.exists()
+
+    store.record("SALXXXXXXXXXXXX1", "capture_completed", "Valid", {"frames": 12})
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved[0]["details"] == {"frames": 12}
