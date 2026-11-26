@@ -144,7 +144,14 @@ class VehicleHistoryStore:
         except OSError as exc:
             self.load_error = str(exc)
             return
-        if not isinstance(data, list):
+        if (
+            not isinstance(data, list)
+            or any(
+                not isinstance(event, dict)
+                or not isinstance(event.get("details", {}), dict)
+                for event in data
+            )
+        ):
             self._quarantine_corrupt_file()
             return
         self.events = data
