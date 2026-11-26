@@ -13,6 +13,19 @@ def filter_dtc_scan_events(events):
     return [event for event in events if event.get("type") in DTC_SCAN_EVENT_TYPES]
 
 
+def search_history_events(events, query):
+    """Search all recorded event fields, including nested details, case-insensitively."""
+    term = str(query or "").strip().casefold()
+    if not term:
+        return list(events)
+    matches = []
+    for event in events:
+        searchable = json.dumps(event, ensure_ascii=False, sort_keys=True, default=str)
+        if term in searchable.casefold():
+            matches.append(event)
+    return matches
+
+
 def format_readiness_scan_event(event):
     """Format a stored PID 01 readiness scan without inferring test status."""
     details = event.get("details") or {}
