@@ -1,14 +1,7 @@
 import threading
 import time
 
-from PySide6.QtCore import QCoreApplication, Qt
-
-from freerov3r.app import Receiver
-
-
-# Keep Qt's application object alive until interpreter shutdown. PySide6 6.12
-# can abort during teardown if the last Python reference is released mid-suite.
-_QT_APP = None
+from freerov3r.app import FrameBatcher, Receiver
 
 
 class DtcCapableFakeAdapter:
@@ -147,40 +140,26 @@ class BurstFakeAdapter:
         pass
 
 
-def test_receiver_batches_high_rate_frames():
-    adapter = BurstFakeAdapter()
-    receiver = Receiver(adapter)
-    batches = []
-    batches_lock = threading.Lock()
-    frames_received = threading.Event()
+def test_frame_batcher_flushes_on_size_and_preserves_all_frames():
+    batcher = FrameBatcher(max_frames=64, interval=10.0)
+    frames = [object() for _ in range(150)]
+    emitted = []
 
-    def collect_batch(batch):
-        with batches_lock:
-            batches.append(batch)
-            if sum(len(item) for item in batches) >= 150:
-                frames_received.set()
+    for frame in frames:
+        batcher.add(frame)
+        if batcher.should_flush(now=batcher.last_emit):
+            emitted.append(batcher.take(now=batcher.last_emit))
 
-    # Deliver the signal through Qt's normal queued connection and pump
-    # the test event loop, matching how the application receives batches.
-    global _QT_APP
-    _QT_APP = QCoreApplication.instance() or QCoreApplication([])
-    app = _QT_APP
-    receiver.frames_received.connect(
-        collect_batch, Qt.ConnectionType.QueuedConnection
-    )
-    receiver.start()
-    try:
-        deadline = time.monotonic() + 2
-        while not frames_received.is_set() and time.monotonic() < deadline:
-            app.processEvents()
-            time.sleep(0.001)
-        app.processEvents()
-        assert frames_received.is_set()
-    finally:
-        receiver.stop()
+    if batcher.frames:
+        emitted.append(batcher.take(now=batcher.last_emit))
 
-    with batches_lock:
-        captured_batches = list(batches)
-    assert sum(len(batch) for batch in captured_batches) == 150
-    assert len(captured_batches) < 150
-    assert all(isinstance(batch, list) for batch in captured_batches)
+    assert [frame for batch in emitted for frame in batch] == frames
+    assert [len(batch) for batch in emitted] == [64, 64, 22]
+
+
+def test_frame_batcher_flushes_after_interval():
+    batcher = FrameBatcher(max_frames=64, interval=0.05)
+    batcher.add(object())
+
+    assert not batcher.should_flush(now=batcher.last_emit + 0.049)
+    assert batcher.should_flush(now=batcher.last_emit + 0.05)
