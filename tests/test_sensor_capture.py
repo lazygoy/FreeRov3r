@@ -57,3 +57,26 @@ def test_sensor_capture_rejects_zero_capacity():
 
     with pytest.raises(ValueError, match="max_samples"):
         SensorCapture(max_samples=0)
+
+
+def test_sensor_capture_preserves_monotonic_timestamp_in_exports(tmp_path):
+    sample = SensorSample(
+        100.0, "rpm", "Engine speed", 850, "rpm", "ecu",
+        monotonic_timestamp=42.5,
+    )
+    capture = SensorCapture()
+    capture.add(sample)
+    csv_path = tmp_path / "timed.csv"
+    jsonl_path = tmp_path / "timed.jsonl"
+    capture.export_csv(csv_path)
+    capture.export_jsonl(jsonl_path)
+
+    assert "monotonic_timestamp" in csv_path.read_text(encoding="utf-8").splitlines()[0]
+    assert ",42.5" in csv_path.read_text(encoding="utf-8")
+    assert '"monotonic_timestamp": 42.5' in jsonl_path.read_text(encoding="utf-8")
+
+
+def test_sensor_sample_factory_adds_monotonic_timestamp():
+    sample = SensorSample.create("rpm", "Engine speed", 800, "rpm", "ecu")
+    assert sample.monotonic_timestamp is not None
+    assert sample.monotonic_timestamp > 0
