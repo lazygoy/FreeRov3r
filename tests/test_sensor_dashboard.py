@@ -81,3 +81,14 @@ def test_normalize_dashboard_layout_sanitizes_invalid_settings():
         "window_seconds": 60,
         "auto_scale": True,
     }
+
+
+def test_dashboard_favorite_and_persistence_methods_belong_to_dock():
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    assert callable(getattr(SensorDashboardDock, "_refresh_favorites", None))
+    assert callable(getattr(SensorDashboardDock, "_favorite_selection_changed", None))
+    assert callable(getattr(SensorDashboardDock, "persist_layout", None))
+    assert callable(getattr(SensorDashboardDock, "_restore_saved_layout", None))
+    assert callable(getattr(SensorDashboardDock, "load_favorite", None))
+    assert callable(getattr(SensorDashboardDock, "save_layout_to_favorite", None))
