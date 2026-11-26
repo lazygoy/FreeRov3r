@@ -284,6 +284,8 @@ class SensorDashboardDock(QDockWidget):
         ]
         self._visible_count = 4
         self.refresh()
+        if self.initial_sensor_ids:
+            self.panels[0].refresh_sensor_choices(self.initial_sensor_ids)
         self.reflow()
 
         self.refresh_timer = QTimer(self)
