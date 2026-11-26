@@ -42,7 +42,7 @@ from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
 from .sensors.models import SensorSample
-from .sensors.scaling import normalize_values
+from .sensors.scaling import normalize_values, sample_clock, sample_time
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
 from .diagnostics.l319_wiring import NETWORKS as L319_WIRING_NETWORKS, SOURCE_URL as L319_WIRING_SOURCE_URL, DEFAULT_ENGINE as L319_DEFAULT_ENGINE
@@ -1213,9 +1213,15 @@ class SensorGraphTab(QWidget):
             return
 
         all_samples = [sample for values in grouped.values() for sample in values]
-        base_time = min(sample.timestamp for sample in all_samples)
-        min_t = min(sample.timestamp - base_time for sample in all_samples)
-        max_t = max(sample.timestamp - base_time for sample in all_samples)
+        clock = sample_clock(all_samples)
+        time_value = lambda sample: sample_time(sample, clock)
+        base_time = min(time_value(sample) for sample in all_samples)
+        min_t = min(time_value(sample) - base_time for sample in all_samples)
+        max_t = max(time_value(sample) - base_time for sample in all_samples)
+        self.axis_x.setTitleText(
+            "Elapsed time (s, monotonic)" if clock == "monotonic_timestamp"
+            else "Elapsed time (s, wall clock)"
+        )
 
         independent = self.independent_scale.isChecked()
         self.axis_y.setTitleText("Relative scale per sensor (%)" if independent else "Value (shared scale)")
@@ -1223,7 +1229,7 @@ class SensorGraphTab(QWidget):
         raw_max = max(sample.value for sample in all_samples)
 
         for sensor_id, samples in grouped.items():
-            samples.sort(key=lambda sample: sample.timestamp)
+            samples.sort(key=time_value)
             samples = samples[-self.plot_point_limit.value():]
             raw_values = [sample.value for sample in samples]
             if independent:
@@ -1243,7 +1249,7 @@ class SensorGraphTab(QWidget):
             )
             series.setColor(color)
             for sample, plotted in zip(samples, plotted_values):
-                series.append(sample.timestamp - base_time, plotted)
+                series.append(time_value(sample) - base_time, plotted)
             self.chart.addSeries(series)
             series.attachAxis(self.axis_x)
             series.attachAxis(self.axis_y)
