@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from freerov3r.capture_storage import (
-    CaptureStorageError, StreamingCaptureWriter, write_json_atomic,
+    AsyncStreamingCaptureWriter, CaptureStorageError, StreamingCaptureWriter, write_json_atomic,
 )
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
@@ -1332,7 +1332,7 @@ class ResearchTab(QWidget):
             })
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             archive_path = Path.home() / ".freerov3r" / "captures" / f"research_{stamp}.jsonl"
-            writer = StreamingCaptureWriter(archive_path)
+            writer = AsyncStreamingCaptureWriter(archive_path)
             try:
                 writer.start(self.metadata)
             except CaptureStorageError as exc:

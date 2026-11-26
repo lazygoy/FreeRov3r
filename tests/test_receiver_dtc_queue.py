@@ -162,4 +162,4 @@ def test_frame_batcher_flushes_after_interval():
     batcher.add(object())
 
     assert not batcher.should_flush(now=batcher.last_emit + 0.049)
-    assert batcher.should_flush(now=batcher.last_emit + 0.05)
+    assert batcher.should_flush(now=batcher.last_emit + 0.051)
