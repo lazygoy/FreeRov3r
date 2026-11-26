@@ -125,3 +125,21 @@ def test_catalyst_temperature_pid_bank_and_sensor_labels_match_j1979():
 def test_pid_59_is_distinguished_as_absolute_fuel_rail_pressure():
     assert PID_DEFINITIONS[0x59] == ("Fuel rail absolute pressure", "kPa")
     assert {row[0] for row in search_mode01_pids("absolute fuel rail pressure")} == {"59"}
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "expected"),
+    [
+        (0x80, 0x00, -8192.0),
+        (0x7F, 0xFF, 8191.75),
+        (0xFF, 0xFF, -0.25),
+        (0x00, 0x00, 0.0),
+    ],
+)
+def test_evap_system_vapor_pressure_pid_32_uses_signed_quarter_pascal_value(a, b, expected):
+    frame = CanFrame(0x7E8, bytes([4, 0x41, 0x32, a, b, 0, 0, 0]))
+    decoded = decode_mode01(frame)
+    assert decoded is not None
+    assert decoded[0] == 0x32
+    assert decoded[2] == expected
+    assert decoded[3] == "Pa"
