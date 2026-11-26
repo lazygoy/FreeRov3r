@@ -19,6 +19,7 @@ except ImportError:
 
 from .sensors.scaling import sample_clock, sample_time
 from .sensors.correlation import correlate_sensor_series, make_event_marker
+from .sensors.presets import PRESET_GROUPS, build_sensor_preset
 from .sensor_waterfall import SensorWaterfallDialog
 
 
@@ -511,6 +512,14 @@ class SensorDashboardDock(QDockWidget):
         self.compare_button = QPushButton("Compare / Events")
         self.compare_button.clicked.connect(self.open_correlation)
         controls.addWidget(self.compare_button)
+        controls.addWidget(QLabel("Quick preset:"))
+        self.preset_combo = QComboBox()
+        for preset_name in PRESET_GROUPS:
+            self.preset_combo.addItem(preset_name, preset_name)
+        controls.addWidget(self.preset_combo)
+        self.apply_preset_button = QPushButton("Apply")
+        self.apply_preset_button.clicked.connect(self.apply_sensor_preset)
+        controls.addWidget(self.apply_preset_button)
         controls.addStretch(1)
         self.topmost = QCheckBox("Floating dashboard stays on top")
         self.topmost.toggled.connect(self._set_topmost)
@@ -540,6 +549,23 @@ class SensorDashboardDock(QDockWidget):
         self.refresh_timer.setInterval(750)
         self.refresh_timer.timeout.connect(self.refresh)
         self.refresh_timer.start()
+
+    def apply_sensor_preset(self):
+        name = self.preset_combo.currentData()
+        vin = self.vin_provider()
+        available = {
+            sample.sensor_id for sample in self.sensor_capture.samples
+            if not vin or (sample.metadata or {}).get("vin", "UNASSIGNED") == vin
+        }
+        layout = build_sensor_preset(name, available)
+        if layout is None:
+            QMessageBox.information(
+                self, "No matching captured signals",
+                f"The {name} preset has no matching signals in the current capture. "
+                "It does not send PID requests or assume vehicle support."
+            )
+            return
+        self._apply_layout(layout)
 
     def open_correlation(self):
         if self._correlation_dialog is None:
