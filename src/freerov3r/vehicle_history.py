@@ -25,7 +25,7 @@ def format_readiness_scan_event(event):
     ]
     if event.get("type") == "readiness_scan_failed":
         lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     lines.extend(["", "READINESS RESULTS"])
     results = details.get("results") or []
@@ -50,7 +50,7 @@ def format_readiness_scan_event(event):
                 f"{'Supported' if monitor.get('supported') else 'Not supported'} | {state}"
             )
         lines.append(f"Raw: {result.get('raw', '')}")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def format_dtc_scan_event(event):
@@ -66,7 +66,7 @@ def format_dtc_scan_event(event):
     ]
     if event.get("type") == "dtc_scan_failed":
         lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     services = details.get("services") or []
     lines.extend([
@@ -86,7 +86,7 @@ def format_dtc_scan_event(event):
             f"Channel {code.get('channel', 'Unknown')} | Raw {code.get('raw', '')}"
         )
     lines.extend(["", "OEM-specific descriptions are not inferred by this report."])
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 class VehicleHistoryStore:
@@ -162,7 +162,7 @@ def format_mode06_scan_event(event):
     ]
     if event.get("type") == "monitor_tests_scan_failed":
         lines.extend(["", f"Error: {details.get('error', 'No error detail recorded')}"])
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     supported = details.get("supported_monitor_ids") or []
     responses = details.get("results", {}).get("responses", [])
@@ -197,4 +197,4 @@ def format_mode06_scan_event(event):
     if not result_count:
         lines.append("No valid Mode 06 result records were returned.")
     lines.extend(["", "Values are raw. No engineering units or scaling are inferred."])
-    return "\\n".join(lines)
+    return "\n".join(lines)
