@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import time
 
+from .base import CanAdapter
 
-class FaultInjectingCanAdapter:
+
+class FaultInjectingCanAdapter(CanAdapter):
     """Apply deterministic receive faults to another CAN adapter.
 
     drop_every=N discards each Nth source frame.
