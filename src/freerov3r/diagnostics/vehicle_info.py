@@ -11,7 +11,7 @@ PID_NAMES = {
     0x0A: "ECU name",
 }
 
-_FIXED_WIDTHS = {0x02: 17, 0x04: 16, 0x06: 4}
+_FIXED_WIDTHS = {0x02: 17, 0x04: 16, 0x06: 4, 0x0A: 20}
 
 
 def decode_j1979_vehicle_info(payload, *, arbitration_id=None,
