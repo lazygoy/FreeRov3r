@@ -9,11 +9,7 @@ from ..models import CanFrame
 
 
 class DualChannelSimulator(CanAdapter):
-    """Generate repeatable HS-CAN/MS-CAN traffic without hardware.
-
-    Frames are scheduled from fixed channel definitions and a monotonic clock.
-    The simulator never opens a physical interface or transmits onto a bus.
-    """
+    """Generate repeatable HS-CAN/MS-CAN traffic without hardware."""
 
     CHANNELS = (
         {"name": "HS-CAN", "bitrate": 500_000, "period": 0.010,
@@ -23,11 +19,12 @@ class DualChannelSimulator(CanAdapter):
     )
 
     def __init__(self, *, speed: float = 1.0, channels: tuple[str, ...] | None = None):
-        if (isinstance(speed, bool) or not isinstance(speed, (int, float))\n                or not math.isfinite(speed) or speed <= 0):
-            raise ValueError("Simulation speed must be greater than zero.")
+        if (isinstance(speed, bool) or not isinstance(speed, (int, float))
+                or not math.isfinite(speed) or speed <= 0):
+            raise ValueError("Simulation speed must be finite and greater than zero.")
         self.speed = float(speed)
         available = {item["name"] for item in self.CHANNELS}
-        selected = tuple(channels) if channels is not None else tuple(available)
+        selected = tuple(channels) if channels is not None else ("HS-CAN", "MS-CAN")
         if not selected or any(name not in available for name in selected):
             raise ValueError("Select HS-CAN, MS-CAN, or both.")
         self.channels = tuple(item for item in self.CHANNELS if item["name"] in selected)
@@ -44,10 +41,14 @@ class DualChannelSimulator(CanAdapter):
 
     @property
     def diagnostics(self):
-        return {"mode": "virtual dual-channel CAN", "opened": self._opened,
-                "channels": [{"name": item["name"], "bitrate": item["bitrate"]}
-                             for item in self.channels],
-                "speed": self.speed, "frames_generated": self.frames_generated}
+        return {
+            "mode": "virtual dual-channel CAN",
+            "opened": self._opened,
+            "channels": [{"name": item["name"], "bitrate": item["bitrate"]}
+                         for item in self.channels],
+            "speed": self.speed,
+            "frames_generated": self.frames_generated,
+        }
 
     def open(self):
         if self._opened:
@@ -60,18 +61,21 @@ class DualChannelSimulator(CanAdapter):
 
     def close(self):
         self._opened = False
-        self._schedule.clear()
 
     def _make_frame(self, channel, elapsed):
         sequence = self._sequence[channel["name"]]
         ident, length = channel["frames"][sequence % len(channel["frames"])]
-        # Stable payload pattern: ID-specific prefix plus an incrementing counter.
-        data = bytes(((ident + sequence + index * 17) & 0xFF) for index in range(length))
+        data = bytes(((ident + sequence + index * 17) & 0xFF)
+                     for index in range(length))
         self._sequence[channel["name"]] = sequence + 1
         return CanFrame(
-            arbitration_id=ident, data=data, channel=channel["name"],
-            timestamp=time.monotonic(), timestamp_clock_domain="host_monotonic",
-            timestamp_source="simulator", source_timestamp=elapsed,
+            arbitration_id=ident,
+            data=data,
+            channel=channel["name"],
+            timestamp=time.monotonic(),
+            timestamp_clock_domain="host_monotonic",
+            timestamp_source="simulator",
+            source_timestamp=elapsed,
             source_timestamp_clock_domain="simulator_elapsed",
         )
 
@@ -93,5 +97,4 @@ class DualChannelSimulator(CanAdapter):
             remaining = deadline - now
             if remaining <= 0:
                 return None
-            next_due = min(self._next_due)
-            time.sleep(min(remaining, max(0.0, next_due - now)))
+            time.sleep(min(remaining, max(0.0, min(self._next_due) - now)))
