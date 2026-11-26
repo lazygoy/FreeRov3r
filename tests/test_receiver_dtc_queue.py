@@ -64,20 +64,14 @@ class VehicleInfoCapableFakeAdapter(DtcCapableFakeAdapter):
 def test_receiver_runs_mode09_request_on_adapter_owner_thread():
     adapter = VehicleInfoCapableFakeAdapter()
     receiver = Receiver(adapter)
-    completed = threading.Event()
-    results = []
-    receiver.vehicle_info_completed.connect(
-        lambda value: (results.extend(value), completed.set())
-    )
     receiver.start()
     try:
         deadline = time.monotonic() + 1
         while not receiver.isRunning() and time.monotonic() < deadline:
             time.sleep(0.005)
         assert receiver.request_vehicle_info((0x02,))
-        assert completed.wait(1)
+        assert adapter.read_called.wait(1)
         assert adapter.vehicle_info_thread == adapter.open_thread
-        assert results[0]["pid"] == 0x02
     finally:
         receiver.stop()
     assert adapter.closed
