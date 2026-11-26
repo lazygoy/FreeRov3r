@@ -873,6 +873,9 @@ class SensorGraphTab(QWidget):
         self.vehicle_vin = None
         self.recording = False
         self.record_start = None
+        self.record_start_index = None
+        self.record_start_dropped = 0
+        self.record_vehicle_vin = None
         self.last_sample_time = {}
         self.activity_phase = True
         self.synced_obd_sensor_ids = set()
@@ -903,6 +906,10 @@ class SensorGraphTab(QWidget):
 
         right = QVBoxLayout()
         self.record_btn = QPushButton("Start Recording")
+        self.record_btn.setToolTip(\
+            "Marks a recording window in the retained sensor stream. Samples continue to be buffered; "
+            "stopping exports only the samples collected since Start Recording."
+        )
         self.record_btn.clicked.connect(self.toggle_record)
         right.addWidget(self.record_btn)
 
@@ -1311,19 +1318,61 @@ class SensorGraphTab(QWidget):
             self.selection_changed_callback(selected_ids)
 
     def toggle_record(self):
-        self.recording = not self.recording
-        if self.recording:
+        if not self.recording:
+            self.recording = True
             self.record_start = time.time()
+            self.record_start_index = self.sensor_capture.total_samples_added
+            self.record_start_dropped = self.sensor_capture.dropped_samples
+            self.record_vehicle_vin = self.vehicle_vin
             self.record_btn.setText("Stop Recording")
             self.record_btn.setStyleSheet("background-color: #c0392b; color: white;")
-        else:
-            self.record_btn.setText("Start Recording")
-            self.record_btn.setStyleSheet("")
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Save sensor recording", "sensor_recording.csv", "CSV (*.csv)"
+            return
+
+        self.recording = False
+        start_index = self.record_start_index
+        start_dropped = self.record_start_dropped
+        record_vin = self.record_vehicle_vin
+        self.record_start = None
+        self.record_start_index = None
+        self.record_btn.setText("Start Recording")
+        self.record_btn.setStyleSheet("")
+        recorded = self.sensor_capture.samples_since(start_index or 0)
+        if record_vin:
+            recorded = [
+                sample for sample in recorded
+                if (sample.metadata or {}).get("vin", "UNASSIGNED") == record_vin
+            ]
+        if not recorded:
+            QMessageBox.information(
+                self, "Sensor recording", "No retained sensor samples were collected in that window."
             )
-            if path:
-                self.sensor_capture.export_csv(path, vin=self.vehicle_vin)
+            return
+
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self, "Save sensor recording", "sensor_recording.csv",
+            "CSV (*.csv);;JSON Lines (*.jsonl)"
+        )
+        if not path:
+            return
+        try:
+            if selected_filter.startswith("JSON Lines") or path.lower().endswith(".jsonl"):
+                self.sensor_capture.export_jsonl(path, samples=recorded, vin=record_vin)
+            else:
+                self.sensor_capture.export_csv(path, vin=record_vin, samples=recorded)
+        except OSError as exc:
+            QMessageBox.warning(self, "Sensor recording", f"Could not save recording: {exc}")
+            return
+
+        dropped_during_recording = max(
+            0, self.sensor_capture.dropped_samples - start_dropped
+        )
+        if dropped_during_recording:
+            QMessageBox.warning(
+                self, "Incomplete sensor recording",
+                f"Saved {len(recorded)} retained samples, but {dropped_during_recording} "
+                "samples were dropped from the rolling capture buffer while recording. "
+                "Those samples cannot be recovered from this export."
+            )
 
     def set_color(self):
         if not HAS_CHARTS:
