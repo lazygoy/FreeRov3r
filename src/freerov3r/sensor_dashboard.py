@@ -76,10 +76,12 @@ class SensorGraphPanel(QWidget):
             self.window_combo.addItem(label, seconds)
         self.window_combo.setCurrentIndex(2)
         self.window_combo.currentIndexChanged.connect(self.update_chart)
+        self.window_combo.currentIndexChanged.connect(self.dock.persist_layout)
         controls.addWidget(self.window_combo)
         self.auto_scale = QCheckBox("Auto scale")
         self.auto_scale.setChecked(True)
         self.auto_scale.toggled.connect(self.update_chart)
+        self.auto_scale.toggled.connect(self.dock.persist_layout)
         controls.addWidget(self.auto_scale)
         self.popout_button = QPushButton("Pop out")
         self.popout_button.clicked.connect(self.toggle_popout)
@@ -97,6 +99,7 @@ class SensorGraphPanel(QWidget):
             "Select one or more signals for this graph. Each graph has its own sensor selection."
         )
         self.sensor_list.itemChanged.connect(self.update_chart)
+        self.sensor_list.itemChanged.connect(self.dock.persist_layout)
         outer.addWidget(self.sensor_list)
 
         if HAS_CHARTS:
@@ -126,7 +129,7 @@ class SensorGraphPanel(QWidget):
             for i in range(self.sensor_list.count())
             if self.sensor_list.item(i).checkState() == Qt.Checked
         }
-        if initial_ids is not None and not selected:
+        if initial_ids is not None:
             selected = set(initial_ids)
         available = {}
         for sample in self.sensor_capture.samples:
@@ -134,6 +137,8 @@ class SensorGraphPanel(QWidget):
             if self.vehicle_vin and sample_vin != self.vehicle_vin:
                 continue
             available.setdefault(sample.sensor_id, sample.name)
+        for sensor_id in selected:
+            available.setdefault(sensor_id, sensor_id)
         existing = {
             self._item_sensor_id(self.sensor_list.item(i)): self.sensor_list.item(i).text()
             for i in range(self.sensor_list.count())
@@ -229,6 +234,130 @@ class SensorGraphPanel(QWidget):
         else:
             self.dock.restore_panel(self, self._floating_host)
 
+    def _refresh_favorites(self, selected_name=None):
+        groups = self.settings.get("obd_pid_favorites", {})
+        self.favorite_combo.blockSignals(True)
+        self.favorite_combo.clear()
+        self.favorite_combo.addItem("Choose sensor favorite…", None)
+        if isinstance(groups, dict):
+            for name in sorted(groups, key=str.casefold):
+                self.favorite_combo.addItem(name, name)
+        if selected_name:
+            index = self.favorite_combo.findData(selected_name)
+            if index >= 0:
+                self.favorite_combo.setCurrentIndex(index)
+        self.favorite_combo.blockSignals(False)
+        self.load_favorite_button.setEnabled(self.favorite_combo.currentData() is not None)
+        self.save_favorite_button.setEnabled(self.favorite_combo.currentData() is not None)
+
+    def _layout_payload(self):
+        return {
+            "version": 1,
+            "panel_count": int(self.panel_count.currentData()),
+            "panels": [
+                {
+                    "sensor_ids": sorted(panel.selected_sensor_ids()),
+                    "window_seconds": int(panel.window_combo.currentData()),
+                    "auto_scale": panel.auto_scale.isChecked(),
+                }
+                for panel in self.panels
+            ],
+        }
+
+    def persist_layout(self, *_):
+        if self._loading_config:
+            return
+        self.settings["sensor_dashboard_layout"] = self._layout_payload()
+        if callable(self.save_settings_callback):
+            self.save_settings_callback(self.settings)
+
+    def _restore_saved_layout(self):
+        layout = self.settings.get("sensor_dashboard_layout", {})
+        if not isinstance(layout, dict):
+            return
+        self._loading_config = True
+        try:
+            count = layout.get("panel_count", 4)
+            if count not in PANEL_COUNTS:
+                count = 4
+            self.panel_count.setCurrentIndex(PANEL_COUNTS.index(count))
+            configs = layout.get("panels", [])
+            if not isinstance(configs, list):
+                configs = []
+            for index, panel in enumerate(self.panels):
+                config = configs[index] if index < len(configs) and isinstance(configs[index], dict) else {}
+                ids = config.get("sensor_ids", [])
+                if not isinstance(ids, list):
+                    ids = []
+                panel.refresh_sensor_choices(ids)
+                seconds = config.get("window_seconds", 60)
+                window_index = panel.window_combo.findData(seconds)
+                panel.window_combo.setCurrentIndex(window_index if window_index >= 0 else 2)
+                panel.auto_scale.setChecked(bool(config.get("auto_scale", True)))
+        finally:
+            self._loading_config = False
+
+    def load_favorite(self):
+        name = self.favorite_combo.currentData()
+        if not name:
+            return
+        self._refresh_favorites(name)
+        layouts = self.settings.get("sensor_dashboard_favorites", {})
+        layout = layouts.get(name) if isinstance(layouts, dict) else None
+        if isinstance(layout, dict):
+            self._apply_layout(layout)
+        else:
+            groups = self.settings.get("obd_pid_favorites", {})
+            sensor_ids = groups.get(name, []) if isinstance(groups, dict) else []
+            if not isinstance(sensor_ids, (list, tuple, set)):
+                sensor_ids = []
+            self._loading_config = True
+            try:
+                for index, panel in enumerate(self.panels):
+                    panel.refresh_sensor_choices(set(sensor_ids) if index == 0 else set())
+                self.panel_count.setCurrentIndex(0)
+            finally:
+                self._loading_config = False
+            self.reflow()
+            self.persist_layout()
+
+    def _apply_layout(self, layout):
+        self._loading_config = True
+        try:
+            count = layout.get("panel_count", 4)
+            if count not in PANEL_COUNTS:
+                count = 4
+            self.panel_count.setCurrentIndex(PANEL_COUNTS.index(count))
+            configs = layout.get("panels", [])
+            if not isinstance(configs, list):
+                configs = []
+            for index, panel in enumerate(self.panels):
+                config = configs[index] if index < len(configs) and isinstance(configs[index], dict) else {}
+                ids = config.get("sensor_ids", [])
+                panel.refresh_sensor_choices(set(ids) if isinstance(ids, list) else set())
+                seconds = config.get("window_seconds", 60)
+                window_index = panel.window_combo.findData(seconds)
+                panel.window_combo.setCurrentIndex(window_index if window_index >= 0 else 2)
+                panel.auto_scale.setChecked(bool(config.get("auto_scale", True)))
+        finally:
+            self._loading_config = False
+        self.reflow()
+        self.persist_layout()
+
+    def save_layout_to_favorite(self):
+        name = self.favorite_combo.currentData()
+        if not name:
+            return
+        layouts = self.settings.get("sensor_dashboard_favorites", {})
+        if not isinstance(layouts, dict):
+            layouts = {}
+        layouts = dict(layouts)
+        layouts[name] = self._layout_payload()
+        self.settings["sensor_dashboard_favorites"] = layouts
+        if callable(self.save_settings_callback):
+            self.save_settings_callback(self.settings)
+        self._refresh_favorites(name)
+
     def _set_topmost(self, checked):
         if self._floating_host is None:
             return
@@ -240,11 +369,17 @@ class SensorGraphPanel(QWidget):
 class SensorDashboardDock(QDockWidget):
     """Application-wide dock containing up to eight independently configured graphs."""
 
-    def __init__(self, sensor_capture, parent=None, initial_sensor_ids=None, vin_provider=None):
+    def __init__(
+        self, sensor_capture, parent=None, initial_sensor_ids=None, vin_provider=None,
+        settings=None, save_settings_callback=None,
+    ):
         super().__init__("Sensor Dashboard", parent)
         self.sensor_capture = sensor_capture
         self.vin_provider = vin_provider or (lambda: None)
         self.initial_sensor_ids = set(initial_sensor_ids or ())
+        self.settings = settings if isinstance(settings, dict) else {}
+        self.save_settings_callback = save_settings_callback
+        self._loading_config = False
         self.setObjectName("sensorDashboardDock")
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
         self.setFeatures(
@@ -264,7 +399,18 @@ class SensorDashboardDock(QDockWidget):
             self.panel_count.addItem(str(count), count)
         self.panel_count.setCurrentIndex(2)
         self.panel_count.currentIndexChanged.connect(self.reflow)
+        self.panel_count.currentIndexChanged.connect(self.persist_layout)
         controls.addWidget(self.panel_count)
+        controls.addWidget(QLabel("Sensor favorite:"))
+        self.favorite_combo = QComboBox()
+        self.favorite_combo.setMinimumWidth(150)
+        controls.addWidget(self.favorite_combo)
+        self.load_favorite_button = QPushButton("Load")
+        self.load_favorite_button.clicked.connect(self.load_favorite)
+        controls.addWidget(self.load_favorite_button)
+        self.save_favorite_button = QPushButton("Save layout")
+        self.save_favorite_button.clicked.connect(self.save_layout_to_favorite)
+        controls.addWidget(self.save_favorite_button)
         controls.addStretch(1)
         self.topmost = QCheckBox("Floating dashboard stays on top")
         self.topmost.toggled.connect(self._set_topmost)
@@ -283,8 +429,10 @@ class SensorDashboardDock(QDockWidget):
             for index in range(max(PANEL_COUNTS))
         ]
         self._visible_count = 4
+        self._refresh_favorites()
+        self._restore_saved_layout()
         self.refresh()
-        if self.initial_sensor_ids:
+        if self.initial_sensor_ids and not self.panels[0].selected_sensor_ids():
             self.panels[0].refresh_sensor_choices(self.initial_sensor_ids)
         self.reflow()
 
@@ -303,6 +451,7 @@ class SensorDashboardDock(QDockWidget):
         vin = self.vin_provider()
         for panel in self.panels:
             panel.set_vehicle_vin(vin)
+        self._refresh_favorites(self.favorite_combo.currentData())
 
     def reflow(self, *_):
         count = int(self.panel_count.currentData())
