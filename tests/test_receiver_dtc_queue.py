@@ -1,7 +1,7 @@
 import threading
 import time
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 
 from freerov3r.app import Receiver
 
@@ -155,14 +155,20 @@ def test_receiver_batches_high_rate_frames():
             if sum(len(item) for item in batches) >= 150:
                 frames_received.set()
 
-    # Observe the worker-thread signal directly; a queued connection would
-    # require the test's main Qt event loop to run while it waits.
+    # Deliver the signal through Qt's normal queued connection and pump
+    # the test event loop, matching how the application receives batches.
+    app = QCoreApplication.instance() or QCoreApplication([])
     receiver.frames_received.connect(
-        collect_batch, Qt.ConnectionType.DirectConnection
+        collect_batch, Qt.ConnectionType.QueuedConnection
     )
     receiver.start()
     try:
-        assert frames_received.wait(2)
+        deadline = time.monotonic() + 2
+        while not frames_received.is_set() and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.001)
+        app.processEvents()
+        assert frames_received.is_set()
     finally:
         receiver.stop()
 
