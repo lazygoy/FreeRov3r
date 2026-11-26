@@ -4982,7 +4982,12 @@ class MainWindow(QMainWindow):
             self._refresh_workspace_header()
             top_ids = self.can_monitor.id_stats()[:5]
             summary = " | ".join(
-                f"{item.arbitration_id:08X}{'X' if item.extended else 'S'}: {item.frames_per_second:.1f}/s"
+                f"{item.arbitration_id:08X}{'X' if item.extended else 'S'}: "
+                f"{item.frames_per_second:.1f}/s, Δ{item.payload_changes}, "
+                f"{item.median_interval_ms:.1f}ms"
+                if item.median_interval_ms is not None else
+                f"{item.arbitration_id:08X}{'X' if item.extended else 'S'}: "
+                f"{item.frames_per_second:.1f}/s, Δ{item.payload_changes}"
                 for item in top_ids
             ) or "no recent traffic"
             self.monitor_summary.setText(
