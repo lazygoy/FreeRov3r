@@ -870,7 +870,7 @@ def load_capture_file(path):
                         invalid_records += 1
                 else:
                     if item.get("record_type") == "frame":
-                        stream_digest.update(line.rstrip("\\r\\n").encode("utf-8") + b"\\n")
+                        stream_digest.update(line.rstrip("\r\n").encode("utf-8") + b"\n")
                         stream_frame_count += 1
                     normalized = _normalize_record(item)
                     if normalized is None:
