@@ -205,6 +205,8 @@ class Receiver(QThread):
     dtcs_failed = Signal(str)
     readiness_completed = Signal(object)
     readiness_failed = Signal(str)
+    freeze_frame_completed = Signal(object)
+    freeze_frame_failed = Signal(str)
 
     def __init__(self, adapter):
         super().__init__()
@@ -213,6 +215,7 @@ class Receiver(QThread):
         self._commands = queue.Queue()
         self._dtc_request_pending = False
         self._readiness_request_pending = False
+        self._freeze_frame_request_pending = False
 
     def request_dtcs(self):
         """Queue a DTC read for execution by the adapter-owning thread."""
@@ -234,6 +237,16 @@ class Receiver(QThread):
         self._commands.put("read_readiness")
         return True
 
+    def request_freeze_frame(self, pids, frame_number=0):
+        """Queue a Mode 02 read on the adapter-owning thread."""
+        if not self.isRunning() or not callable(getattr(self.adapter, "read_freeze_frame", None)):
+            return False
+        if self._freeze_frame_request_pending:
+            return False
+        self._freeze_frame_request_pending = True
+        self._commands.put(("read_freeze_frame", tuple(pids), int(frame_number)))
+        return True
+
     def run(self):
         try:
             self.adapter.open()
@@ -250,6 +263,16 @@ class Receiver(QThread):
                         self.dtcs_failed.emit(str(exc))
                     finally:
                         self._dtc_request_pending = False
+                    continue
+                if isinstance(command, tuple) and command[0] == "read_freeze_frame":
+                    try:
+                        self.freeze_frame_completed.emit(
+                            self.adapter.read_freeze_frame(command[1], command[2])
+                        )
+                    except Exception as exc:
+                        self.freeze_frame_failed.emit(str(exc))
+                    finally:
+                        self._freeze_frame_request_pending = False
                     continue
                 if command == "read_readiness":
                     try:
@@ -270,6 +293,8 @@ class Receiver(QThread):
                 self.dtcs_failed.emit(str(exc))
             if self._readiness_request_pending:
                 self.readiness_failed.emit(str(exc))
+            if self._freeze_frame_request_pending:
+                self.freeze_frame_failed.emit(str(exc))
         finally:
             try:
                 self.adapter.close()
@@ -277,6 +302,7 @@ class Receiver(QThread):
                 pass
             self._dtc_request_pending = False
             self._readiness_request_pending = False
+            self._freeze_frame_request_pending = False
 
     def stop(self):
         self.running = False
@@ -1354,6 +1380,39 @@ class OBDTab(QWidget):
         self.readiness_table.setAlternatingRowColors(True)
         self.readiness_table.setEditTriggers(QTableWidget.NoEditTriggers)
         readiness_layout.addWidget(self.readiness_table)
+        freeze_group = QGroupBox("FREEZE-FRAME DATA (MODE 02)")
+        freeze_layout = QVBoxLayout(freeze_group)
+        freeze_actions = QHBoxLayout()
+        self.read_freeze_frame_btn = QPushButton("Read Freeze Frame")
+        self.read_freeze_frame_btn.setEnabled(False)
+        self.read_freeze_frame_btn.setToolTip(
+            "Read-only Mode 02 request for the currently selected PIDs and frame number."
+        )
+        self.read_freeze_frame_btn.clicked.connect(self.request_freeze_frame_scan)
+        freeze_actions.addWidget(self.read_freeze_frame_btn)
+        self.freeze_frame_number = QSpinBox()
+        self.freeze_frame_number.setRange(0, 255)
+        self.freeze_frame_number.setValue(0)
+        self.freeze_frame_number.setPrefix("Frame ")
+        freeze_actions.addWidget(self.freeze_frame_number)
+        self.freeze_frame_status_label = QLabel(
+            "Select PIDs above and connect an ELM327 OBD-II adapter."
+        )
+        self.freeze_frame_status_label.setWordWrap(True)
+        freeze_actions.addWidget(self.freeze_frame_status_label, 1)
+        freeze_layout.addLayout(freeze_actions)
+        self.freeze_frame_table = QTableWidget(0, 6)
+        self.freeze_frame_table.setHorizontalHeaderLabels(
+            ["PID", "Measurement", "Value", "Unit", "ECU", "Raw"]
+        )
+        self.freeze_frame_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.freeze_frame_table.setMaximumHeight(220)
+        self.freeze_frame_table.setAlternatingRowColors(True)
+        self.freeze_frame_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        freeze_layout.addWidget(self.freeze_frame_table)
+        layout.addWidget(freeze_group)
+        self.read_freeze_frame_callback = None
+
         self.readiness_metadata_label = QLabel("MIL and DTC count: not yet read")
         self.readiness_metadata_label.setWordWrap(True)
         readiness_layout.addWidget(self.readiness_metadata_label)
@@ -1375,6 +1434,7 @@ class OBDTab(QWidget):
     def set_dtc_scan_enabled(self, enabled):
         self.read_dtcs_btn.setEnabled(bool(enabled))
         self.read_readiness_btn.setEnabled(bool(enabled))
+        self.read_freeze_frame_btn.setEnabled(bool(enabled))
         if not enabled:
             self.dtc_status_label.setText("Connect an ELM327 OBD-II adapter to read trouble codes.")
             self.readiness_status_label.setText(
@@ -1394,6 +1454,53 @@ class OBDTab(QWidget):
             self.readiness_status_label.setText(
                 "Readiness request is unavailable or another read is already in progress."
             )
+
+    def request_freeze_frame_scan(self):
+        if self.read_freeze_frame_callback is None:
+            self.freeze_frame_status_label.setText(
+                "Start an ELM327 OBD-II connection before requesting freeze-frame data."
+            )
+            return
+        pids = self.selected_pids()
+        if not pids:
+            self.freeze_frame_status_label.setText("Select at least one PID above.")
+            return
+        if self.read_freeze_frame_callback(pids, self.freeze_frame_number.value()):
+            self.read_freeze_frame_btn.setEnabled(False)
+            self.freeze_frame_status_label.setText("Reading selected Mode 02 freeze-frame PIDs…")
+        else:
+            self.freeze_frame_status_label.setText(
+                "Freeze-frame request is unavailable or another read is already in progress."
+            )
+
+    def show_freeze_frame_results(self, results):
+        self.freeze_frame_table.setRowCount(0)
+        for result in results:
+            ecu = f"{result.get('arbitration_id', 0):08X}" + (
+                " (29-bit)" if result.get("is_extended_id") else " (11-bit)"
+            )
+            for measurement in result.get("measurements", []):
+                row = self.freeze_frame_table.rowCount()
+                self.freeze_frame_table.insertRow(row)
+                values = (
+                    result.get("pid", ""),
+                    measurement.get("name", ""),
+                    f"{measurement.get('value', 0):.4g}",
+                    measurement.get("unit", ""),
+                    ecu,
+                    result.get("raw", ""),
+                )
+                for column, value in enumerate(values):
+                    self.freeze_frame_table.setItem(row, column, QTableWidgetItem(str(value)))
+        self.freeze_frame_status_label.setText(
+            f"Read complete: {len(results)} PID response(s) across the selected freeze frame."
+            if results else "No valid freeze-frame responses were returned."
+        )
+        self.read_freeze_frame_btn.setEnabled(True)
+
+    def set_freeze_frame_scan_error(self, message):
+        self.freeze_frame_status_label.setText(f"Freeze-frame read failed: {message}")
+        self.read_freeze_frame_btn.setEnabled(True)
 
     def show_readiness_results(self, results):
         self.readiness_table.setRowCount(0)
@@ -3154,6 +3261,7 @@ class MainWindow(QMainWindow):
         self.obd_tab = OBDTab(self.settings)
         self.obd_tab.read_dtcs_callback = self.request_dtc_scan
         self.obd_tab.read_readiness_callback = self.request_readiness_scan
+        self.obd_tab.read_freeze_frame_callback = self.request_freeze_frame_scan
         self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
@@ -4194,6 +4302,8 @@ class MainWindow(QMainWindow):
         self.receiver.dtcs_failed.connect(self._on_dtc_scan_failed)
         self.receiver.readiness_completed.connect(self._on_readiness_scan_completed)
         self.receiver.readiness_failed.connect(self._on_readiness_scan_failed)
+        self.receiver.freeze_frame_completed.connect(self._on_freeze_frame_scan_completed)
+        self.receiver.freeze_frame_failed.connect(self._on_freeze_frame_scan_failed)
         self.obd_tab.set_dtc_scan_enabled(interface == "elm327_obd")
         self.receiver.start()
         self.connect_btn.setText("Stop listening")
@@ -4221,6 +4331,42 @@ class MainWindow(QMainWindow):
         if self.active_interface != "elm327_obd" or receiver is None:
             return False
         return receiver.request_readiness()
+
+    def request_freeze_frame_scan(self, pids, frame_number=0):
+        receiver = self.receiver
+        if self.active_interface != "elm327_obd" or receiver is None:
+            return False
+        return receiver.request_freeze_frame(pids, frame_number)
+
+    def _on_freeze_frame_scan_completed(self, results):
+        self.obd_tab.show_freeze_frame_results(results)
+        self.record_vehicle_event(
+            "freeze_frame_scan_completed",
+            f"OBD-II freeze-frame scan completed: {len(results)} PID response(s)",
+            {
+                "interface": self.active_interface,
+                "service": "02",
+                "frame_number": self.obd_tab.freeze_frame_number.value(),
+                "count": len(results),
+                "results": results,
+                "read_only": True,
+            },
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast(
+            f"Freeze-frame scan complete: {len(results)} PID response(s)",
+            "success" if results else "warning",
+        )
+
+    def _on_freeze_frame_scan_failed(self, message):
+        self.obd_tab.set_freeze_frame_scan_error(message)
+        self.record_vehicle_event(
+            "freeze_frame_scan_failed",
+            "OBD-II freeze-frame scan failed",
+            {"interface": self.active_interface, "error": str(message), "read_only": True},
+            vin=self.capture_vin or self.settings.get("current_vin") or "UNASSIGNED",
+        )
+        self.show_toast("Freeze-frame scan failed", "warning")
 
     def _on_readiness_scan_completed(self, results):
         self.obd_tab.show_readiness_results(results)
