@@ -62,7 +62,7 @@ def test_rejects_invalid_supported_mid_payload(payload):
 
 def test_rejects_incomplete_mode06_record():
     with pytest.raises(ValueError, match="9-byte records"):
-        decode_mode06_results(bytes.fromhex("46 21 80 24 00 64"), monitor_id=0x21)
+        decode_mode06_results(bytes.fromhex("46 21 80 24 00 64 00 00 00"), monitor_id=0x21)
 
 
 def test_rejects_wrong_monitor_id():
