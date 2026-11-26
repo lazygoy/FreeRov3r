@@ -929,5 +929,5 @@ def test_load_streaming_capture_detects_modified_frame(tmp_path):
     metadata, frames = load_capture_file(path)
 
     assert len(frames) == 1
-    assert frames[0]["data"] == "FFFF"
+    assert frames[0]["data"] == "ffff"
     assert any("integrity check failed" in warning for warning in metadata["import_warnings"])
