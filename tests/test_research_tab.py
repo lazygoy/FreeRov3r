@@ -744,3 +744,64 @@ def test_load_capture_file_preserves_timestamp_provenance(tmp_path):
     assert frame["device_timestamp_clock_domain"] == "device_uptime"
 
 
+
+
+def test_load_jsonl_reports_malformed_and_truncated_records(tmp_path):
+    path = tmp_path / "damaged.jsonl"
+    path.write_text(
+        '{"record_type":"metadata","metadata":{"session_name":"recovered"}}\n'
+        '{"timestamp":1.0,"arbitration_id":291,"data":"0102"}\n'
+        '{"timestamp":2.0,"arbitration_id":292,"data":"not-hex"}\n'
+        '{"timestamp":3.0,"arbitration_id":',
+        encoding="utf-8",
+    )
+
+    metadata, frames = load_capture_file(path)
+
+    assert metadata["session_name"] == "recovered"
+    assert len(frames) == 1
+    assert frames[0]["arbitration_id"] == 291
+    assert metadata["import_error_counts"] == {
+        "invalid_records": 1,
+        "malformed_lines": 1,
+        "possible_truncated_final_line": True,
+    }
+    assert any("invalid frame" in warning for warning in metadata["import_warnings"])
+    assert any("truncated" in warning for warning in metadata["import_warnings"])
+
+
+def test_load_json_capture_reports_invalid_frame_records(tmp_path):
+    import json
+
+    path = tmp_path / "damaged.json"
+    path.write_text(json.dumps({
+        "format": "freerov3r-research-v1",
+        "metadata": {"session_name": "partial recovery"},
+        "frames": [
+            {"timestamp": 1.0, "arbitration_id": 291, "data": "0102"},
+            {"timestamp": 2.0, "arbitration_id": 292, "data": "not-hex"},
+        ],
+    }), encoding="utf-8")
+
+    metadata, frames = load_capture_file(path)
+
+    assert len(frames) == 1
+    assert metadata["session_name"] == "partial recovery"
+    assert metadata["import_error_counts"]["invalid_records"] == 1
+    assert metadata["import_error_counts"]["malformed_lines"] == 0
+    assert metadata["import_error_counts"]["possible_truncated_final_line"] is False
+
+
+def test_load_json_capture_rejects_invalid_archive_structure(tmp_path):
+    import json
+    import pytest
+
+    path = tmp_path / "invalid.json"
+    path.write_text(json.dumps({
+        "format": "freerov3r-research-v1",
+        "metadata": [],
+        "frames": [],
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="metadata"):
+        load_capture_file(path)
