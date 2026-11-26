@@ -238,3 +238,49 @@ def test_elm327_obd_adapter_readiness_requires_open_connection():
     adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
     with pytest.raises(RuntimeError, match="not open"):
         adapter.read_readiness()
+
+
+
+def test_elm327_obd_adapter_reads_mode02_freeze_frame_pid(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 05 42 0C 00 1A F8\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        results = adapter.read_freeze_frame([0x0C])
+        assert len(results) == 1
+        assert results[0]["pid"] == "0C"
+        assert results[0]["frame_number"] == 0
+        assert results[0]["measurements"][0]["value"] == 1726.0
+        assert fake.commands[-1] == "020C00"
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_freeze_frame_rejects_unknown_pid(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial()
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        with pytest.raises(ValueError, match="Unsupported Mode 02 PID"):
+            adapter.read_freeze_frame([0xFE])
+        assert not any(command.startswith("02") for command in fake.commands)
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_freeze_frame_requires_open_connection():
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    with pytest.raises(RuntimeError, match="not open"):
+        adapter.read_freeze_frame([0x0C])
