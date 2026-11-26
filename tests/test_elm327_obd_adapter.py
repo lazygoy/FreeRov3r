@@ -348,3 +348,34 @@ def test_elm327_obd_adapter_rejects_unknown_mode09_pid_without_request(monkeypat
         assert "0903" not in fake.commands
     finally:
         adapter.close()
+
+
+def test_elm327_obd_adapter_reads_mode06_supported_monitor_results(monkeypatch):
+    import freerov3r.hardware.elm327_obd_adapter as module
+
+    fake = FakeSerial(responses=[
+        b"ELM327 v1.5\\r>",
+        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
+        b"OK\\r>", b"OK\\r>",
+        b"7E8 06 41 00 00 10 00 00\\r>",
+        b"7E8 06 46 00 80 00 00 00\\r>",
+        b"7E8 0A 46 01 01 80 24 00 64 00 00 00 C8\\r>",
+    ])
+    monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    adapter.open()
+    try:
+        result = adapter.read_monitor_tests()
+        assert result["supported_monitor_ids"] == [0x01]
+        assert result["responses"][0]["monitor_id"] == 0x01
+        assert result["responses"][0]["results"][0]["value_raw"] == 100
+        assert result["responses"][0]["results"][0]["status"] == "within_limits"
+        assert fake.commands[-2:] == ["0600", "0601"]
+    finally:
+        adapter.close()
+
+
+def test_elm327_obd_adapter_monitor_tests_requires_open_connection():
+    adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
+    with pytest.raises(RuntimeError, match="not open"):
+        adapter.read_monitor_tests()
