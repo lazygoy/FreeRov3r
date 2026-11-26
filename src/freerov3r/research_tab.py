@@ -7,6 +7,7 @@ it never transmits diagnostic requests or replays captured frames.
 import csv
 import difflib
 import json
+import math
 import re
 import time
 from collections import Counter
@@ -728,6 +729,7 @@ def _frame_record(frame):
     return {
         "timestamp": float(getattr(frame, "timestamp", 0.0) or 0.0),
         "timestamp_clock": getattr(frame, "timestamp_clock_domain", "unknown"),
+        "timestamp_clock_domain": getattr(frame, "timestamp_clock_domain", "unknown"),
         "timestamp_source": getattr(frame, "timestamp_source", "unknown"),
         "source_timestamp": getattr(frame, "source_timestamp", None),
         "source_timestamp_clock_domain": getattr(frame, "source_timestamp_clock_domain", None),
@@ -764,13 +766,17 @@ def _normalize_record(record):
             extended = extended_value.strip().lower() in ("1", "true", "yes", "ext", "extended")
         else:
             extended = bool(extended_value)
+        timestamp_clock = record.get(
+            "timestamp_clock_domain", record.get("timestamp_clock", "unknown")
+        )
         normalized = {
             "timestamp": float(record.get("timestamp", record.get("time", 0.0)) or 0.0),
             "arbitration_id": arbitration_id,
             "extended": extended,
             "data": payload.hex(),
             "channel": record.get("channel"),
-            "timestamp_clock": record.get("timestamp_clock", "unknown"),
+            "timestamp_clock": timestamp_clock,
+            "timestamp_clock_domain": timestamp_clock,
         }
         normalized["timestamp_source"] = record.get("timestamp_source", "unknown")
         normalized["source_timestamp_clock_domain"] = record.get("source_timestamp_clock_domain")
@@ -778,7 +784,7 @@ def _normalize_record(record):
         if record.get("source_timestamp") is not None:
             try:
                 source_timestamp = float(record["source_timestamp"])
-                if source_timestamp == source_timestamp and abs(source_timestamp) != float("inf"):
+                if math.isfinite(source_timestamp):
                     normalized["source_timestamp"] = source_timestamp
             except (TypeError, ValueError):
                 pass
@@ -1225,9 +1231,6 @@ class ResearchTab(QWidget):
             self.recording = True
             self.markers.clear()
             self._recording_started_monotonic = time.monotonic()
-            self.total_recorded_frames = 0
-            self.dropped_recorded_frames = 0
-            self.dropped_pending_frames = 0
             self.metadata.update({
                 "session_name": self.session_name.text().strip() or "Unnamed research session",
                 "operation": self.operation.currentText(),
@@ -1358,7 +1361,7 @@ class ResearchTab(QWidget):
         source_count = len(self.frames) if self.frames else len(self.live_preview)
         source_label = "recorded/imported" if self.frames else "live preview"
         dropped = (
-            self.dropped_recorded_frames + self.dropped_pending_frames
+            self.dropped_recorded_frames
             if self.recording or self.total_recorded_frames else 0
         )
         suffix = f" · {dropped:,} dropped" if dropped else ""
