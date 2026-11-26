@@ -88,15 +88,15 @@ def test_elm327_obd_adapter_polls_pid_4f_as_a_hidden_wideband_dependency(monkeyp
     import freerov3r.hardware.elm327_obd_adapter as module
 
     fake = FakeSerial(responses=[
-        b"ELM327 v1.5\\r>",
-        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
-        b"OK\\r>", b"OK\\r>",
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
         # PID 20 advertises PID 40; PID 40 advertises PID 4F.
-        b"7E8 06 41 00 00 00 00 01\\r>",
-        b"7E8 06 41 20 10 00 00 01\\r>",
-        b"7E8 06 41 40 00 02 00 00\\r>",
-        b"7E8 06 41 24 7D 00 9C 40\\r>",
-        b"7E8 06 41 4F 04 10 40 00\\r>",
+        b"7E8 06 41 00 00 00 00 01\r>",
+        b"7E8 06 41 20 10 00 00 01\r>",
+        b"7E8 06 41 40 00 02 00 00\r>",
+        b"7E8 06 41 24 7D 00 9C 40\r>",
+        b"7E8 06 41 4F 04 10 40 00\r>",
     ])
     monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
     adapter = Elm327ObdAdapter("COM9", pids=[0x24], request_interval=0.05)
