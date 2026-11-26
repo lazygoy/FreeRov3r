@@ -6,7 +6,7 @@ from .base import CanAdapter
 from ..models import CanFrame
 
 
-from ..diagnostics.obd2 import PID_DEFINITIONS, decode_mode01
+from ..diagnostics.obd2 import decode_mode01
 
 
 class SimulatedVehicleAdapter(CanAdapter):
@@ -19,7 +19,10 @@ class SimulatedVehicleAdapter(CanAdapter):
         self._last_emit = 0.0
         self._index = 0
         self._started = 0.0
-        self._pids = list(PID_DEFINITIONS)
+        # Only emit PIDs with deliberately modelled synthetic values below.
+        # The generic decoder catalog is larger than this demo fixture.
+        self._pids = [0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x0F, 0x10,
+                      0x11, 0x1F, 0x21, 0x2F, 0x42, 0x46, 0x5C]
 
     @property
     def description(self):
