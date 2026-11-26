@@ -1351,8 +1351,10 @@ class ResearchTab(QWidget):
             self.recording = False
             self.metadata["stopped_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
             archive_path = None
+            archived_frame_count = 0
             if self._stream_writer is not None:
                 writer = self._stream_writer
+                archived_frame_count = writer.frame_count
                 try:
                     archive_path = writer.finish({
                         **self.metadata,
@@ -1369,20 +1371,11 @@ class ResearchTab(QWidget):
             if archive_path is not None:
                 self._stream_archive_path = archive_path
                 self.status_label.setText(
-                    f"Recording stopped. {self._stream_writer_frame_count(archive_path):,} frames archived to {archive_path}"
+                    f"Recording stopped. {archived_frame_count:,} frames archived to {archive_path}"
                 )
             elif self._stream_archive_path is None:
                 self.status_label.setText("Recording stopped. No automatic archive was completed.")
             self._recording_started_monotonic = None
-
-    @staticmethod
-    def _stream_writer_frame_count(path):
-        # The in-memory frame list may be capped; the durable archive is authoritative.
-        try:
-            with Path(path).open("r", encoding="utf-8") as handle:
-                return sum(1 for line in handle if '"record_type":"frame"' in line)
-        except OSError:
-            return 0
 
 
     def mark_action(self):
@@ -3689,6 +3682,11 @@ class ResearchTab(QWidget):
             return
         QApplication.clipboard().setText(self.build_analysis_packet())
         self.status_label.setText("REA analysis packet copied to clipboard.")
+
+    def closeEvent(self, event):
+        if self.recording:
+            self.toggle_recording()
+        event.accept()
 
     def clear_data(self):
         answer = QMessageBox.question(
