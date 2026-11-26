@@ -242,6 +242,8 @@ class Receiver(QThread):
             if hasattr(self.adapter, "last_error"):
                 self.adapter.last_error = str(exc)
             self.status.emit(f"Adapter error: {exc}")
+            if self._dtc_request_pending:
+                self.dtcs_failed.emit(str(exc))
         finally:
             try:
                 self.adapter.close()
