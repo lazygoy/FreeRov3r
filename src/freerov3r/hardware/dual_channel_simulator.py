@@ -1,6 +1,7 @@
 """Deterministic, receive-only dual-channel CAN traffic simulator."""
 from __future__ import annotations
 
+import math
 import time
 from collections import deque
 
@@ -23,7 +24,7 @@ class DualChannelSimulator(CanAdapter):
     )
 
     def __init__(self, *, speed: float = 1.0, channels: tuple[str, ...] | None = None):
-        if isinstance(speed, bool) or not isinstance(speed, (int, float)) or speed <= 0:
+        if (isinstance(speed, bool) or not isinstance(speed, (int, float))\n                or not math.isfinite(speed) or speed <= 0):
             raise ValueError("Simulation speed must be greater than zero.")
         self.speed = float(speed)
         available = {item["name"] for item in self.CHANNELS}
