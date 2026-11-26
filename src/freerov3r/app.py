@@ -54,6 +54,7 @@ except ImportError:
     HAS_PDF_VIEWER = False
 from .vehicle_history import (
     VehicleHistoryStore, filter_dtc_scan_events, format_dtc_scan_event,
+    filter_mode06_scan_events, format_mode06_scan_event,
     format_readiness_scan_event,
 )
 from .diagnostics.vin_decoder import VinFrameDecoder
@@ -2895,9 +2896,13 @@ class VehicleHistoryTab(QWidget):
         self.vin_filter = QComboBox()
         self.vin_filter.currentIndexChanged.connect(self.refresh_events)
         controls.addWidget(self.vin_filter, 1)
-        self.dtc_only_filter = QCheckBox("DTC scans only")
-        self.dtc_only_filter.toggled.connect(self.refresh_events)
-        controls.addWidget(self.dtc_only_filter)
+        controls.addWidget(QLabel("Event type:"))
+        self.event_filter = QComboBox()
+        self.event_filter.addItem("All events", "all")
+        self.event_filter.addItem("DTC scans", "dtc")
+        self.event_filter.addItem("Mode 06 scans", "mode06")
+        self.event_filter.currentIndexChanged.connect(self.refresh_events)
+        controls.addWidget(self.event_filter)
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh)
         controls.addWidget(refresh_btn)
@@ -2932,8 +2937,11 @@ class VehicleHistoryTab(QWidget):
         self.events_tree.clear()
         selected_vin = self.vin_filter.currentData()
         events = self.store.events if selected_vin is None else self.store.for_vin(selected_vin)
-        if self.dtc_only_filter.isChecked():
+        event_filter = self.event_filter.currentData()
+        if event_filter == "dtc":
             events = filter_dtc_scan_events(events)
+        elif event_filter == "mode06":
+            events = filter_mode06_scan_events(events)
         for event in reversed(events):
             timestamp = event.get("timestamp", "")
             item = QTreeWidgetItem([
@@ -2956,6 +2964,8 @@ class VehicleHistoryTab(QWidget):
             self.details.setPlainText(format_dtc_scan_event(event))
         elif event.get("type") in {"readiness_scan_completed", "readiness_scan_failed"}:
             self.details.setPlainText(format_readiness_scan_event(event))
+        elif event.get("type") in {"monitor_tests_scan_completed", "monitor_tests_scan_failed"}:
+            self.details.setPlainText(format_mode06_scan_event(event))
         else:
             self.details.setPlainText(json.dumps(event, indent=2, ensure_ascii=False))
 
