@@ -817,46 +817,45 @@ def load_capture_file(path):
     malformed_lines = 0
     possible_truncated_final_line = False
 
-    if suffix in (".json", ".jsonl", ".ndjson"):
+    if suffix == ".json":
         text = path.read_text(encoding="utf-8-sig")
-        if suffix == ".json":
-            parsed = json.loads(text)
-            if isinstance(parsed, dict):
-                raw_metadata = parsed.get("metadata", {})
-                if not isinstance(raw_metadata, dict):
-                    raise ValueError("Capture metadata must be a JSON object.")
-                metadata = dict(raw_metadata)
-                metadata["bookmarks"] = parsed.get("bookmarks", {})
-                metadata["markers"] = parsed.get("markers", [])
-                source = parsed.get("frames", [])
-            elif isinstance(parsed, list):
-                source = parsed
-            else:
-                raise ValueError("Capture JSON must contain an object or a frame list.")
-            if not isinstance(source, list):
-                raise ValueError("Capture frames must be a JSON array.")
-            for item in source:
-                normalized = _normalize_record(item)
-                if normalized is None:
-                    invalid_records += 1
-                else:
-                    records.append(normalized)
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            raw_metadata = parsed.get("metadata", {})
+            if not isinstance(raw_metadata, dict):
+                raise ValueError("Capture metadata must be a JSON object.")
+            metadata = dict(raw_metadata)
+            metadata["bookmarks"] = parsed.get("bookmarks", {})
+            metadata["markers"] = parsed.get("markers", [])
+            source = parsed.get("frames", [])
+        elif isinstance(parsed, list):
+            source = parsed
         else:
-            lines = text.splitlines()
-            last_content_line = max(
-                (index for index, line in enumerate(lines) if line.strip()),
-                default=-1,
-            )
-            for index, line in enumerate(lines):
+            raise ValueError("Capture JSON must contain an object or a frame list.")
+        if not isinstance(source, list):
+            raise ValueError("Capture frames must be a JSON array.")
+        for item in source:
+            normalized = _normalize_record(item)
+            if normalized is None:
+                invalid_records += 1
+            else:
+                records.append(normalized)
+    elif suffix in (".jsonl", ".ndjson"):
+        # Stream line-delimited archives to avoid a second full-file text copy.
+        last_nonempty_line_malformed = False
+        with path.open("r", encoding="utf-8-sig") as handle:
+            for line in handle:
                 if not line.strip():
                     continue
                 try:
                     item = json.loads(line)
+                    malformed = False
                 except json.JSONDecodeError:
                     malformed_lines += 1
-                    if index == last_content_line:
-                        possible_truncated_final_line = True
+                    malformed = True
+                    last_nonempty_line_malformed = True
                     continue
+                last_nonempty_line_malformed = malformed
                 if not isinstance(item, dict):
                     invalid_records += 1
                     continue
@@ -872,6 +871,7 @@ def load_capture_file(path):
                         invalid_records += 1
                     else:
                         records.append(normalized)
+        possible_truncated_final_line = last_nonempty_line_malformed
     elif suffix == ".csv":
         with path.open("r", newline="", encoding="utf-8-sig") as handle:
             for row in csv.DictReader(handle):
