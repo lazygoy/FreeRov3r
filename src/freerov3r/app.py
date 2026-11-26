@@ -874,7 +874,6 @@ class SensorGraphTab(QWidget):
         self.recording = False
         self.record_start = None
         self.record_start_index = None
-        self.record_start_dropped = 0
         self.record_vehicle_vin = None
         self.last_sample_time = {}
         self.activity_phase = True
@@ -1322,7 +1321,6 @@ class SensorGraphTab(QWidget):
             self.recording = True
             self.record_start = time.time()
             self.record_start_index = self.sensor_capture.total_samples_added
-            self.record_start_dropped = self.sensor_capture.dropped_samples
             self.record_vehicle_vin = self.vehicle_vin
             self.record_btn.setText("Stop Recording")
             self.record_btn.setStyleSheet("background-color: #c0392b; color: white;")
@@ -1330,7 +1328,6 @@ class SensorGraphTab(QWidget):
 
         self.recording = False
         start_index = self.record_start_index
-        start_dropped = self.record_start_dropped
         record_vin = self.record_vehicle_vin
         self.record_start = None
         self.record_start_index = None
@@ -1364,7 +1361,7 @@ class SensorGraphTab(QWidget):
             return
 
         dropped_during_recording = max(
-            0, self.sensor_capture.dropped_samples - start_dropped
+            0, self.sensor_capture.dropped_samples - (start_index or 0)
         )
         if dropped_during_recording:
             QMessageBox.warning(
