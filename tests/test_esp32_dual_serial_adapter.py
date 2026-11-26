@@ -131,3 +131,63 @@ def test_open_clears_stale_queue_and_overflow_counters(monkeypatch):
         assert diagnostics["queue_high_water_mark"] == 0
     finally:
         adapter.close()
+
+
+
+def test_open_failure_closes_already_opened_serial_adapter(monkeypatch):
+    instances = []
+
+    class OpenFailureAdapter(FakeAdapter):
+        def __init__(self, port, baudrate=921600, timeout=0.1):
+            super().__init__(port, baudrate, timeout)
+            instances.append(self)
+
+        def open(self):
+            if self.port == "COM5":
+                raise OSError("simulated serial port unavailable")
+            super().open()
+
+    monkeypatch.setattr(dual_module, "Esp32SerialAdapter", OpenFailureAdapter)
+    adapter = dual_module.Esp32DualSerialAdapter(["COM4", "COM5"])
+
+    with pytest.raises(OSError, match="simulated serial port unavailable"):
+        adapter.open()
+
+    assert len(instances) == 2
+    assert instances[0].connection is None
+    assert instances[1].connection is None
+    assert adapter.diagnostics["connected"] is False
+    assert adapter._threads == []
+
+
+def test_one_receiver_worker_failure_is_reported_without_stopping_other_channel(monkeypatch):
+    class FaultyChannelAdapter(FakeAdapter):
+        def receive(self, timeout=0.1):
+            if self.port == "COM4":
+                raise OSError("simulated USB serial disconnect")
+            return super().receive(timeout)
+
+    monkeypatch.setattr(dual_module, "Esp32SerialAdapter", FaultyChannelAdapter)
+    adapter = dual_module.Esp32DualSerialAdapter(
+        ["COM4", "COM5"], channel_names=("HS-CAN", "MS-CAN")
+    )
+    adapter.open()
+    try:
+        deadline = time.monotonic() + 1.0
+        frame = None
+        while time.monotonic() < deadline:
+            frame = adapter.receive(timeout=0.05)
+            diagnostics = adapter.diagnostics
+            if frame is not None and diagnostics["channels"][0]["receiver_state"] == "disconnected/error":
+                break
+
+        assert frame is not None
+        assert frame.channel == "MS-CAN"
+        diagnostics = adapter.diagnostics
+        assert diagnostics["channels"][0]["connected"] is False
+        assert diagnostics["channels"][0]["receiver_state"] == "disconnected/error"
+        assert "simulated USB serial disconnect" in diagnostics["channels"][0]["last_error"]
+        assert diagnostics["channels"][1]["frames_received"] == 1
+        assert diagnostics["queue_dropped_frames"] == 0
+    finally:
+        adapter.close()
