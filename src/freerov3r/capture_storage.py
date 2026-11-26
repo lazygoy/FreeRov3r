@@ -131,12 +131,23 @@ class StreamingCaptureWriter:
 
     def close_incomplete(self) -> None:
         """Close the file without a completion marker, preserving recovery evidence."""
-        if self.is_open:
-            try:
-                self._flush(force=True)
-            finally:
-                self._handle.close()
-                self._handle = None
+        if not self.is_open:
+            return
+        error = None
+        try:
+            self._flush(force=True)
+        except OSError as exc:
+            error = exc
+        try:
+            self._handle.close()
+        except OSError as exc:
+            error = error or exc
+        finally:
+            self._handle = None
+        if error is not None:
+            raise CaptureStorageError(
+                f"Could not cleanly close incomplete capture {self.path}: {error}"
+            ) from error
 
 
 def write_json_atomic(path: str | Path, payload: Any) -> Path:
