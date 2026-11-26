@@ -101,6 +101,8 @@ def test_mode06_history_filter_and_readable_raw_report():
     ]
     report = format_mode06_scan_event(scans[0])
     assert "MID: 01" in report
+    assert "\\n" not in report
+    assert "MODE 06 TEST RESULTS (RAW)\\nECU:" in report
     assert "TID: 80" in report
     assert "UASID: 24" in report
     assert "Value (raw): 100" in report
