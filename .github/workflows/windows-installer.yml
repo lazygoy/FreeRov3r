@@ -2,11 +2,18 @@ name: Windows installer
 
 on:
   workflow_dispatch:
+  schedule:
+    # 07:00 UTC is 02:00 EST / 03:00 EDT.
+    - cron: "0 7 * * *"
   push:
     tags: ["v*"]
 
 permissions:
   contents: write
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: false
 
 defaults:
   run:
@@ -59,7 +66,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FreeRov3r-Windows-Installer
+          name: FreeRov3r-Windows-${{ github.event_name == 'schedule' && 'Nightly' || 'Installer' }}-${{ github.run_number }}-${{ github.sha }}
           path: dist-installer/FreeRov3r-Setup-*-x64.exe
           if-no-files-found: error
           retention-days: 30
