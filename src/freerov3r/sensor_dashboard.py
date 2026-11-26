@@ -227,8 +227,13 @@ class SensorCorrelationDialog(QDialog):
         label, accepted = QInputDialog.getText(self, "Capture event", "Event label:")
         if not accepted or not label.strip():
             return
+        note, note_accepted = QInputDialog.getMultiLineText(
+            self, "Session annotation", "Optional note:", ""
+        )
+        if not note_accepted:
+            note = ""
         try:
-            self.sensor_capture.add_event(make_event_marker(self._samples(), label))
+            self.sensor_capture.add_event(make_event_marker(self._samples(), label, note))
         except ValueError as exc:
             QMessageBox.warning(self, "Event marker", str(exc))
             return
