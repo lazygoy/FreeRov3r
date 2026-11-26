@@ -110,7 +110,12 @@ def test_dual_adapter_rejects_invalid_queue_capacity(capacity):
 
 
 def test_open_clears_stale_queue_and_overflow_counters(monkeypatch):
-    monkeypatch.setattr(dual_module, "Esp32SerialAdapter", FakeAdapter)
+    class SilentAdapter(FakeAdapter):
+        def receive(self, timeout=0.1):
+            time.sleep(min(timeout, 0.005))
+            return None
+
+    monkeypatch.setattr(dual_module, "Esp32SerialAdapter", SilentAdapter)
     adapter = dual_module.Esp32DualSerialAdapter(
         ["COM4", "COM5"], queue_capacity=1
     )
