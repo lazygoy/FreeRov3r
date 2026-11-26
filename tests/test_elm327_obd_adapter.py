@@ -208,11 +208,11 @@ def test_elm327_obd_adapter_reads_pid_01_readiness(monkeypatch):
     import freerov3r.hardware.elm327_obd_adapter as module
 
     fake = FakeSerial(responses=[
-        b"ELM327 v1.5\\r>",
-        b"OK\\r>", b"OK\\r>", b"OK\\r>", b"OK\\r>",
-        b"OK\\r>", b"OK\\r>",
-        b"7E8 06 41 00 00 10 00 00\\r>",
-        b"7E8 06 41 01 81 00 0F 08\\r>",
+        b"ELM327 v1.5\r>",
+        b"OK\r>", b"OK\r>", b"OK\r>", b"OK\r>",
+        b"OK\r>", b"OK\r>",
+        b"7E8 06 41 00 00 10 00 00\r>",
+        b"7E8 06 41 01 81 00 0F 08\r>",
     ])
     monkeypatch.setattr(module.serial, "Serial", lambda *a, **k: fake)
     adapter = Elm327ObdAdapter("COM9", pids=[0x0C])
