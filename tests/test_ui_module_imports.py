@@ -35,3 +35,10 @@ def test_network_overview_tab_remains_available_from_app_module():
     from freerov3r.network_overview_tab import NetworkOverviewTab
 
     assert app_network_tab is NetworkOverviewTab
+
+
+def test_vehicle_history_store_remains_available_from_app_module():
+    from freerov3r.app import VehicleHistoryStore as app_history_store
+    from freerov3r.vehicle_history import VehicleHistoryStore
+
+    assert app_history_store is VehicleHistoryStore
