@@ -33,6 +33,7 @@ from freerov3r.timestamp_analysis import analyze_channel_timestamps
 from freerov3r.hardware.clock_sync import calibrate_two_devices
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 from freerov3r.diagnostics.cross_bus_correlation import analyze_cross_bus_correlation
+from freerov3r.diagnostics.cross_bus_signal_correlation import analyze_cross_bus_signal_correlation
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.dbc_signal_behavior import (
@@ -1088,6 +1089,12 @@ class ResearchTab(QWidget):
         )
         self.cross_bus_button.clicked.connect(self.analyze_cross_bus_traffic)
         dbc_controls.addWidget(self.cross_bus_button)
+        self.cross_bus_signal_button = QPushButton("Signal-level correlation")
+        self.cross_bus_signal_button.setToolTip(
+            "Compare repeated CAN payload byte and bit transitions across candidate bus pairs. Shared host clock only; passive analysis."
+        )
+        self.cross_bus_signal_button.clicked.connect(self.analyze_cross_bus_signals)
+        dbc_controls.addWidget(self.cross_bus_signal_button)
         dbc_controls.setContentsMargins(0, 0, 0, 0)
         dbc_controls.setSpacing(5)
         root.addLayout(dbc_controls)
@@ -2692,6 +2699,81 @@ class ResearchTab(QWidget):
             f"Cross-bus analysis: {report['candidate_count']} candidate relationship(s); correlation only"
         )
 
+    def analyze_cross_bus_signals(self):
+        """Compare repeated payload byte/bit transitions across candidate bus pairs."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(
+                self, "Signal-level correlation", "Capture or import CAN frames first."
+            )
+            return
+
+        report = analyze_cross_bus_signal_correlation(dataset)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cross-bus signal-level correlation")
+        dialog.resize(1180, 700)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            f"Status: {report['status']} | {report['valid_frame_count']:,} shared-clock frames | "
+            f"{report['message_pair_count']} CAN-ID pairs inspected | "
+            f"{report['candidate_count']} signal candidates"
+        ))
+        layout.addWidget(QLabel(
+            f"Excluded for unknown/independent clock: {report['excluded_non_shared_clock_count']:,} | "
+            f"Invalid records: {report['invalid_frame_count']:,} | "
+            f"Transition tolerance: ±{report['limits']['event_tolerance_ms']:.1f} ms"
+        ))
+        columns = [
+            "Type", "Bus A", "CAN ID A", "Signal A", "Bus B", "CAN ID B",
+            "Signal B", "Relationship", "Transitions", "Agreement", "Lag (ms)",
+        ]
+        table = QTableWidget(len(report["candidates"]), len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.horizontalHeader().setStretchLastSection(True)
+        for row, item in enumerate(report["candidates"]):
+            signal_a = f"byte {item['byte_a']}"
+            signal_b = f"byte {item['byte_b']}"
+            if item["signal_type"] == "bit":
+                signal_a += f" bit {item['bit_a']}"
+                signal_b += f" bit {item['bit_b']}"
+            values = [
+                item["signal_type"],
+                item["channel_a"],
+                f"0x{item['can_id_a']:X} ({item['format_a']})",
+                signal_a,
+                item["channel_b"],
+                f"0x{item['can_id_b']:X} ({item['format_b']})",
+                signal_b,
+                item["match_type"],
+                str(item["transition_count"]),
+                f"{item['agreement']:.1%}",
+                f"{item['lag_seconds'] * 1000:+.1f}",
+            ]
+            for column, value in enumerate(values):
+                table.setItem(row, column, QTableWidgetItem(str(value)))
+        layout.addWidget(table, 1)
+        notes = QPlainTextEdit()
+        notes.setReadOnly(True)
+        notes.setMaximumHeight(125)
+        notes.setPlainText(
+            "INTERPRETATION: Every row is a candidate byte/bit relationship, not a verified signal definition, ECU identity, or causal link. "
+            "Positive lag means Bus B follows Bus A. Byte matching currently tests exact, inverted, and constant XOR-mask relationships; "
+            "it does not infer scaling, offsets, endianness, or multi-byte values.\n\n"
+            + "\n".join(f"- {item}" for item in report["limitations"])
+        )
+        layout.addWidget(notes)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Signal-level analysis: {report['candidate_count']} candidate relationship(s); no signal meanings inferred"
+        )
+
     def analyze_can_timing(self):
         """Show passive inter-frame timing observations for the current capture."""
         self._flush_pending_frames()
@@ -3482,6 +3564,9 @@ class ResearchTab(QWidget):
             "",
             "## Cross-bus temporal correlation candidates",
             json.dumps(analyze_cross_bus_correlation(self.frames), indent=2),
+            "",
+            "## Cross-bus signal-level transition candidates",
+            json.dumps(analyze_cross_bus_signal_correlation(self.frames), indent=2),
             "",
             "## Passive CAN payload variability",
             json.dumps(analyze_payload_variability(self.frames), indent=2),
