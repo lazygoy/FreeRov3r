@@ -253,3 +253,40 @@ The ISO description model defines resources as a bus type, protocol, and
 physical pins; the MDF supplies supported IDs and the CDF maps module pins to
 the vehicle connector. PDUGetResourceIds accepts those identifiers and
 returns API-allocated resource-ID items that the application must destroy.
+
+
+## D-PDU resource status and conflict inventory
+
+The runtime now supports two additional resource queries:
+
+- `DPduApiRuntime.enumerate_conflicts(resource_id)` calls
+  `PDUGetConflictingResources` using the current or explicitly supplied
+  module inventory. It returns conflicting module handles and resource IDs,
+  and releases the API-allocated conflict item with `PDUDestroyItem`.
+- `DPduApiRuntime.get_resource_status(module_handle, resource_ids)` calls
+  `PDUGetResourceStatus` with an application-owned
+  `PDU_RSC_STATUS_ITEM`, returning the raw status bitfield plus decoded
+  in-use and available flags.
+
+The ISO 22900-2:2022 rules matter here: `PDUGetConflictingResources` is
+permitted before `PDUModuleConnect`, but `PDUGetResourceStatus` requires the
+module to be connected. The runtime therefore exposes an explicit
+`connect_module()` / `disconnect_module()` pair. It does not connect modules
+automatically when opening the API or listing resources.
+
+`PDUModuleConnect` initializes the selected MVCI module and its system-level
+driver, and obtains its resource table while the D-PDU communication state
+remains offline. It does not create a ComLogicalLink, allocate a diagnostic
+resource, connect to the vehicle bus, or send vehicle messages. This is a
+separate hardware-initialization step and must be requested explicitly.
+Connected modules are disconnected during normal runtime cleanup before
+`PDUDestruct`.
+
+Resource status is a bitfield, not a single enum: bit 0 reports in-use and
+bit 1 reports not-available. FreeRov3r preserves the raw value and exposes
+those two flags separately so unknown or vendor-defined bits are not lost.
+
+Tests cover the explicit module-connect prerequisite, status bit decoding,
+module-disconnect cleanup, conflict-list decoding, module inventory structure
+construction, and API-owned conflict-item destruction. All runtime tests use
+mocked D-PDU libraries; real VCI compatibility is not established by CI.
