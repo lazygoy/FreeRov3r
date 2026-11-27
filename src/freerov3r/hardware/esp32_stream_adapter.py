@@ -44,6 +44,9 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.connection_events = []
         self.connection_generation = 0
         self.reconnect_attempts = 0
+        self.bytes_received = 0
+        self.capture_started_monotonic = None
+        self.last_byte_monotonic = None
 
     @property
     def connected(self):
@@ -72,12 +75,28 @@ class Esp32FramedStreamAdapter(CanAdapter):
             state = "connected/silent"
         else:
             state = "receiving"
+        elapsed = (
+            max(0.0, time.monotonic() - self.capture_started_monotonic)
+            if self.capture_started_monotonic is not None else 0.0
+        )
         return {
             "connected": self.connected,
             "receiver_state": state,
             "transport": self.transport_label,
             "frames_received": self.frames_received,
             "messages_received": self.messages_received,
+            "bytes_received": self.bytes_received,
+            "capture_elapsed_seconds": elapsed,
+            "average_frames_per_second": (
+                self.frames_received / elapsed if elapsed > 0 else 0.0
+            ),
+            "average_bytes_per_second": (
+                self.bytes_received / elapsed if elapsed > 0 else 0.0
+            ),
+            "last_byte_age_seconds": (
+                max(0.0, time.monotonic() - self.last_byte_monotonic)
+                if self.last_byte_monotonic is not None else None
+            ),
             "ignored_messages": self.ignored_messages,
             "invalid_can_payloads": self.invalid_can_payloads,
             "sequence_gaps": self.sequence_gaps,
@@ -115,6 +134,9 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.wifi_host = self.wifi_port = None
         self._open_transport()
         self._opened = True
+        self.bytes_received = 0
+        self.capture_started_monotonic = time.monotonic()
+        self.last_byte_monotonic = None
         self.connection_generation += 1
         self._record_connection_event({
             "event": "connected",
@@ -267,6 +289,8 @@ class Esp32FramedStreamAdapter(CanAdapter):
                 self._opened = False
                 raise
             if chunk:
+                self.bytes_received += len(chunk)
+                self.last_byte_monotonic = time.monotonic()
                 self._pending_frames.extend(self._decode_messages(chunk))
                 if self._pending_frames:
                     return self._pending_frames.pop(0)
