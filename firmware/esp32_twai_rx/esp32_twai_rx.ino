@@ -93,37 +93,33 @@ static uint32_t wifiMessageSequence = 0;
 #endif
 
 static bool enqueueFrame(const twai_message_t &frame, uint64_t timestampUs) {
-  if (!outputQueue) {
-    ++outputQueueDrops;
-    return false;
-  }
   OutputItem item = {};
   item.kind = OUTPUT_ITEM_FRAME;
   item.frame = frame;
   item.timestampUs = timestampUs;
-  if (xQueueSend(outputQueue, &item, 0) != pdTRUE) {
-    ++outputQueueDrops;
-    return false;
-  }
+  const bool usbQueued = outputQueue &&
+      xQueueSend(outputQueue, &item, 0) == pdTRUE;
+  if (!usbQueued) ++outputQueueDrops;
 #if FREEROV3R_WIFI_ENABLED
   if (wifiClientConnected && wifiOutputQueue &&
       xQueueSend(wifiOutputQueue, &item, 0) != pdTRUE) {
     ++wifiQueueDrops;
   }
 #endif
-  return true;
+  return usbQueued;
 }
 static bool enqueueStatus(const char *status) {
   if (!outputQueue) return false;
   OutputItem item = {};
   item.kind = OUTPUT_ITEM_STATUS;
   strncpy(item.status, status, sizeof(item.status) - 1);
-  const bool queued = xQueueSend(outputQueue, &item, 0) == pdTRUE;
+  const bool usbQueued = outputQueue &&
+      xQueueSend(outputQueue, &item, 0) == pdTRUE;
 #if FREEROV3R_WIFI_ENABLED
-  if (queued && wifiClientConnected && wifiOutputQueue &&
+  if (wifiClientConnected && wifiOutputQueue &&
       xQueueSend(wifiOutputQueue, &item, 0) != pdTRUE) ++wifiQueueDrops;
 #endif
-  return queued;
+  return usbQueued;
 }
 
 static void writeU16(uint8_t *out, uint16_t value) {
@@ -232,6 +228,13 @@ static void wifiWriterTask(void *parameter) {
   OutputItem item;
   uint32_t reportedDrops = 0;
   for (;;) {
+    if (WiFi.status() != WL_CONNECTED) {
+      wifiClientConnected = false;
+      if (client) client.stop();
+      WiFi.reconnect();
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      continue;
+    }
     if (!client || !client.connected()) {
       if (client) client.stop();
       wifiClientConnected = false;
