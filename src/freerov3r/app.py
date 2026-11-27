@@ -1,54 +1,24 @@
 """FreeRov3r – user-friendly diagnostic interface with graphing, OBD-II, and modules."""
 import csv
 import json
-import math
 import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal, QTimer, Qt, QUrl
-from PySide6.QtGui import QPalette, QColor, QFont, QFontDatabase, QPainter, QBrush, QIcon, QDesktopServices
+from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtGui import QFont, QFontDatabase, QIcon, QDesktopServices
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QLabel, QMainWindow,
-    QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
-    QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QGroupBox,
-    QFormLayout, QCheckBox, QSpinBox, QStackedWidget, QColorDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView, QListWidgetItem,
-    QTreeWidget, QTreeWidgetItem, QGridLayout, QToolButton, QButtonGroup,
-    QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame, QScrollArea, QSizePolicy, QInputDialog,
+    QApplication, QFileDialog, QLabel, QMainWindow, QPushButton,
+    QTabWidget, QVBoxLayout, QWidget, QGroupBox, QStackedWidget,
+    QGridLayout, QDialog,
 )
 
-try:
-    from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-    HAS_CHARTS = True
-except ImportError:
-    HAS_CHARTS = False
-
-from .hardware.receiver import FrameBatcher, Receiver
-from .hardware.serial_ports import list_serial_ports
-from .hardware.interface_discovery import discover_interfaces
-from .hardware.elm327_serial_adapter import Elm327SerialAdapter, query_vin
-from .hardware.elm327_obd_adapter import Elm327ObdAdapter
-from .diagnostics.vehicle_identification import identify_vehicle, validate_vin, decode_vin_online
 from .vehicle_profiles.registry import VehicleProfileRegistry
-from .hardware.python_can_adapter import PythonCanAdapter
-from .hardware.esp32_serial_adapter import Esp32SerialAdapter
-from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
-from .hardware.simulated_vehicle import SimulatedVehicleAdapter
-from .hardware.capture_replay_adapter import CaptureReplayAdapter
-from .hardware.dual_channel_simulator import DualChannelSimulator
-from .diagnostics.obd2 import (OBD_PIDS, PID_CATEGORIES_ALL, PID_MULTI_VALUE_KEYS, search_mode01_pids, decode_mode01_measurements, Mode01ScalingContext)
 from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
-from .sensors.models import SensorSample
-from .sensors.scaling import normalize_values, sample_clock, sample_time
-from .sensors.analysis import summarize_sensor_samples
-from .sensors.thresholds import evaluate_sensor_threshold, normalize_sensor_thresholds
 from .sensor_dashboard import SensorDashboardDock
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
-from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
-from .diagnostics.l319_wiring import NETWORKS as L319_WIRING_NETWORKS, SOURCE_URL as L319_WIRING_SOURCE_URL, DEFAULT_ENGINE as L319_DEFAULT_ENGINE
 
 from .vehicle_history import VehicleHistoryStore
 from .vehicle_history_tab import VehicleHistoryTab
@@ -56,7 +26,7 @@ from .solutions_tab import SolutionsTab
 from .special_functions_tab import SpecialFunctionsTab
 from .wiring_diagrams_tab import WiringDiagramsTab
 from .network_overview_tab import NetworkOverviewTab
-from .sensor_graph_tab import SensorGraphTab
+from .sensor_graph_tab import HAS_CHARTS, SensorGraphTab
 from .obd_tab import OBDTab
 from .modules_tab import ModulesTab
 from .vehicle_setup_wizard import VehicleSetupWizard, VinDecodeWorker, VinQueryWorker
