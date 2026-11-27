@@ -2726,7 +2726,7 @@ class ResearchTab(QWidget):
         ))
         columns = [
             "Type", "Bus A", "CAN ID A", "Signal A", "Bus B", "CAN ID B",
-            "Signal B", "Relationship", "Transitions", "Agreement", "Lag (ms)",
+            "Signal B", "Relationship", "Transitions", "Agreement", "Coverage", "Lag (ms)",
         ]
         table = QTableWidget(len(report["candidates"]), len(columns))
         table.setHorizontalHeaderLabels(columns)
@@ -2751,6 +2751,7 @@ class ResearchTab(QWidget):
                 item["match_type"],
                 str(item["transition_count"]),
                 f"{item['agreement']:.1%}",
+                f"{item['transition_coverage']:.1%}",
                 f"{item['lag_seconds'] * 1000:+.1f}",
             ]
             for column, value in enumerate(values):
