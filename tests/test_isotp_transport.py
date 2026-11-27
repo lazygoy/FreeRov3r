@@ -130,7 +130,7 @@ def test_reserved_st_min_values_are_rejected(st_min):
 
 def test_invalid_flow_control_status_is_rejected():
     incoming = queue.Queue()
-    incoming.put(CanFrame(0x7E8, bytes.fromhex("33 00 00")))
+    incoming.put(CanFrame(0x7E8, bytes.fromhex("32 00 00")))
     transport = IsoTpTransport(
         lambda frame: None,
         lambda timeout: incoming.get_nowait() if not incoming.empty() else None,
