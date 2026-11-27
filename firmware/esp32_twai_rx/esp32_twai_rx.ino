@@ -105,6 +105,7 @@ static uint32_t reportedOutputQueueDrops = 0;
 #if FREEROV3R_WIFI_ENABLED
 static uint32_t wifiMessageSequence = 0;
 #endif
+static void processIncomingByte(IncomingParser &parser, uint8_t byte, bool wifi);
 
 static bool enqueueFrame(const twai_message_t &frame, uint64_t timestampUs) {
   OutputItem item = {};
