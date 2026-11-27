@@ -460,3 +460,9 @@ def test_port_selection_prefers_one_recognized_adapter():
     window.status.deleteLater()
     _QT_TEST_APP.processEvents()
 
+def test_app_shell_keeps_optional_chart_capability_export():
+    from freerov3r.app import HAS_CHARTS as app_has_charts
+    from freerov3r.sensor_graph_tab import HAS_CHARTS
+
+    assert app_has_charts is HAS_CHARTS
+
