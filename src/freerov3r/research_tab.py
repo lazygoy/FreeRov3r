@@ -47,9 +47,7 @@ except ImportError:
     QChart = QChartView = QLineSeries = QValueAxis = QPen = None
     QListWidget = QListWidgetItem = None
     HAS_RESEARCH_CHARTS = False
-from freerov3r.diagnostics.module_discovery import (
-    compare_module_discovery, discover_modules,
-)
+from freerov3r.can_research import compare_module_discovery, discover_modules
 
 from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
