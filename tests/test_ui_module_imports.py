@@ -390,7 +390,7 @@ def test_vehicle_context_disables_l319_workspaces_for_generic_vehicle():
         setTabToolTip=lambda index, tooltip: None,
     )
     window = SimpleNamespace(
-        settings={"active_vehicle": {"profile_id": "generic"}},
+        settings={"active_vehicle": {"profile_id": "generic", "make": "Toyota", "model": "Camry"}},
         vehicle_profiles=SimpleNamespace(get=lambda _profile: None),
         sensor_capture=SimpleNamespace(vehicle_context={}),
         tabs=tabs,
