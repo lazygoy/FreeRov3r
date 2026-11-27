@@ -81,3 +81,48 @@ def test_receive_only_adapter_cannot_transmit_even_with_all_policy_switches():
 
     assert not policy.allows_diagnostic_request(receive_only)
     assert not policy.allows_general_can_transmit(receive_only)
+
+
+
+def test_uds_requests_require_separate_implementation_and_permission():
+    planned_uds = AdapterCapabilities(
+        uds_active_requests=True,
+        uds_diagnostic_requests_implemented=False,
+    )
+    assert not TransmitPolicy(
+        diagnostic_requests_enabled=True,
+        uds_requests_enabled=True,
+    ).allows_uds_request(planned_uds)
+
+    implemented_uds = AdapterCapabilities(
+        uds_active_requests=True,
+        uds_diagnostic_requests_implemented=True,
+    )
+    assert not TransmitPolicy(
+        diagnostic_requests_enabled=True,
+    ).allows_uds_request(implemented_uds)
+    assert TransmitPolicy(
+        uds_requests_enabled=True,
+    ).allows_uds_request(implemented_uds)
+
+
+def test_enabling_uds_does_not_enable_obd_or_general_can_transmit():
+    capabilities = AdapterCapabilities(
+        raw_can_receive=True,
+        raw_can_transmit=True,
+        raw_can_transmit_implemented=False,
+        obd2_active_requests=True,
+        diagnostic_requests_implemented=True,
+        uds_active_requests=True,
+        uds_diagnostic_requests_implemented=True,
+    )
+    policy = TransmitPolicy(uds_requests_enabled=True)
+    assert policy.allows_uds_request(capabilities)
+    assert not policy.allows_diagnostic_request(capabilities)
+    assert not policy.allows_general_can_transmit(capabilities)
+
+
+def test_enabling_obd_requests_does_not_enable_uds():
+    policy = TransmitPolicy(diagnostic_requests_enabled=True)
+    assert policy.allows_diagnostic_request(ELM327_OBD_CAPABILITIES)
+    assert not policy.allows_uds_request(ELM327_OBD_CAPABILITIES)
