@@ -176,6 +176,7 @@ class SharedCrosshairStackedPlot(QWidget):
         self.plots.clear()
         self._vertical_lines.clear()
         self._horizontal_lines.clear()
+        self._value_labels.clear()
         self._active_index = None
         while self.plot_layout.count():
             item = self.plot_layout.takeAt(0)
