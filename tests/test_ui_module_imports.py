@@ -42,3 +42,35 @@ def test_vehicle_history_store_remains_available_from_app_module():
     from freerov3r.vehicle_history import VehicleHistoryStore
 
     assert app_history_store is VehicleHistoryStore
+
+
+
+def test_sensor_graph_tab_remains_available_from_app_module():
+    from freerov3r.app import SensorGraphTab as app_sensor_graph_tab
+    from freerov3r.sensor_graph_tab import SensorGraphTab
+
+    assert app_sensor_graph_tab is SensorGraphTab
+
+_QT_TEST_APP = None
+
+
+def test_sensor_graph_tab_constructs_with_empty_capture():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.sensor_graph_tab import SensorGraphTab
+    from freerov3r.sensors.capture import SensorCapture
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = SensorGraphTab(SensorCapture())
+    assert tab.sensor_list.count() == 0
+    assert tab.stats_table.rowCount() == 0
+    assert tab.activity_timer.isActive()
+
+    tab.activity_timer.stop()
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
