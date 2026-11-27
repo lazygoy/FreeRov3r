@@ -167,7 +167,11 @@ def toggle_capture(window):
     window._last_receiver_diagnostics = {}
     window.research_tab.set_receiver_diagnostics({})
     window.capture_vin = window.settings.get("current_vin")
-    window.research_tab.set_context(window.capture_vin, interface)
+    window.research_tab.set_context(
+        window.capture_vin,
+        interface,
+        window.settings.get("active_vehicle", {}),
+    )
     window.capture_session_context = CaptureSessionContext.begin(
         interface=interface,
         channel=channel,

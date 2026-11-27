@@ -36,6 +36,7 @@ from freerov3r.diagnostics.cross_bus_correlation import analyze_cross_bus_correl
 from freerov3r.diagnostics.cross_bus_signal_correlation import analyze_cross_bus_signal_correlation
 from freerov3r.diagnostics.cross_capture_signal_validation import validate_cross_capture_signals
 from freerov3r.diagnostics.signal_evidence import SignalEvidenceStore
+from freerov3r.core.vehicle.knowledge import VehicleKnowledgeStore
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.dbc_signal_behavior import (
@@ -1368,11 +1369,17 @@ class ResearchTab(QWidget):
             status = f"ERROR: {error}"
         self.receiver_status_label.setText(f"Firmware: {status}")
 
-    def set_context(self, vin=None, interface=None):
+    def set_context(self, vin=None, interface=None, vehicle=None):
+        vehicle = dict(vehicle or {})
         self.vin_label.setText(f"VIN: {vin or 'not set'}  |  Interface: {interface or 'not connected'}")
         self.metadata.update({
             "vin": vin,
             "interface": interface,
+            "vehicle_profile_id": vehicle.get("profile_id", "generic"),
+            "vehicle_model_year": vehicle.get("model_year"),
+            "vehicle_engine_id": vehicle.get("engine_id"),
+            "vehicle_make": vehicle.get("make", ""),
+            "vehicle_model": vehicle.get("model", ""),
             "scanner": "LAUNCH Creader Elite V2.0 for Land Rover/Jaguar",
         })
 
@@ -2563,14 +2570,66 @@ class ResearchTab(QWidget):
                 self.metadata.get("session_name")
                 or Path(self.metadata.get("imported_from", "Working capture")).name
             )
-            captures.append({"name": name, "frames": self.frames})
+            captures.append({"name": name, "frames": self.frames, "metadata": dict(self.metadata)})
         if self.reference_frames:
             name = (
                 self.reference_metadata.get("session_name")
                 or Path(self.reference_metadata.get("imported_from", "Reference capture")).name
             )
-            captures.append({"name": name, "frames": self.reference_frames})
+            captures.append({"name": name, "frames": self.reference_frames, "metadata": dict(self.reference_metadata)})
         return captures
+
+    def _persist_module_inventory_evidence(self, report, captures):
+        """Retain passive discovery output in the shared vehicle knowledge catalog."""
+        vehicle = self.metadata
+        profile_id = str(vehicle.get("vehicle_profile_id") or "generic")
+        applicability = {"profile_ids": [profile_id]}
+        model_year = vehicle.get("vehicle_model_year")
+        if isinstance(model_year, int) and not isinstance(model_year, bool):
+            applicability["model_year_start"] = model_year
+            applicability["model_year_end"] = model_year
+        engine_id = str(vehicle.get("vehicle_engine_id") or "").strip()
+        if engine_id:
+            applicability["engine_ids"] = [engine_id]
+
+        name_totals = {}
+        for item in captures:
+            base_name = str(item.get("name") or "Unnamed capture")
+            name_totals[base_name] = name_totals.get(base_name, 0) + 1
+
+        capture_ids = {}
+        for index, item in enumerate(captures):
+            metadata = item.get("metadata") or {}
+            base_name = str(item.get("name") or "Unnamed capture")
+            name = (
+                f"{base_name} [capture {index + 1}]"
+                if name_totals[base_name] > 1 else base_name
+            )
+            stable_id = (
+                metadata.get("capture_id")
+                or metadata.get("session_uuid")
+                or metadata.get("session_id")
+                or metadata.get("imported_from")
+            )
+            if not stable_id:
+                stable_id = hashlib.sha256(json.dumps({
+                    "name": base_name,
+                    "vin": metadata.get("vin") or vehicle.get("vin"),
+                    "started_at": metadata.get("started_at"),
+                    "session_name": metadata.get("session_name"),
+                    "frame_count": len(item.get("frames") or []),
+                }, sort_keys=True).encode("utf-8")).hexdigest()
+            capture_ids[name] = str(stable_id)
+
+        store = VehicleKnowledgeStore(
+            Path.home() / ".freerov3r" / "vehicle" / "knowledge.json"
+        )
+        records = store.import_module_discovery_report(
+            report,
+            applicability=applicability,
+            capture_ids=capture_ids,
+        )
+        return len(records)
 
     def analyze_module_inventory(self):
         """Compare observed CAN nodes across independently loaded capture files."""
@@ -2582,7 +2641,19 @@ class ResearchTab(QWidget):
             )
             return
         result = compare_module_discovery(captures)
+        try:
+            retained_count = self._persist_module_inventory_evidence(result, captures)
+            self.status_label.setText(
+                f"Compared {result['node_count']:,} passive CAN nodes; "
+                f"retained {retained_count:,} vehicle knowledge observations"
+            )
+        except Exception as exc:
+            retained_count = 0
+            self.status_label.setText(
+                f"Module inventory completed; evidence retention failed: {exc}"
+            )
         lines = [
+            f"Vehicle knowledge observations retained: {retained_count}",
             f"Independent captures analyzed: {result['capture_count']}",
             f"Distinct CAN nodes: {result['node_count']}",
             "Nodes are keyed by CAN ID, CAN format, and channel.",
