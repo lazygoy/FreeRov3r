@@ -97,3 +97,12 @@ def test_waterfall_retains_raw_engineering_values_for_cursor_readout():
     assert lane["raw_points"] == [(0.0, 825.0), (1.0, 1425.0)]
     assert lane["minimum"] == 825
     assert lane["maximum"] == 1425
+
+
+
+def test_waterfall_renderer_is_a_real_opengl_3d_view():
+    from pyqtgraph.opengl import GLViewWidget
+
+    from freerov3r.sensor_waterfall_gl import WaterfallPlot
+
+    assert issubclass(WaterfallPlot, GLViewWidget)
