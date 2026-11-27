@@ -37,6 +37,8 @@ class MessageType(IntEnum):
     DEVICE_STATUS = 0x12
     FRAME_RX = 0x20
     TX_RESULT = 0x21
+    TIME_SYNC_REQ = 0x30
+    TIME_SYNC_RESP = 0x31
 
 
 @dataclass(frozen=True)
@@ -237,3 +239,63 @@ def decode_can_frame_payload(payload: bytes) -> CanFramePayload:
         device_timestamp_us=None if timestamp == _NO_DEVICE_TIMESTAMP else timestamp,
         dlc=dlc,
     )
+
+
+
+_CLOCK_SYNC_REQUEST = struct.Struct(">IQ")
+_CLOCK_SYNC_RESPONSE = struct.Struct(">IQQQ")
+
+
+@dataclass(frozen=True)
+class ClockSyncRequest:
+    sync_id: int
+    host_send_time_ns: int
+
+
+@dataclass(frozen=True)
+class ClockSyncResponse:
+    sync_id: int
+    host_send_time_ns: int
+    device_receive_time_us: int
+    device_send_time_us: int
+
+
+def encode_clock_sync_request(sync_id: int, host_send_time_ns: int) -> bytes:
+    """Encode the only currently supported host-to-device control request."""
+    if not 0 <= sync_id <= 0xFFFFFFFF:
+        raise ValueError("Clock sync ID must fit in four bytes")
+    if not 0 <= host_send_time_ns <= 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("Host monotonic timestamp must fit in eight bytes")
+    return _CLOCK_SYNC_REQUEST.pack(sync_id, host_send_time_ns)
+
+
+def decode_clock_sync_request(payload: bytes) -> ClockSyncRequest:
+    raw = bytes(payload)
+    if len(raw) != _CLOCK_SYNC_REQUEST.size:
+        raise ValueError("Clock sync request payload has an invalid length")
+    return ClockSyncRequest(*_CLOCK_SYNC_REQUEST.unpack(raw))
+
+
+def encode_clock_sync_response(
+    sync_id: int,
+    host_send_time_ns: int,
+    device_receive_time_us: int,
+    device_send_time_us: int,
+) -> bytes:
+    values = (sync_id, host_send_time_ns, device_receive_time_us, device_send_time_us)
+    limits = (0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF)
+    if any(value < 0 or value > limit for value, limit in zip(values, limits)):
+        raise ValueError("Clock sync response field is outside its wire range")
+    if device_send_time_us < device_receive_time_us:
+        raise ValueError("Device send timestamp precedes receive timestamp")
+    return _CLOCK_SYNC_RESPONSE.pack(*values)
+
+
+def decode_clock_sync_response(payload: bytes) -> ClockSyncResponse:
+    raw = bytes(payload)
+    if len(raw) != _CLOCK_SYNC_RESPONSE.size:
+        raise ValueError("Clock sync response payload has an invalid length")
+    response = ClockSyncResponse(*_CLOCK_SYNC_RESPONSE.unpack(raw))
+    if response.device_send_time_us < response.device_receive_time_us:
+        raise ValueError("Device send timestamp precedes receive timestamp")
+    return response
