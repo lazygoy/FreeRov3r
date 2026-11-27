@@ -62,6 +62,7 @@ from .modules_tab import ModulesTab
 from .vehicle_setup_wizard import VehicleSetupWizard, VinDecodeWorker, VinQueryWorker
 from .settings_tab import SettingsTab
 from .capture_tab import CaptureTab
+from .sensors_tab import SensorsTab
 from .responsive_banner import ResponsiveBanner
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -759,49 +760,23 @@ class MainWindow(QMainWindow):
             )
 
     def _build_sensors_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        vehicle_group = QGroupBox("Vehicle")
-        vlayout = QVBoxLayout(vehicle_group)
-        form = QFormLayout()
-        self.vin_edit = QLineEdit()
-        self.nickname_edit = QLineEdit()
-        form.addRow("VIN:", self.vin_edit)
-        form.addRow("Nickname:", self.nickname_edit)
-        vlayout.addLayout(form)
-
-        vbtn = QHBoxLayout()
-        add_btn = QPushButton("Save vehicle")
-        add_btn.clicked.connect(self.add_or_update_vehicle)
-        set_btn = QPushButton("Use selected")
-        set_btn.clicked.connect(self.set_current_vehicle)
-        vbtn.addWidget(add_btn)
-        vbtn.addWidget(set_btn)
-        vlayout.addLayout(vbtn)
-
-        self.vehicle_list = QListWidget()
-        self.vehicle_list.itemClicked.connect(self.on_vehicle_selected)
-        vlayout.addWidget(self.vehicle_list)
-        self.current_vehicle_label = QLabel("No vehicle selected")
-        vlayout.addWidget(self.current_vehicle_label)
-        layout.addWidget(vehicle_group)
-
-        actions = QHBoxLayout()
-        llm_btn = QPushButton("Export LLM report")
-        llm_btn.clicked.connect(self.export_llm_report)
-        csv_btn = QPushButton("Export CSV")
-        csv_btn.clicked.connect(self.export_sensor_csv)
-        actions.addWidget(llm_btn)
-        actions.addWidget(csv_btn)
-        layout.addLayout(actions)
-
-        self.sensor_log = QPlainTextEdit()
-        self.sensor_log.setReadOnly(True)
-        self.sensor_log.setMaximumBlockCount(2000)
-        layout.addWidget(self.sensor_log)
-
-        self.tabs.addTab(tab, "Sensors")
+        self.sensors_tab = SensorsTab(
+            add_or_update_vehicle=self.add_or_update_vehicle,
+            set_current_vehicle=self.set_current_vehicle,
+            on_vehicle_selected=self.on_vehicle_selected,
+            export_llm_report=self.export_llm_report,
+            export_sensor_csv=self.export_sensor_csv,
+            parent=self,
+        )
+        for name in (
+            "vin_edit",
+            "nickname_edit",
+            "vehicle_list",
+            "current_vehicle_label",
+            "sensor_log",
+        ):
+            setattr(self, name, getattr(self.sensors_tab, name))
+        self.tabs.addTab(self.sensors_tab, "Sensors")
 
     def _build_settings_tab(self):
         self.settings_tab = SettingsTab(
