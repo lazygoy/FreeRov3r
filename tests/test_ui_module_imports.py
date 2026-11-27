@@ -357,3 +357,9 @@ def test_frame_processor_records_non_obd_can_frame():
     assert "STD" in line
     assert window.frame_counter == 1
 
+def test_startup_splash_helper_remains_available_from_app_module():
+    from freerov3r.app import show_startup_splash as app_show_startup_splash
+    from freerov3r.startup_splash import show_startup_splash
+
+    assert app_show_startup_splash is show_startup_splash
+
