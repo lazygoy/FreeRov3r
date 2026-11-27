@@ -17,6 +17,7 @@ from .dpdu_discovery import DPduModuleRegistration
 
 
 PDU_STATUS_NOERROR = 0
+PDU_PT_UNUM32 = 0x00000105
 PDU_IT_RSC_STATUS = 0x1100
 PDU_IT_RSC_CONFLICT = 0x1500
 PDU_IT_MODULE_ID = 0x1600
@@ -100,6 +101,16 @@ class _PduFlagData(ctypes.Structure):
     _fields_ = [
         ("num_flag_bytes", ctypes.c_uint32),
         ("flag_data", ctypes.POINTER(ctypes.c_uint8)),
+    ]
+
+
+class _PduParamItem(ctypes.Structure):
+    _fields_ = [
+        ("item_type", ctypes.c_int32),
+        ("com_param_id", ctypes.c_uint32),
+        ("data_type", ctypes.c_int32),
+        ("param_class", ctypes.c_int32),
+        ("data", ctypes.c_void_p),
     ]
 
 
@@ -215,6 +226,8 @@ class DPduApiRuntime:
         self._pdu_module_disconnect = None
         self._pdu_create_logical_link = None
         self._pdu_destroy_logical_link = None
+        self._pdu_get_com_param = None
+        self._pdu_set_com_param = None
         self._live_modules: list[DPduLiveModule] = []
         self._connected_modules: set[int] = set()
         self._logical_links: dict[tuple[int, int], DPduComLogicalLink] = {}
@@ -333,6 +346,29 @@ class DPduApiRuntime:
             _set_signature(
                 self._pdu_destroy_logical_link,
                 [ctypes.c_uint32, ctypes.c_uint32],
+                ctypes.c_int32,
+            )
+        self._pdu_get_com_param = getattr(self._library, "PDUGetComParam", None)
+        if self._pdu_get_com_param is not None:
+            _set_signature(
+                self._pdu_get_com_param,
+                [
+                    ctypes.c_uint32,
+                    ctypes.c_uint32,
+                    ctypes.c_uint32,
+                    ctypes.POINTER(ctypes.POINTER(_PduParamItem)),
+                ],
+                ctypes.c_int32,
+            )
+        self._pdu_set_com_param = getattr(self._library, "PDUSetComParam", None)
+        if self._pdu_set_com_param is not None:
+            _set_signature(
+                self._pdu_set_com_param,
+                [
+                    ctypes.c_uint32,
+                    ctypes.c_uint32,
+                    ctypes.POINTER(_PduParamItem),
+                ],
                 ctypes.c_int32,
             )
 
@@ -665,6 +701,76 @@ class DPduApiRuntime:
             )
         del self._logical_links[key]
 
+    def set_com_param_uint32(
+        self,
+        module_handle: int,
+        logical_link_handle: int,
+        param_id: int,
+        value: int,
+    ) -> int:
+        """Set a UNUM32 ComParam in the offline CLL working buffer.
+
+        param_id is the numeric COMPARAM ID from the module MDF. The API's
+        PDUGetComParam result supplies the authoritative data type/class and
+        an API-owned value buffer; only the UNUM32 value is modified.
+        """
+        if not self._constructed:
+            raise RuntimeError("D-PDU API session is not open")
+        module = int(module_handle)
+        cll = int(logical_link_handle)
+        key = (module, cll)
+        if key not in self._logical_links:
+            raise ValueError("Unknown or already destroyed ComLogicalLink")
+        if module not in self._connected_modules:
+            raise RuntimeError("MVCI module is not initialized")
+        param = int(param_id)
+        new_value = int(value)
+        if not 0 <= param <= 0xFFFFFFFF:
+            raise ValueError("param_id must be an unsigned 32-bit value")
+        if not 0 <= new_value <= 0xFFFFFFFF:
+            raise ValueError("UNUM32 ComParam value must be an unsigned 32-bit value")
+        if self._pdu_get_com_param is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUGetComParam")
+        if self._pdu_set_com_param is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUSetComParam")
+
+        item_ptr = ctypes.POINTER(_PduParamItem)()
+        status = int(self._pdu_get_com_param(
+            module, cll, param, ctypes.byref(item_ptr)
+        ))
+        if status != PDU_STATUS_NOERROR:
+            raise DPduApiError(f"PDUGetComParam failed with status 0x{status:08X}")
+        if not item_ptr:
+            raise DPduApiError("PDUGetComParam succeeded but returned a null item")
+        try:
+            item = item_ptr.contents
+            if int(item.com_param_id) != param:
+                raise DPduApiError(
+                    f"PDUGetComParam returned ID {int(item.com_param_id)}, expected {param}"
+                )
+            if int(item.data_type) != PDU_PT_UNUM32:
+                raise DPduApiError(
+                    f"ComParam {param} has data type 0x{int(item.data_type):08X}; "
+                    "this setter only supports PDU_PT_UNUM32"
+                )
+            if not item.data:
+                raise DPduApiError(f"ComParam {param} has a null data pointer")
+            ctypes.cast(item.data, ctypes.POINTER(ctypes.c_uint32))[0] = new_value
+            status = int(self._pdu_set_com_param(
+                module, cll, ctypes.cast(item_ptr, ctypes.POINTER(_PduParamItem))
+            ))
+            if status != PDU_STATUS_NOERROR:
+                raise DPduApiError(f"PDUSetComParam failed with status 0x{status:08X}")
+            return new_value
+        finally:
+            destroy_status = int(self._pdu_destroy_item(
+                ctypes.cast(item_ptr, ctypes.POINTER(_PduItem))
+            ))
+            if destroy_status != PDU_STATUS_NOERROR:
+                raise DPduApiError(
+                    f"PDUDestroyItem failed after ComParam update with status 0x{destroy_status:08X}"
+                )
+
     def close(self) -> None:
         """Destroy the API session and release the selected library handle."""
         errors: list[str] = []
@@ -717,6 +823,8 @@ class DPduApiRuntime:
         self._pdu_module_disconnect = None
         self._pdu_create_logical_link = None
         self._pdu_destroy_logical_link = None
+        self._pdu_get_com_param = None
+        self._pdu_set_com_param = None
         self._logical_links = {}
         self._live_modules = []
         self._library = None
