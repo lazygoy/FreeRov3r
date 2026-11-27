@@ -35,8 +35,10 @@ def _suggest_l319_profile(vehicle: dict) -> str:
     except (TypeError, ValueError):
         year = None
 
-    if (not make and not model) or ("land rover" in make and not model):
-        return "land_rover_l319"
+    # Missing identity data is not evidence of an L319. Unknown vehicles must
+    # remain on the generic profile until identification is established.
+    if not make or not model:
+        return "generic"
     if "land rover" not in make:
         return "generic"
     if not ("discovery" in model or "lr3" in model or "lr4" in model):

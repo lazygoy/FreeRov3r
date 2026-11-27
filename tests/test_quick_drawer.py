@@ -22,7 +22,12 @@ def test_quick_drawer_filters_workspace_buttons_and_recovers():
     assert drawer.nav_empty_label.isHidden() is False
 
     drawer.nav_search.clear()
-    assert all(not button.isHidden() for button in drawer.nav_buttons.values())
+    assert all(
+        not button.isHidden()
+        for name, button in drawer.nav_buttons.items()
+        if name != "Research"
+    )
+    assert drawer.nav_buttons["Research"].isHidden() is True
     assert drawer.nav_empty_label.isHidden() is True
 
     drawer.deleteLater()
