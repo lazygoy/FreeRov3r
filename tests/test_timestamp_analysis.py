@@ -143,3 +143,49 @@ def test_host_clock_gaps_include_frames_with_invalid_device_timestamps():
     assert item["invalid_device_timestamp_count"] == 1
     assert item["suspicious_host_gaps"] == 1
     assert item["median_host_interval_ms"] == pytest.approx(800.0)
+
+
+
+def test_timestamp_analysis_reports_apparent_pairwise_clock_relationship():
+    records = [
+        _record("HS-CAN", 10.0, 1_000_000),
+        _record("MS-CAN", 10.02, 5_000_000),
+        _record("HS-CAN", 10.1, 1_100_000),
+        _record("MS-CAN", 10.12, 5_100_000),
+        _record("HS-CAN", 10.2, 1_200_000),
+        _record("MS-CAN", 10.22, 5_200_000),
+    ]
+
+    result = analyze_channel_timestamps(records)
+    comparison = result["pairwise_clock_comparisons"][0]
+
+    assert comparison["channel_a"] == "HS-CAN"
+    assert comparison["channel_b"] == "MS-CAN"
+    assert comparison["status"] == "apparent relationship; not synchronized"
+    assert comparison["overlap_duration_seconds"] == pytest.approx(0.18)
+    assert comparison["apparent_relative_drift_ppm"] == pytest.approx(0)
+    assert comparison["combined_host_fit_residual_p95_ms"] >= 0
+    assert "does not bound" in comparison["uncertainty_note"]
+
+
+def test_timestamp_analysis_marks_non_overlapping_channel_captures():
+    records = [
+        _record("HS-CAN", 1.0, 1_000_000),
+        _record("HS-CAN", 1.1, 1_100_000),
+        _record("MS-CAN", 5.0, 5_000_000),
+        _record("MS-CAN", 5.1, 5_100_000),
+    ]
+
+    comparison = analyze_channel_timestamps(records)["pairwise_clock_comparisons"][0]
+    assert comparison["status"] == "no overlapping host-time coverage"
+    assert comparison["overlap_duration_seconds"] == 0.0
+
+
+def test_timestamp_analysis_skips_pairwise_comparison_without_valid_clock_fits():
+    records = [
+        _record("HS-CAN", 1.0, 1_000_000),
+        _record("MS-CAN", 1.1, 5_000_000),
+    ]
+
+    result = analyze_channel_timestamps(records)
+    assert result["pairwise_clock_comparisons"] == []
