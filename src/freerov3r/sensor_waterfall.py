@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QVBoxLayout, QSlider, QPushButton,
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
 )
 
 from .sensors.scaling import sample_clock, sample_time
@@ -133,7 +134,7 @@ class SensorWaterfallDialog(QDialog):
         self.demo_samples = generate_lr4_demo_samples()
         self.vin_provider = vin_provider or (lambda: None)
         self.setWindowTitle("FreeRov3r | 3D Sensor Waterfall")
-        self.resize(1100, 720)
+        self.resize(1200, 860)
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         controls.addWidget(QLabel("History:"))
@@ -165,6 +166,29 @@ class SensorWaterfallDialog(QDialog):
         from .sensor_waterfall_gl import WaterfallPlot
         self.plot = WaterfallPlot(self)
         layout.addWidget(self.plot, 1)
+        self.value_table = QTableWidget(0, 5, self)
+        self.value_table.setHorizontalHeaderLabels(
+            ["Sensor", "Minimum", "Maximum", "Current", "Unit"]
+        )
+        self.value_table.verticalHeader().setVisible(False)
+        self.value_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.value_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.value_table.setAlternatingRowColors(True)
+        self.value_table.setMaximumHeight(190)
+        self.value_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch
+        )
+        for column in range(1, 5):
+            self.value_table.horizontalHeader().setSectionResizeMode(
+                column, QHeaderView.ResizeToContents
+            )
+        self.value_table.setStyleSheet(
+            "QTableWidget { background: #101B2B; color: #E2E8F0; "
+            "gridline-color: #334155; alternate-background-color: #172438; } "
+            "QHeaderView::section { background: #1E293B; color: #CBD5E1; "
+            "padding: 5px; border: 0; }"
+        )
+        layout.addWidget(self.value_table)
         self.cursor_readout = QLabel("Move across the plot to inspect sensor values")
         self.cursor_readout.setStyleSheet("color: #CBD5E1; padding: 4px;")
         layout.addWidget(self.cursor_readout)
@@ -294,6 +318,7 @@ class SensorWaterfallDialog(QDialog):
             vin=(None if self.source_combo.currentData() == "demo" else self.vin_provider()),
         )
         self.plot.set_lanes(lanes, self._sensor_colors)
+        self._update_value_table(lanes)
         self.color_sensor_combo.blockSignals(True)
         current = self.color_sensor_combo.currentData()
         self.color_sensor_combo.clear()
@@ -303,6 +328,23 @@ class SensorWaterfallDialog(QDialog):
         self.color_sensor_combo.blockSignals(False)
         self._sync_color_button()
 
+
+    def _update_value_table(self, lanes):
+        self.value_table.setRowCount(len(lanes))
+        for row, lane in enumerate(lanes):
+            color = self._sensor_colors.get(lane["sensor_id"], "#E2E8F0")
+            values = (
+                lane["name"],
+                f'{lane["minimum"]:.5g}',
+                f'{lane["maximum"]:.5g}',
+                f'{lane["current"]:.5g}',
+                lane["unit"],
+            )
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                if column == 0:
+                    item.setForeground(QColor(color))
+                self.value_table.setItem(row, column, item)
 
     def _sync_color_button(self):
         sensor_id = self.color_sensor_combo.currentData()
