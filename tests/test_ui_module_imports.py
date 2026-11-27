@@ -284,3 +284,27 @@ def test_navigation_workspace_constructs_with_tabs():
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_theme_function_is_available_from_app_module():
+    from freerov3r.app import apply_theme as app_apply_theme
+    from freerov3r.theme import apply_theme
+
+    assert app_apply_theme is apply_theme
+
+
+def test_theme_engine_applies_light_and_dark_styles():
+    global _QT_TEST_APP
+
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    from freerov3r.theme import apply_theme
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    window = QWidget()
+    apply_theme(window, True, "Arial", "Arial")
+    assert "workspaceHeader" in window.styleSheet()
+    apply_theme(window, False, "Arial", "Arial")
+    assert "workspaceHeader" in window.styleSheet()
+
+    window.deleteLater()
+    _QT_TEST_APP.processEvents()
+
