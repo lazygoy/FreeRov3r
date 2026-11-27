@@ -249,3 +249,139 @@ def test_runtime_rejects_resource_query_without_dlc_pin_data(registration):
         runtime.enumerate_resource_ids(17, 300, 400, [])
 
     runtime.close()
+
+
+def test_runtime_resource_status_requires_explicit_offline_module_connection(registration):
+    from freerov3r.hardware.dpdu_runtime import (
+        _PduResourceStatusItem,
+        _PduResourceStatusData,
+    )
+
+    class StatusLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+
+        def PDUModuleConnect(self, handle):
+            self.calls.append(("module_connect", handle))
+            return 0
+
+        def PDUModuleDisconnect(self, handle):
+            self.calls.append(("module_disconnect", handle))
+            return 0
+
+        def PDUGetResourceStatus(self, item_ptr):
+            item = ctypes.cast(
+                item_ptr, ctypes.POINTER(_PduResourceStatusItem)
+            ).contents
+            self.calls.append(("resource_status", item.item_type, item.num_entries))
+            assert item.item_type == 0x1100
+            assert item.num_entries == 2
+            records = ctypes.cast(
+                item.resource_status_data,
+                ctypes.POINTER(_PduResourceStatusData),
+            )
+            records[0].resource_status = 0
+            records[1].resource_status = 0x3
+            return 0
+
+    library = StatusLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+
+    with pytest.raises(RuntimeError, match="explicitly connected"):
+        runtime.get_resource_status(17, [600])
+
+    runtime.connect_module(17)
+    statuses = runtime.get_resource_status(17, [600, 601])
+
+    assert [(s.resource_id, s.in_use, s.available, s.raw_status) for s in statuses] == [
+        (600, False, True, 0),
+        (601, True, False, 3),
+    ]
+    runtime.disconnect_module(17)
+    assert ("module_connect", 17) in library.calls
+    assert ("module_disconnect", 17) in library.calls
+    runtime.close()
+
+
+def test_runtime_disconnects_connected_modules_during_close(registration):
+    class ConnectedLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+
+        def PDUModuleConnect(self, handle):
+            self.calls.append(("module_connect", handle))
+            return 0
+
+        def PDUModuleDisconnect(self, handle):
+            self.calls.append(("module_disconnect", handle))
+            return 0
+
+    library = ConnectedLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+    runtime.connect_module(17)
+    runtime.close()
+
+    assert library.calls[-2:] == [("module_disconnect", 17), ("destruct",)]
+
+
+def test_runtime_enumerates_conflicting_resources_and_destroys_result(registration):
+    from freerov3r.hardware.dpdu_runtime import (
+        _PduResourceConflictData,
+        _PduResourceConflictItem,
+        _PduModuleItem,
+    )
+
+    class ConflictLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+            self.conflicts = (_PduResourceConflictData * 2)(
+                _PduResourceConflictData(17, 701),
+                _PduResourceConflictData(17, 702),
+            )
+            self.item = _PduResourceConflictItem(
+                0x1500, 2,
+                ctypes.cast(self.conflicts, ctypes.POINTER(_PduResourceConflictData)),
+            )
+            self.item_ptr = ctypes.pointer(self.item)
+
+        def PDUGetConflictingResources(self, resource_id, modules_ptr, output_ptr):
+            modules = ctypes.cast(
+                modules_ptr, ctypes.POINTER(_PduModuleItem)
+            ).contents
+            self.calls.append((
+                "conflicts", resource_id, modules.item_type, modules.num_entries,
+                int(modules.module_data[0].module_type_id),
+                int(modules.module_data[0].module_handle),
+            ))
+            ctypes.cast(
+                output_ptr, ctypes.POINTER(ctypes.POINTER(_PduResourceConflictItem))
+            )[0] = self.item_ptr
+            return 0
+
+    library = ConflictLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+
+    conflicts = runtime.enumerate_conflicts(600)
+
+    assert library.calls[-2] == ("conflicts", 600, 0x1600, 1, 3, 17)
+    assert [(item.module_handle, item.resource_id) for item in conflicts] == [
+        (17, 701), (17, 702)
+    ]
+    assert any(call[0] == "destroy_item" for call in library.calls)
+    runtime.close()
+
+
+def test_runtime_rejects_status_query_before_module_connect(registration):
+    runtime = DPduApiRuntime(
+        registration,
+        library_loader=lambda _path: FakePduLibrary(
+            modules=[{"type_id": 3, "handle": 17, "status": 1}]
+        ),
+    )
+    runtime.open()
+    with pytest.raises(RuntimeError, match="explicitly connected"):
+        runtime.get_resource_status(17, [600])
+    runtime.close()
