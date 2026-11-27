@@ -152,7 +152,8 @@ def _evaluate_pairs(pairs, bit_level):
 
 def analyze_cross_bus_signal_correlation(
     records, *, max_lag_seconds=0.25, event_tolerance_seconds=0.01,
-    minimum_transitions=3, minimum_agreement=0.8, max_message_pairs=30,
+    minimum_transitions=3, minimum_agreement=0.8, minimum_transition_coverage=0.5,
+    max_message_pairs=30,
     max_ids_per_channel=20, max_bytes=8, max_results=250,
 ):
     """Find repeated byte/bit transitions that align across different CAN buses.
@@ -166,6 +167,7 @@ def analyze_cross_bus_signal_correlation(
         ("max_lag_seconds", max_lag_seconds),
         ("event_tolerance_seconds", event_tolerance_seconds),
         ("minimum_agreement", minimum_agreement),
+        ("minimum_transition_coverage", minimum_transition_coverage),
     ):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise ValueError(f"{name} must be finite")
@@ -173,6 +175,8 @@ def analyze_cross_bus_signal_correlation(
         raise ValueError("Time limits must be non-negative and tolerance positive")
     if not 0 < minimum_agreement <= 1:
         raise ValueError("minimum_agreement must be in (0, 1]")
+    if not 0 < minimum_transition_coverage <= 1:
+        raise ValueError("minimum_transition_coverage must be in (0, 1]")
     if minimum_transitions < 2 or max_message_pairs < 1 or max_ids_per_channel < 1:
         raise ValueError("Count limits must be positive")
     if not 1 <= max_bytes <= 64 or max_results < 1:
@@ -206,6 +210,7 @@ def analyze_cross_bus_signal_correlation(
             "event_tolerance_ms": event_tolerance_seconds * 1000.0,
             "minimum_transitions": minimum_transitions,
             "minimum_agreement": minimum_agreement,
+            "minimum_transition_coverage": minimum_transition_coverage,
             "maximum_message_pairs": max_message_pairs,
             "maximum_ids_per_channel": max_ids_per_channel,
             "maximum_payload_bytes_analyzed": max_bytes,
@@ -260,7 +265,11 @@ def analyze_cross_bus_signal_correlation(
         if best is None:
             return
         _, lag, count, agreement, match_type, paired_count, mask = best
-        if count < minimum_transitions or agreement < minimum_agreement:
+        coverage = count / max(1, min(len(events_a), len(events_b)))
+        if (
+            count < minimum_transitions or agreement < minimum_agreement
+            or coverage < minimum_transition_coverage
+        ):
             return
         item = dict(base)
         item.update({
@@ -269,6 +278,7 @@ def analyze_cross_bus_signal_correlation(
             "transition_count": count,
             "paired_transition_count": paired_count,
             "agreement": agreement,
+            "transition_coverage": coverage,
             "lag_seconds": lag,
             "lag_interpretation": (
                 f"{item['channel_b']} follows {item['channel_a']}" if lag > 0
