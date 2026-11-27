@@ -466,3 +466,23 @@ def test_app_shell_keeps_optional_chart_capability_export():
 
     assert app_has_charts is HAS_CHARTS
 
+def test_main_window_constructs_without_hardware():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.app import MainWindow
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    assert window.tabs.count() >= 8
+    assert window.receiver is None
+    assert window.header_connection.text() == "● OFFLINE"
+
+    window.rate_timer.stop()
+    window.graph_tab.activity_timer.stop()
+    window.deleteLater()
+    QCoreApplication.sendPostedEvents(window, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
