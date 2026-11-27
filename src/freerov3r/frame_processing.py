@@ -2,7 +2,7 @@
 
 import time
 
-from .diagnostics.obd2 import decode_mode01_measurements
+from .core.capture.frame_analysis import analyze_frame
 from .sensors.capture import SensorSample
 
 
@@ -18,9 +18,13 @@ def process_frames(window, frames):
         window.log.appendPlainText("\n".join(log_lines))
 
 def process_frame(window, frame, update_display=True):
-    detected_vin = window.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
-    if detected_vin:
-        window._apply_detected_vin(detected_vin)
+    analysis = analyze_frame(
+        frame,
+        vin_decoder=window.vin_decoder,
+        scaling_context=window.obd_scaling_context,
+    )
+    if analysis.detected_vin:
+        window._apply_detected_vin(analysis.detected_vin)
     window.session.add(frame)
     window.can_monitor.add(frame)
     window.research_tab.observe_frame(frame)
@@ -37,7 +41,7 @@ def process_frame(window, frame, update_display=True):
         )
         if update_display:
             window.log.appendPlainText(line)
-    measurements = decode_mode01_measurements(frame, window.obd_scaling_context)
+    measurements = analysis.measurements
     if measurements:
         simulated = window.active_interface == "simulator"
         display_values = []
