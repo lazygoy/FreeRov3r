@@ -755,6 +755,7 @@ class MainWindow(QMainWindow):
         """Publish live ESP32 adapter diagnostics to the Research workspace."""
         adapter = self.active_adapter
         diagnostics = getattr(adapter, "diagnostics", None) if adapter is not None else None
+        self.research_tab.set_clock_sync_adapters(getattr(adapter, "adapters", ())) if hasattr(self.research_tab, "set_clock_sync_adapters") else None
         if isinstance(diagnostics, dict):
             self._last_receiver_diagnostics = diagnostics
             self.research_tab.set_receiver_diagnostics(diagnostics)
