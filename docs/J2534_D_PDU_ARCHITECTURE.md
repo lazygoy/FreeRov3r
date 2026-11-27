@@ -334,3 +334,31 @@ Per ISO 22900-2, PDUSetComParam changes the working buffer. Those changes
 become active on a later PDUConnect or an explicit UPDATEPARAM ComPrimitive.
 This stage deliberately does not call PDUConnect or start a ComPrimitive, so
 setting parameters does not initiate vehicle communication.
+
+
+## Explicit physical connection lifecycle
+
+The runtime now exposes `connect_logical_link(module_handle, cll_handle)`
+and `disconnect_logical_link(module_handle, cll_handle)`, bound to
+`PDUConnect` and `PDUDisconnect`.
+
+This is the first operation in the D-PDU runtime that can physically activate
+the vehicle-interface connection. It is deliberately separate from API open,
+module enumeration, module initialization, logical-link creation, and
+ComParam setup. None of those operations calls `PDUConnect`. The application
+must explicitly invoke `connect_logical_link()` on a tracked OFFLINE CLL.
+
+A successful `PDUConnect` transitions the CLL from OFFLINE to ONLINE.
+`PDUDisconnect` returns it to OFFLINE. Destroying an ONLINE CLL is rejected;
+it must first be disconnected. Runtime cleanup attempts to disconnect ONLINE
+links, destroys links that are confirmed OFFLINE, disconnects modules only
+after their links are gone, and finally calls `PDUDestruct`. If a disconnect
+fails, the still-online link is left for the API's `PDUDestruct` cleanup
+rather than incorrectly issuing `PDUDestroyComLogicalLink`.
+
+Important: `PDUConnect` is not a passive CAN listen operation. It physically
+connects the CLL to the vehicle interface and is required before ECU
+communication. The selected protocol and physical ComParams must be valid
+before invoking it. ISO 22900-2 warns that improper physical ComParams can
+cause significant bus errors. No `PDUStartComPrimitive`, diagnostic request,
+receive operation, or transmit operation has been added in this stage.
