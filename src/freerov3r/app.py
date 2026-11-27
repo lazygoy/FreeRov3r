@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from .vehicle_profiles.registry import VehicleProfileRegistry
 from .hardware.receiver import FrameBatcher, Receiver
 from .session import CaptureSession
+from .core.capture.session_context import CaptureSessionContext
 from .can_monitor import CanMonitor
 from .diagnostics.obd2 import Mode01ScalingContext
 from .sensors.capture import SensorCapture
@@ -145,6 +146,7 @@ class MainWindow(QMainWindow):
         self.receiver = None
         self.active_adapter = None
         self._last_receiver_diagnostics = {}
+        self.capture_session_context = None
         self.capture_started_at = None
         self.capture_channel = None
         self.capture_bitrate = None
