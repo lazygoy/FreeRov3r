@@ -103,6 +103,8 @@ class SharedCrosshairStackedPlot(QWidget):
         for index, lane in enumerate(self.lanes):
             plot = _SensorPlotWidget()
             plot.setMinimumHeight(118)
+            plot.setMouseTracking(True)
+            plot.viewport().setMouseTracking(True)
             plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             plot.setBackground(BACKGROUND)
             plot.showGrid(x=True, y=True, alpha=0.22)
