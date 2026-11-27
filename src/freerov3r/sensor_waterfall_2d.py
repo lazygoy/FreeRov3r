@@ -200,10 +200,13 @@ class SharedCrosshairStackedPlot(QWidget):
             line.setVisible(current == index and self._cursor_time is not None)
 
     def _handle_plot_leave(self):
-        if self._locked:
-            return
+        # The horizontal tracker belongs only to the plot under the pointer.
+        for line in self._horizontal_lines:
+            line.hide()
         # Moving between stacked plots should not clear the shared cursor.
-        if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+        if not self._locked and not self.rect().contains(
+            self.mapFromGlobal(QCursor.pos())
+        ):
             self._hide_cursor()
 
     def _hide_cursor(self):
@@ -214,13 +217,21 @@ class SharedCrosshairStackedPlot(QWidget):
         self._active_index = None
 
     def _mouse_moved(self, event, index):
-        if self._locked or not event:
+        if not event:
             return
         scene_pos = event[0]
         plot = self.plots[index]
         if not plot.getViewBox().sceneBoundingRect().contains(scene_pos):
             return
         point = plot.getViewBox().mapSceneToView(scene_pos)
+        if self._locked:
+            for current, line in enumerate(self._horizontal_lines):
+                if current == index:
+                    line.setPos(float(point.y()))
+                    line.show()
+                else:
+                    line.hide()
+            return
         elapsed = float(point.x())
         self._cursor_time = elapsed
         self._active_index = index
@@ -264,6 +275,12 @@ class SharedCrosshairStackedPlot(QWidget):
             line.setPos(elapsed)
             line.setPen(pen)
             line.show()
+        for current, line in enumerate(self._horizontal_lines):
+            if current == index:
+                line.setPos(float(plot.getViewBox().mapSceneToView(scene_pos).y()))
+                line.show()
+            else:
+                line.hide()
         self._value_labels[index].setText(
             f"{elapsed:.2f} s  |  {self._nearest_value(self.lanes[index], elapsed):.5g} {self.lanes[index]['unit']}"
         )
