@@ -1,6 +1,6 @@
 """Vehicle setup dialog and background VIN lookup workers."""
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPlainTextEdit, QPushButton, QStackedWidget,
