@@ -3,6 +3,7 @@ import csv
 import json
 import math
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, QTimer, Qt, QUrl
