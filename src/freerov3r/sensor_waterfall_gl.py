@@ -197,14 +197,13 @@ class WaterfallPlot(gl.GLViewWidget):
              rgb, label, lane_y) = self._lane_geometry(index, lane)
             if len(x) >= 2:
                 surface = gl.GLSurfacePlotItem(
-                    x=x, y=y, z=z_top, colors=rgba,
+                    x=x, y=y, z=z_top, colors=rgba.reshape(-1, 4),
                     glOptions="translucent", smooth=False,
                     computeNormals=False, drawEdges=True,
                     edgeColor=(0.82, 0.91, 1.0, min(0.82, self.opacity)),
                 )
                 # GLSurfacePlotItem's MeshData indexes colors by flattened
                 # vertex index. A (rows, columns, 4) array is not accepted.
-                surface.setData(colors=rgba.reshape(-1, 4))
                 underside = gl.GLSurfacePlotItem(
                     x=x, y=y, z=z_bottom, colors=underside_rgba.reshape(-1, 4),
                     glOptions="translucent", smooth=False,
@@ -215,8 +214,9 @@ class WaterfallPlot(gl.GLViewWidget):
                 side_surfaces = []
                 for side_index in range(2):
                     wall = gl.GLSurfacePlotItem(
-                        x=x, y=side_y[side_index:side_index + 1].tolist() + [float(side_y[side_index]) + 0.001],
-                        z=np.column_stack((side_z[side_index][:, 0], side_z[side_index][:, 1])),
+                        x=x,
+                        y=np.asarray([side_y[side_index], side_y[side_index] + 0.001], dtype=np.float32),
+                        z=side_z[side_index],
                         colors=side_rgba[side_index],
                         glOptions="translucent", smooth=False,
                         computeNormals=False, drawEdges=False,
@@ -262,7 +262,7 @@ class WaterfallPlot(gl.GLViewWidget):
             self._contour_items.append((contour, lower))
 
             text = gl.GLTextItem(
-                pos=(0.28, lane_y - 0.76, 0.18),
+                pos=(0.70, lane_y - 0.10, 0.24),
                 text=label,
                 color=(rgb[0], rgb[1], rgb[2], 1.0),
                 font=QFont("Arial", 11, QFont.Bold),
