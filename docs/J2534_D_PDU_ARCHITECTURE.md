@@ -195,10 +195,13 @@ is released with `PDUDestroyItem`, and the API session is closed with
 This is deliberately a module-interface inventory, not a claim that every
 reported module is ready for diagnostics. A module must report an appropriate
 status and be explicitly connected in a later, separate step before resources
-or diagnostic links can be used. This slice does not call
-`PDUModuleConnect`, `PDUGetResourceIds`, `PDUCreateComLogicalLink`, or
-any communication primitive. No vehicle-bus communication or transmit path
-is exposed.
+or diagnostic links can be used. Opening the API and enumerating modules do not call `PDUModuleConnect`.
+Separate explicit methods now support `PDUGetResourceIds` and
+`PDUGetConflictingResources` while offline. `PDUModuleConnect` is available
+only as an explicit offline module-initialization step required before
+`PDUGetResourceStatus`. No `PDUCreateComLogicalLink` or communication
+primitive is exposed, and no vehicle-bus communication or transmit path is
+exposed by this resource-inventory stage.
 
 The module enumeration ABI follows ISO 22900-2:2022 clauses 8.4.2, 8.4.3,
 8.4.20, 8.4.24, 8.7.2.2, and 10.1.4.2 / 10.1.4.6. The standard explicitly
