@@ -1,6 +1,7 @@
 """Insight-style 3D sensor-history visualization for live vehicle samples."""
 
 import math
+from bisect import bisect_left
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
@@ -97,6 +98,15 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
                 z = 0.5 if span == 0 else (value - low) / span
             elapsed = sample_time(sample, clock) - start
             points.append((elapsed, z))
+        raw_visible = sorted(
+            (sample for sample in lane_samples
+             if start <= sample_time(sample, clock) <= latest),
+            key=lambda sample: sample_time(sample, clock),
+        )
+        raw_points = [
+            (sample_time(sample, clock) - start, float(sample.value))
+            for sample in raw_visible
+        ]
         last = max(lane_samples, key=lambda sample: sample_time(sample, clock))
         lanes.append({
             "sensor_id": sensor_id,
@@ -106,7 +116,8 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
             "maximum": high,
             "current": float(last.value),
             "points": points,
-            "raw_points": [(sample_time(sample, clock) - start, float(sample.value)) for sample in visible],
+            "raw_points": raw_points,
+            "raw_times": [point[0] for point in raw_points],
         })
     return sorted(lanes, key=lambda lane: lane["name"].casefold())
 
@@ -321,6 +332,16 @@ class SensorWaterfallDialog(QDialog):
         for lane in self.plot.lanes:
             points = lane.get("raw_points", [])
             if points:
-                _, value = min(points, key=lambda point: abs(point[0] - elapsed))
-                parts.append(f'{lane["name"]}: {value:.4g} {lane["unit"]}')
+                times = lane.get("raw_times", [])
+                index = bisect_left(times, elapsed)
+                if index == 0:
+                    point = points[0]
+                elif index >= len(points):
+                    point = points[-1]
+                else:
+                    point = min(
+                        (points[index - 1], points[index]),
+                        key=lambda candidate: abs(candidate[0] - elapsed),
+                    )
+                parts.append(f'{lane["name"]}: {point[1]:.4g} {lane["unit"]}')
         self.cursor_readout.setText("   |   ".join(parts))
