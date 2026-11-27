@@ -57,3 +57,17 @@ def test_rejects_invalid_analysis_parameters():
         analyze_cross_bus_correlation([], bin_width_seconds=0)
     with pytest.raises(ValueError):
         analyze_cross_bus_correlation([], minimum_correlation=0)
+
+
+
+def test_correlates_when_monotonic_clock_has_large_absolute_offset():
+    records = []
+    for start in (100000.2, 100000.8, 100001.4, 100002.0, 100002.6):
+        for offset in (0.0, 0.01, 0.02, 0.03):
+            records.append(_record(start + offset, "HS-CAN", 0x120))
+            records.append(_record(start + offset + 0.05, "MS-CAN", 0x321))
+    result = analyze_cross_bus_correlation(records)
+    assert result["status"] == "candidate relationships found"
+    assert result["candidates"][0]["can_id_a"] == 0x120
+    assert result["candidates"][0]["can_id_b"] == 0x321
+    assert abs(result["candidates"][0]["lag_seconds"] - 0.05) <= 0.01
