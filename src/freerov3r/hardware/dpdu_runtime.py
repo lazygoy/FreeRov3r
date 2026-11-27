@@ -123,8 +123,6 @@ class DPduResourceStatus:
     module_handle: int
     resource_id: int
     raw_status: int
-    in_use: bool
-    available: bool
 
 
 @dataclass(frozen=True)
@@ -686,6 +684,11 @@ class DPduApiRuntime:
                     )
         if self._constructed and self._pdu_module_disconnect is not None:
             for handle in tuple(self._connected_modules):
+                if any(key[0] == handle for key in self._logical_links):
+                    errors.append(
+                        f"PDUModuleDisconnect({handle}) skipped because a ComLogicalLink remains"
+                    )
+                    continue
                 try:
                     status = int(self._pdu_module_disconnect(handle))
                     if status != PDU_STATUS_NOERROR:
