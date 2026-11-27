@@ -257,6 +257,49 @@ class VehicleKnowledgeStore:
         self._write(document)
         return deepcopy(record)
 
+    def import_signal_evidence(self, evidence_store, record_id, *, applicability):
+        """Import documented/verified research evidence without claiming support.
+
+        The source ledger remains intact. Candidate-only records are deliberately
+        rejected so correlation output cannot leak into the production catalog.
+        """
+        source = evidence_store.get_record(record_id)
+        if source is None:
+            raise KeyError(f"Unknown signal evidence record: {record_id}")
+        source_status = source.get("status")
+        if source_status not in {"documented", "verified"}:
+            raise ValueError(
+                "Only documented or verified signal evidence can enter vehicle knowledge"
+            )
+        signature = source.get("signature")
+        if not isinstance(signature, dict):
+            raise ValueError("Signal evidence record has no valid signature")
+        source_reference = str(source.get("source_reference") or "").strip()
+        vehicle_applicability = str(source.get("vehicle_applicability") or "").strip()
+        if not source_reference or not vehicle_applicability:
+            raise ValueError("Reviewed signal evidence is missing its source or vehicle applicability")
+        imported = self.add_observation(
+            "signal_definition",
+            str(source.get("record_id") or record_id),
+            {
+                "signature": signature,
+                "evidence_summary": source.get("evidence_summary") or {},
+                "research_record_id": str(source.get("record_id") or record_id),
+            },
+            applicability=applicability,
+            source_references=[source_reference],
+            source_capture_ids=source.get("source_capture_ids") or [],
+            notes="Imported from the permanent Research signal evidence ledger.",
+        )
+        return self.review(
+            imported["record_id"],
+            source_status,
+            source_reference=source_reference,
+            vehicle_applicability=vehicle_applicability,
+            evidence_grade=source.get("evidence_grade") or "",
+            verification_notes=source.get("verification_notes") or "",
+        )
+
     def get_record(self, record_id):
         for record in self._read()["records"]:
             if record.get("record_id") == str(record_id):
