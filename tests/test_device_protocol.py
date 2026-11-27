@@ -8,6 +8,10 @@ from freerov3r.hardware.device_protocol import (
     crc16_ccitt,
     decode_can_frame_payload,
     encode_can_frame_payload,
+    encode_clock_sync_request,
+    decode_clock_sync_request,
+    encode_clock_sync_response,
+    decode_clock_sync_response,
     encode_message,
 )
 
@@ -140,3 +144,33 @@ def test_can_frame_decoder_rejects_malformed_payload():
     payload[1] |= 0x80
     with pytest.raises(ValueError):
         decode_can_frame_payload(payload)
+
+
+
+def test_clock_sync_request_and_response_payload_round_trip():
+    request_payload = encode_clock_sync_request(7, 1234567890123)
+    assert decode_clock_sync_request(request_payload).sync_id == 7
+    assert decode_clock_sync_request(request_payload).host_send_time_ns == 1234567890123
+
+    response_payload = encode_clock_sync_response(7, 1234567890123, 456, 460)
+    response = decode_clock_sync_response(response_payload)
+    assert response.sync_id == 7
+    assert response.host_send_time_ns == 1234567890123
+    assert response.device_receive_time_us == 456
+    assert response.device_send_time_us == 460
+
+
+def test_clock_sync_payloads_reject_invalid_lengths_and_timestamp_order():
+    with pytest.raises(ValueError, match="invalid length"):
+        decode_clock_sync_request(b"short")
+    with pytest.raises(ValueError, match="invalid length"):
+        decode_clock_sync_response(b"short")
+    with pytest.raises(ValueError, match="precedes"):
+        encode_clock_sync_response(1, 2, 10, 9)
+
+
+def test_clock_sync_messages_round_trip_through_framed_stream():
+    payload = encode_clock_sync_request(42, 987654321)
+    wire = encode_message(ProtocolMessage(MessageType.TIME_SYNC_REQ, 3, payload))
+    decoded = MessageStreamDecoder().feed(wire)
+    assert decoded == [ProtocolMessage(MessageType.TIME_SYNC_REQ, 3, payload)]
