@@ -144,10 +144,17 @@ class IsoTpTransport:
                 raise IsoTpProtocolError("CAN FD frame received by classic-CAN ISO-TP endpoint")
             return frame
 
-    def _wait_flow_control(self):
+    def _wait_flow_control(self, timeout=None):
         wait_count = 0
+        wait_timeout = self.timeout if timeout is None else float(timeout)
+        if wait_timeout <= 0:
+            raise IsoTpTimeout("No time remains for ISO-TP Flow Control")
+        deadline = time.monotonic() + wait_timeout
         while True:
-            frame = self._receive_matching(self.rx_id, self.timeout)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise IsoTpTimeout("Timed out waiting for ISO-TP Flow Control")
+            frame = self._receive_matching(self.rx_id, remaining)
             data = bytes(frame.data)
             if data[0] >> 4 != 3 or len(data) < 3:
                 continue
@@ -165,13 +172,24 @@ class IsoTpTransport:
                 raise IsoTpProtocolError("Receiver rejected ISO-TP transfer with OVERFLOW")
             raise IsoTpProtocolError(f"Reserved Flow Control status 0x{status:X}")
 
-    def send_payload(self, payload):
-        """Transmit one ISO-TP payload, waiting for receiver Flow Control."""
+    def send_payload(self, payload, timeout=None):
+        """Transmit one ISO-TP payload within one optional overall deadline."""
         payload = bytes(payload)
         if not payload:
             raise ValueError("ISO-TP payload cannot be empty")
         if len(payload) > self.max_payload:
             raise ValueError("Payload exceeds configured ISO-TP limit")
+        send_timeout = self.timeout if timeout is None else float(timeout)
+        if send_timeout <= 0:
+            raise IsoTpTimeout("No time remains for ISO-TP payload transmission")
+        deadline = time.monotonic() + send_timeout
+
+        def remaining_time():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise IsoTpTimeout("Timed out transmitting ISO-TP payload")
+            return remaining
+
         if len(payload) <= 7:
             self._send(self.tx_id, bytes((len(payload),)) + payload)
             return {"payload_bytes": len(payload), "frames_sent": 1}
@@ -182,14 +200,18 @@ class IsoTpTransport:
         sequence = 1
         frames_sent = 1
         block_count = 0
-        block_size, separation = self._wait_flow_control()
+        block_size, separation = self._wait_flow_control(timeout=remaining_time())
 
         while offset < len(payload):
             if block_size and block_count >= block_size:
-                block_size, separation = self._wait_flow_control()
+                block_size, separation = self._wait_flow_control(timeout=remaining_time())
                 block_count = 0
             if separation:
+                remaining = remaining_time()
+                if separation >= remaining:
+                    raise IsoTpTimeout("STmin delay exceeds remaining ISO-TP send deadline")
                 time.sleep(separation)
+            remaining_time()
             chunk = payload[offset:offset + 7]
             self._send(self.tx_id, bytes((0x20 | sequence,)) + chunk)
             offset += len(chunk)
