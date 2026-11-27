@@ -70,6 +70,7 @@ from .frame_processing import process_frame, process_frames
 from .startup_splash import show_startup_splash
 from .vehicle_context import update_vehicle_context
 from .setup_flow import run_setup_wizard as run_setup_wizard_flow
+from .port_selection import refresh_serial_ports
 from .vehicle_management import (
     _refresh_vehicle_list as _refresh_vehicle_list_action,
     add_or_update_vehicle as add_or_update_vehicle_action,
@@ -549,49 +550,7 @@ class MainWindow(QMainWindow):
         self.refresh_serial_ports()
 
     def refresh_serial_ports(self):
-        """Inventory serial interfaces and select only a single clear candidate."""
-        current = self.channel_edit.currentText().strip()
-        ports = discover_interfaces()
-        self.channel_edit.blockSignals(True)
-        self.channel_edit.clear()
-        for port in ports:
-            self.channel_edit.addItem(port["device"], port["device"])
-            index = self.channel_edit.count() - 1
-            self.channel_edit.setItemData(
-                index,
-                f'{port["label"]} | {port["description"]} | '
-                f'VID:PID {port["vid"] or "----"}:{port["pid"] or "----"}',
-                Qt.ToolTipRole,
-            )
-        if current:
-            self.channel_edit.setCurrentText(current)
-        elif ports:
-            self.channel_edit.setCurrentIndex(0)
-        else:
-            self.channel_edit.setEditText("")
-            self.channel_edit.setPlaceholderText("No serial ports found; enter channel manually")
-        self.channel_edit.blockSignals(False)
-
-        # Only auto-select when exactly one recognized adapter candidate exists.
-        recognized = [port for port in ports if port["kind"] in ("esp32", "elm327", "slcan")]
-        if len(recognized) == 1:
-            candidate = recognized[0]
-            for index in range(self.backend.count()):
-                data = self.backend.itemData(index)
-                if data and data[0] == candidate["kind"]:
-                    self.backend.setCurrentIndex(index)
-                    self.channel_edit.setCurrentText(candidate["device"])
-                    break
-
-        if ports:
-            summary = ", ".join(
-                f'{port["device"]}: {port["label"]}' for port in ports
-            )
-            self.status.setText("Interface inventory: " + summary)
-        else:
-            self.status.setText(
-                "No USB/Bluetooth serial interfaces found. CAN channels can still be entered manually."
-            )
+        refresh_serial_ports(self)
 
     def _build_sensors_tab(self):
         self.sensors_tab = SensorsTab(

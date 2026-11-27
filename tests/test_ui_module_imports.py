@@ -415,3 +415,48 @@ def test_setup_flow_helper_is_available_from_app_module():
 
     assert app_setup_flow is run_setup_wizard
 
+def test_port_selection_helper_is_available_from_app_module():
+    from freerov3r.app import refresh_serial_ports as app_refresh_ports
+    from freerov3r.port_selection import refresh_serial_ports
+
+    assert app_refresh_ports is refresh_serial_ports
+
+
+def test_port_selection_prefers_one_recognized_adapter():
+    global _QT_TEST_APP
+
+    from PySide6.QtWidgets import QApplication, QComboBox, QLabel
+    from types import SimpleNamespace
+
+    from freerov3r.port_selection import refresh_serial_ports
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    channel = QComboBox()
+    channel.setEditable(True)
+    backend = QComboBox()
+    backend.addItem("Virtual", ("virtual", ""))
+    backend.addItem("ESP32", ("esp32", "COM3"))
+    window = SimpleNamespace(
+        channel_edit=channel,
+        backend=backend,
+        status=QLabel(),
+    )
+    ports = [{
+        "device": "COM4",
+        "label": "ESP32 CAN",
+        "description": "USB serial",
+        "vid": "303A",
+        "pid": "1001",
+        "kind": "esp32",
+    }]
+
+    refresh_serial_ports(window, discover=lambda: ports)
+    assert channel.currentText() == "COM4"
+    assert backend.currentData()[0] == "esp32"
+    assert "COM4" in window.status.text()
+
+    channel.deleteLater()
+    backend.deleteLater()
+    window.status.deleteLater()
+    _QT_TEST_APP.processEvents()
+
