@@ -110,3 +110,12 @@ inherit Land Rover ECU addressing or behavior.
 This catalog is a data and service foundation. It does not itself create a
 live ECU scanner, decode an unverified signal, register an executable service
 routine, or enable vehicle writes.
+
+
+Passive module-discovery reports can also be imported into the shared catalog
+with \`VehicleKnowledgeStore.import_module_discovery_report()\`. These are stored
+as \`observed_can_node\` records with capture provenance and explicit
+\`identity_confirmed: false\`. A probable UDS response association remains a
+probable traffic role, not a named ECU. The import requires a report that
+explicitly states no transmission occurred and a traceable capture/session ID.
+It never creates a verified module identity or a supported diagnostic feature.
