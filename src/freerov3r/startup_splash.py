@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from .assets import load_asset_pixmap
+from .asset_loader import load_asset_pixmap
 
 
 def show_startup_splash(window):
