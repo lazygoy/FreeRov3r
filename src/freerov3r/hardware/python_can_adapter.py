@@ -1,4 +1,4 @@
-"import time
+import time
 
 import can
 
@@ -98,4 +98,3 @@ class PythonCanAdapter(CanAdapter):
             source_timestamp=msg.timestamp,
             source_timestamp_clock_domain="unix_epoch",
         )
-"
