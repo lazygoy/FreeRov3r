@@ -347,7 +347,11 @@ class VehicleKnowledgeStore:
         nodes = report.get("nodes")
         if not isinstance(nodes, list):
             raise ValueError("module discovery report nodes must be a list")
-        capture_ids = capture_ids if isinstance(capture_ids, dict) else {}
+        if capture_ids is not None and not isinstance(capture_ids, dict):
+            raise ValueError("capture_ids must map capture names to stable identifiers")
+        capture_ids = capture_ids or {}
+        if report.get("method") == "independent_passive_capture_comparison" and not capture_ids:
+            raise ValueError("multi-capture imports require stable capture_ids for every capture name")
         records = []
         for node in nodes:
             if not isinstance(node, dict):
@@ -363,12 +367,18 @@ class VehicleKnowledgeStore:
             names = node.get("capture_names") or []
             if not isinstance(names, list):
                 names = []
-            provenance = [
-                str(capture_ids.get(str(name), name)).strip()
-                for name in names if str(capture_ids.get(str(name), name)).strip()
-            ]
-            if not provenance and capture_id:
-                provenance = [str(capture_id).strip()]
+            if report.get("method") == "independent_passive_capture_comparison":
+                missing_names = [str(name) for name in names if str(name) not in capture_ids]
+                if missing_names:
+                    raise ValueError(
+                        "missing stable capture identifiers for: " + ", ".join(missing_names)
+                    )
+                provenance = [
+                    str(capture_ids[str(name)]).strip()
+                    for name in names if str(capture_ids[str(name)]).strip()
+                ]
+            else:
+                provenance = [str(capture_id).strip()] if capture_id else []
             provenance = list(dict.fromkeys(item for item in provenance if item))
             if not provenance:
                 raise ValueError(
