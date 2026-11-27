@@ -114,7 +114,7 @@ class VehicleSetupWizard(QDialog):
         self.interface_status = QLabel(
             "ESP32 interfaces are receive-only. Dual mode requires two different COM ports, entered as COMx,COMy (HS-CAN first, MS-CAN second). "
             "Bluetooth/serial ELM327 supports either passive CAN monitoring or read-only Mode 01 polling. "
-            "Wi-Fi adapter support is not implemented yet."
+            "Wi-Fi adapter support is not implemented yet. J2534 Pass-Thru supports receive-only CAN capture in this build."
         )
         self.interface_status.setWordWrap(True)
         self.interface_status.setObjectName("mutedText")
