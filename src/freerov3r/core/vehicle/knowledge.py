@@ -326,6 +326,85 @@ class VehicleKnowledgeStore:
             verification_notes=source.get("verification_notes") or "",
         )
 
+    def import_module_discovery_report(
+        self, report, *, applicability, capture_id=None, capture_ids=None,
+    ):
+        """Persist passive CAN-node observations without inventing ECU identities.
+
+        capture_ids maps capture names in a multi-capture comparison to stable
+        capture/session identifiers. A single-capture report uses capture_id.
+        The report must explicitly state that no transmission occurred.
+        """
+        if not isinstance(report, dict):
+            raise ValueError("module discovery report must be a dictionary")
+        if report.get("method") not in {
+            "passive_capture_analysis",
+            "independent_passive_capture_comparison",
+        }:
+            raise ValueError("unsupported module discovery report method")
+        if report.get("transmission_performed") is not False:
+            raise ValueError("only explicitly passive, receive-only reports can be imported")
+        nodes = report.get("nodes")
+        if not isinstance(nodes, list):
+            raise ValueError("module discovery report nodes must be a list")
+        capture_ids = capture_ids if isinstance(capture_ids, dict) else {}
+        records = []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            can_id = node.get("can_id")
+            if isinstance(can_id, bool) or not isinstance(can_id, int) or not 0 <= can_id <= 0x1FFFFFFF:
+                continue
+            extended = node.get("extended")
+            if not isinstance(extended, bool):
+                continue
+            channel = str(node.get("channel") or "unknown").strip() or "unknown"
+            frame_format = "EXT" if extended else "STD"
+            names = node.get("capture_names") or []
+            if not isinstance(names, list):
+                names = []
+            provenance = [
+                str(capture_ids.get(str(name), name)).strip()
+                for name in names if str(capture_ids.get(str(name), name)).strip()
+            ]
+            if not provenance and capture_id:
+                provenance = [str(capture_id).strip()]
+            provenance = list(dict.fromkeys(item for item in provenance if item))
+            if not provenance:
+                raise ValueError(
+                    f"CAN node 0x{can_id:X} has no traceable source capture identifier"
+                )
+            key = f"{channel}:{frame_format}:{can_id:X}"
+            data = {
+                "can_id": can_id,
+                "extended": extended,
+                "channel": channel,
+                "frame_count": int(node.get("frame_count") or node.get("observed_frame_count") or 0),
+                "role": str(node.get("role") or "observed_can_node"),
+                "reported_evidence_level": str(node.get("evidence_level") or "Observed"),
+                "uds_pair_count": int(node.get("uds_pair_count") or 0),
+                "positive_response_count": int(node.get("positive_response_count") or 0),
+                "negative_response_count": int(node.get("negative_response_count") or 0),
+                "request_ids": list(node.get("request_ids") or []),
+                "services": list(node.get("services") or []),
+                "addressing_hints": list(node.get("addressing_hints") or []),
+                "capture_names": [str(name) for name in names],
+                "interpretation": str(node.get("interpretation") or ""),
+                "identity_confirmed": False,
+            }
+            records.append(self.add_observation(
+                "observed_can_node",
+                key,
+                data,
+                applicability=applicability,
+                source_capture_ids=provenance,
+                notes=(
+                    "Imported from passive CAN discovery. CAN ID and probable UDS "
+                    "role are observations, not a physical ECU identity."
+                ),
+            ))
+        return records
+
     def get_record(self, record_id):
         for record in self._read()["records"]:
             if record.get("record_id") == str(record_id):
