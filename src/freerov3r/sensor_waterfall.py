@@ -112,7 +112,7 @@ class WaterfallPlot(QWidget):
     def set_lanes(self, lanes):
         self.lanes = lanes
         self.lane_count = max(1, len(lanes))
-        self.setMinimumHeight(max(420, 92 + self.lane_count * 64))
+        self.setMinimumHeight(max(420, 92 + self.lane_count * 54))
         self.duration = max(
             (point[0] for lane in lanes for point in lane["points"]),
             default=1.0,
