@@ -798,6 +798,9 @@ class SensorDashboardDock(QDockWidget):
         panel._floating_host = host
         panel.popout_button.setText("Dock back")
         panel.topmost.setEnabled(True)
+        # Reparenting a hidden widget hides it in Qt; explicitly show the
+        # graph panel inside its new top-level window.
+        panel.show()
         host.showNormal()
         host.raise_()
         host.activateWindow()
