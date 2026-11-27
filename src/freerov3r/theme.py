@@ -87,7 +87,7 @@ if enabled:
         QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #2d7048; }
         QLabel#splashLogo { background: transparent; }
         QToolTip { background: #202630; color: #ffffff; border: 1px solid #526174; }
-    """.replace("{BODY_FONT}", window.body_font_family).replace("{HEADING_FONT}", window.heading_font_family))
+    """.replace("{BODY_FONT}", body_font_family).replace("{HEADING_FONT}", heading_font_family))
 else:
     palette = app.style().standardPalette()
     palette.setColor(QPalette.Highlight, QColor("#2c8054"))
@@ -153,7 +153,7 @@ else:
         QPushButton#splashAction, QPushButton#splashContinue { background: #245a39; color: #ffffff; border: 1px solid #72b486; font-weight: 700; }
         QPushButton#splashAction:hover, QPushButton#splashContinue:hover { background: #2d7048; }
         QLabel#splashLogo { background: transparent; }
-    """.replace("{BODY_FONT}", window.body_font_family).replace("{HEADING_FONT}", window.heading_font_family))
+    """.replace("{BODY_FONT}", body_font_family).replace("{HEADING_FONT}", heading_font_family))
 
 
 # Shared interaction and data-view polish inspired by Beautiful UI / Notchset.
