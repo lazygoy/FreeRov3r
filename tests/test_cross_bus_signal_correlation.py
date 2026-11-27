@@ -116,3 +116,20 @@ def test_requires_repeated_transitions_and_valid_parameters():
         analyze_cross_bus_signal_correlation([], event_tolerance_seconds=0)
     with pytest.raises(ValueError):
         analyze_cross_bus_signal_correlation([], minimum_agreement=1.5)
+
+
+
+def test_rejects_low_transition_coverage_even_when_matched_events_agree():
+    records = []
+    values = [0x10, 0x22, 0x35, 0x41, 0x58, 0x63, 0x79]
+    for index, value in enumerate(values):
+        timestamp = 0.2 + index * 0.35
+        other = value if index < 4 else values[3]
+        records.append(_record(timestamp, "HS-CAN", 0x120, [value]))
+        records.append(_record(timestamp + 0.02, "MS-CAN", 0x321, [other]))
+    result = analyze_cross_bus_signal_correlation(
+        records, max_lag_seconds=0.1, event_tolerance_seconds=0.01,
+        minimum_transitions=3, minimum_agreement=0.8,
+        minimum_transition_coverage=0.8,
+    )
+    assert result["candidates"] == []
