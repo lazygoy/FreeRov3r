@@ -124,12 +124,15 @@ class WaterfallPlot(QWidget):
         top = rect.top() + 54
         plot_width = max(100.0, rect.width() - 250)
         row_height = max(1.0, (rect.height() - 104) / self.lane_count)
-        lane_height = min(48.0, row_height * 0.62) * self.vertical_exaggeration
+        lane_height = min(
+            row_height * 0.62,
+            min(48.0, row_height * 0.58) * self.vertical_exaggeration,
+        )
         # Normalized waterfall values are stored as 0..100; native lanes as 0..1.
         z_fraction = z / 100.0 if z > 1.0 else z
         perspective = lane * min(12.0, plot_width * 0.012) * self.zoom
         px = left + (x / self.duration) * plot_width * self.zoom + perspective
-        py = top + (lane + 0.5) * row_height - z_fraction * lane_height
+        py = top + lane * row_height + row_height * 0.78 - z_fraction * lane_height
         return px, py
 
     def paintEvent(self, event):
