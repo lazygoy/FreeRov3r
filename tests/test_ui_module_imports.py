@@ -402,3 +402,10 @@ def test_vehicle_context_disables_l319_workspaces_for_generic_vehicle():
     assert window.sensor_capture.vehicle_context["vin"] is None
     assert tab_state == {1: False, 2: False}
 
+def test_vehicle_management_helpers_are_available_from_app_module():
+    from freerov3r.app import add_or_update_vehicle_action as app_add_vehicle
+    from freerov3r.vehicle_management import add_or_update_vehicle
+
+    assert app_add_vehicle is add_or_update_vehicle
+    assert callable(add_or_update_vehicle)
+

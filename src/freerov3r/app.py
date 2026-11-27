@@ -69,6 +69,13 @@ from .capture_control import toggle_capture as toggle_capture_impl
 from .frame_processing import process_frame, process_frames
 from .startup_splash import show_startup_splash
 from .vehicle_context import update_vehicle_context
+from .vehicle_management import (
+    _refresh_vehicle_list as _refresh_vehicle_list_action,
+    add_or_update_vehicle as add_or_update_vehicle_action,
+    set_current_vehicle as set_current_vehicle_action,
+    on_vehicle_selected as on_vehicle_selected_action,
+    _apply_detected_vin as _apply_detected_vin_action,
+)
 from .diagnostic_actions import (
     request_dtc_scan as request_dtc_scan_action,
     request_readiness_scan as request_readiness_scan_action,
@@ -754,100 +761,22 @@ class MainWindow(QMainWindow):
         self._refresh_vehicle_list()
 
     def _refresh_vehicle_list(self):
-        self.vehicle_list.clear()
-        vehicles = self.settings.get("vehicles", {})
-        for vin, info in sorted(vehicles.items()):
-            nick = info.get("nickname", "")
-            model = info.get("model", "")
-            label = nick or model
-            self.vehicle_list.addItem(f"{vin}  —  {label}" if label else vin)
-        current = self.settings.get("current_vin")
-        if current and current in vehicles:
-            nick = vehicles[current].get("nickname", "")
-            self.current_vehicle_label.setText(f"Current: {current} ({nick})" if nick else f"Current: {current}")
-        else:
-            self.current_vehicle_label.setText("No vehicle selected")
+        return _refresh_vehicle_list_action(self)
 
     def add_or_update_vehicle(self):
-        vin = self.vin_edit.text().strip().upper()
-        nickname = self.nickname_edit.text().strip()
-        if not validate_vin(vin):
-            QMessageBox.warning(self, "Invalid VIN", "Enter a valid 17-character VIN (letters I, O and Q are not used).")
-            return
-        identification = identify_vehicle(vin)
-        vehicle = self.settings.setdefault("vehicles", {}).get(vin, {}).copy()
-        vehicle.update({
-            "nickname": nickname,
-            "make": identification.get("make") or vehicle.get("make", ""),
-            "model": identification.get("model") or vehicle.get("model", ""),
-            "model_year": identification.get("model_year") or vehicle.get("model_year"),
-            "profile_id": identification.get("profile_id", "generic"),
-            "variant_id": identification.get("variant_id"),
-            "identification_confidence": identification.get("confidence", "unknown"),
-        })
-        self.settings["vehicles"][vin] = vehicle
-        self.settings["current_vin"] = vin
-        self.settings["active_vehicle"] = vehicle.copy()
-        self.research_tab.set_context(vin, self.active_interface)
-        self._refresh_vehicle_list()
-        self._update_vehicle_context()
-        self.save_current_settings()
-        self.vin_edit.clear()
-        self.nickname_edit.clear()
+        return add_or_update_vehicle_action(self)
 
     def set_current_vehicle(self):
-        item = self.vehicle_list.currentItem()
-        if not item:
-            return
-        vin = item.text().split("  —  ")[0]
-        self.settings["current_vin"] = vin
-        self.settings["active_vehicle"] = self.settings.get("vehicles", {}).get(vin, {}).copy()
-        self._refresh_vehicle_list()
-        self._update_vehicle_context()
-        self.save_current_settings()
+        return set_current_vehicle_action(self)
 
     def on_vehicle_selected(self, item):
-        vin = item.text().split("  —  ")[0]
-        info = self.settings.get("vehicles", {}).get(vin, {})
-        self.vin_edit.setText(vin)
-        self.nickname_edit.setText(info.get("nickname", ""))
+        return on_vehicle_selected_action(self, item)
 
     def _update_vehicle_context(self):
         update_vehicle_context(self)
 
     def _apply_detected_vin(self, vin):
-        """Use a validated VIN decoded from observed diagnostic response traffic."""
-        previous = self.settings.get("current_vin")
-        if previous == vin:
-            return
-        if previous and previous != vin:
-            self.log.appendPlainText(
-                f"VIN mismatch: selected {previous}, scan data reports {vin}. Using scan-reported VIN."
-            )
-        identification = identify_vehicle(vin)
-        vehicle = self.settings.setdefault("vehicles", {}).get(vin, {})
-        vehicle.update({
-            "make": identification.get("make") or vehicle.get("make", ""),
-            "model": identification.get("model") or vehicle.get("model", ""),
-            "model_year": identification.get("model_year") or vehicle.get("model_year"),
-            "profile_id": identification.get("profile_id", "generic"),
-            "variant_id": identification.get("variant_id"),
-            "identification_confidence": identification.get("confidence", "unknown"),
-        })
-        self.settings["vehicles"][vin] = vehicle
-        self.settings["active_vehicle"] = vehicle.copy()
-        self.settings["current_vin"] = vin
-        if self.receiver and self.receiver.isRunning():
-            self.capture_vin = vin
-        self._refresh_vehicle_list()
-        self._update_vehicle_context()
-        self.save_current_settings()
-        self.record_vehicle_event(
-            "vin_detected", "VIN decoded from diagnostic traffic",
-            {"vin": vin, "source": "OBD Mode 09 PID 02 or UDS DID F190"}, vin=vin
-        )
-        self.log.appendPlainText(f"VIN detected from scan data: {vin}")
-        self.show_toast(f"VIN identified: {vin}", "success")
+        return _apply_detected_vin_action(self, vin)
 
     def toggle_capture(self):
         toggle_capture_impl(self)
