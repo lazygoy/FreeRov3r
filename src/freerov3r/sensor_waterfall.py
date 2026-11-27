@@ -165,7 +165,7 @@ class SensorWaterfallDialog(QDialog):
         layout.addWidget(self.selection_status)
         from .sensor_waterfall_gl import WaterfallPlot
         self.plot = WaterfallPlot(self)
-        layout.addWidget(self.plot, 1)
+        layout.addWidget(QLabel("Signal identity and live values"))
         self.value_table = QTableWidget(0, 5, self)
         self.value_table.setHorizontalHeaderLabels(
             ["Sensor", "Minimum", "Maximum", "Current", "Unit"]
@@ -189,6 +189,7 @@ class SensorWaterfallDialog(QDialog):
             "padding: 5px; border: 0; }"
         )
         layout.addWidget(self.value_table)
+        layout.addWidget(self.plot, 1)
         self.cursor_readout = QLabel("Move across the plot to inspect sensor values")
         self.cursor_readout.setStyleSheet("color: #CBD5E1; padding: 4px;")
         layout.addWidget(self.cursor_readout)
