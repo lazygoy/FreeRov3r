@@ -91,3 +91,15 @@ def test_codec_does_not_claim_to_transmit_or_identify_ecu():
 def test_decode_rejects_wrong_dtc_subfunction():
     with pytest.raises(ValueError, match="subfunction"):
         decode_uds_response("59 0A 00", request="19 02 FF")
+
+
+
+def test_decode_rejects_wrong_dtc_subfunction():
+    with pytest.raises(ValueError, match="subfunction"):
+        decode_uds_response("59 0A 00", request="19 02 FF")
+
+
+def test_decode_supported_dtcs_subfunction():
+    result = decode_uds_response("59 0A FF 01 23 45 2F", request="19 0A")
+    assert result["subfunction"] == 0x0A
+    assert result["dtcs"] == [{"dtc": 0x012345, "status": 0x2F}]
