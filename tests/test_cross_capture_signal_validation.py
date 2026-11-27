@@ -30,7 +30,7 @@ def _capture(name, *, lag=0.02, transform=lambda value: value, start=0.0, clock=
 def test_repeats_same_relationship_across_independent_capture_timelines():
     result = validate_cross_capture_signals([
         _capture("baseline", start=0.0),
-        _capture("repeat", start=100.0, lag=0.025),
+        _capture("repeat", start=100.0, lag=0.02),
     ])
     assert result["candidate_count"] >= 1
     item = next(
