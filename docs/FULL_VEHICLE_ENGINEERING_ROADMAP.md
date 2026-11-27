@@ -268,3 +268,33 @@ the remaining deadline rather than restarting a full timeout. STmin delays
 that cannot fit within the remaining budget fail before another Consecutive
 Frame is sent. A blocking hardware driver's own send call remains subject to
 that driver's timeout behavior.
+
+
+## Hardware interface expansion: J2534 and D-PDU
+
+FreeRov3r's hardware scope now explicitly includes SAE J2534 Pass-Thru and
+ISO 22900-2 D-PDU API / MVCI providers alongside native CAN, SocketCAN, ESP32,
+ELM327, and simulation adapters. These are hardware communication interfaces,
+not universal ECU unlock mechanisms. Vehicle-specific diagnostic sequences,
+security authorization, programming data, and recovery requirements remain
+separate layers.
+
+The implementation plan and boundaries are documented in
+[docs/J2534_D_PDU_ARCHITECTURE.md](J2534_D_PDU_ARCHITECTURE.md).
+
+The first implementation, `hardware.j2534_discovery`, inventories Windows
+J2534 04.04 and 05.00 driver registrations from the registry. It does not load
+vendor DLLs, open a Pass-Thru device, connect to a vehicle, or transmit. Later
+runtime support must reuse the existing adapter capability model, ISO-TP
+transport, read-only UDS client, and independent safety policies rather than
+duplicating protocol implementations.
+
+D-PDU/MVCI remains a distinct provider from J2534 because its module discovery
+and resource lifecycle differ. Both providers will normalize supported
+communication into the existing transport and diagnostic layers.
+
+The first complete validation target remains Land Rover L319 / Discovery 3
+and Discovery 4, prioritizing the naturally aspirated 5.0L petrol V8. No
+vehicle, ECU, API version, security method, or programming path is marked
+supported until it is validated against the exact hardware and software
+revision.
