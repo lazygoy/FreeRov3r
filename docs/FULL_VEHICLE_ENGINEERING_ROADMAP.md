@@ -177,3 +177,20 @@ separate \`uds_requests_enabled\` policy flag. General CAN transmission remains
 a third, separately controlled capability and still requires bench mode.
 Current ESP32 firmware remains receive-only, and current ELM327 support remains
 standard OBD-II only.
+
+
+### Read-only UDS application codec
+
+\`freerov3r.diagnostics.uds\` provides a vehicle-independent payload codec for
+UDS ReadDataByIdentifier (0x22) and a bounded subset of ReadDTCInformation
+(0x19 subfunctions 0x01, 0x02, and 0x0A). It validates positive-response
+service echoes, requested DIDs, DTC subfunctions, negative response codes,
+and DTC/status record lengths. Multi-DID response record boundaries remain
+unknown unless a DID length catalogue is available.
+
+This layer only builds/decodes application payload bytes. It does not choose
+CAN IDs, perform ISO-TP transmission, open an adapter, authorize requests, or
+identify an ECU. Session-control, security-access, routine-control, reset,
+write-data, and programming services are intentionally excluded. Physical
+requests still require an adapter that implements UDS, the independent UDS
+permission gate, and the safety policy.
