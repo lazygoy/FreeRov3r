@@ -99,7 +99,7 @@ def analyze_cross_bus_correlation(
         return result
 
     origin = min(item[0] for item in valid)
-    last_bin = max(int((item[0] - origin) / bin_width_seconds) for item in valid)
+    last_bin = max(round((item[0] - origin) / bin_width_seconds) for item in valid)
     bin_count = last_bin + 1
     if bin_count < 20:
         result["status"] = "capture too short for correlation"
@@ -107,7 +107,7 @@ def analyze_cross_bus_correlation(
 
     grouped = defaultdict(lambda: defaultdict(Counter))
     for timestamp, channel, can_id, extended in valid:
-        bin_index = int((timestamp - origin) / bin_width_seconds)
+        bin_index = round((timestamp - origin) / bin_width_seconds)
         key = (can_id, extended)
         grouped[channel][key][bin_index] += 1
 
