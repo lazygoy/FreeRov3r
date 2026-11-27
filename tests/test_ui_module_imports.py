@@ -16,3 +16,9 @@ def test_solutions_tab_remains_available_from_app_module():
     from freerov3r.solutions_tab import SolutionsTab
 
     assert app_solutions_tab is SolutionsTab
+
+def test_special_functions_tab_remains_available_from_app_module():
+    from freerov3r.app import SpecialFunctionsTab as app_special_functions_tab
+    from freerov3r.special_functions_tab import SpecialFunctionsTab
+
+    assert app_special_functions_tab is SpecialFunctionsTab
