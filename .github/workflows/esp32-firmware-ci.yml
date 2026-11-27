@@ -1,0 +1,49 @@
+name: ESP32 Firmware CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "firmware/esp32_twai_rx/**"
+      - ".github/workflows/esp32-firmware-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "firmware/esp32_twai_rx/**"
+      - ".github/workflows/esp32-firmware-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    name: ESP32-S3 firmware (${{ matrix.protocol }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - protocol: legacy-text
+            binary: "0"
+          - protocol: binary-v1
+            binary: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 Arduino core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.0.7
+
+      - name: Compile ESP32-S3 sketch
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32s3 \
+            --build-property "build.extra_flags=-DFREEROV3R_BINARY_PROTOCOL=${{ matrix.binary }} -DFREEROV3R_CAN_BITRATE=500000 -DFREEROV3R_CAN_CHANNEL=0" \
+            --warnings all \
+            firmware/esp32_twai_rx
