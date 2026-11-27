@@ -95,7 +95,8 @@ class SharedCrosshairStackedPlot(QWidget):
         self._sensor_ids = sensor_ids
         self._clear_plots()
         if not self.lanes:
-            placeholder = QLabel("Select one or more captured sensors")\n            placeholder.setStyleSheet(f"color: {TEXT}; padding: 18px;")
+            placeholder = QLabel("Select one or more captured sensors")
+            placeholder.setStyleSheet(f"color: {TEXT}; padding: 18px;")
             self.plot_layout.addWidget(placeholder)
             return
 
@@ -129,7 +130,8 @@ class SharedCrosshairStackedPlot(QWidget):
                     x_values, y_values, pen=pg.mkPen(color, width=1.8),
                     connect="finite", antialias=True,
                 )
-                curve.setDownsampling(auto=True, method="peak")\n                self._curves.append(curve)
+                curve.setDownsampling(auto=True, method="peak")
+                self._curves.append(curve)
                 low, high = min(y_values), max(y_values)
                 padding = max((high - low) * 0.12, abs(high) * 0.01, 0.01)
                 plot.setYRange(low - padding, high + padding, padding=0)
@@ -166,6 +168,7 @@ class SharedCrosshairStackedPlot(QWidget):
 
     def _clear_plots(self):
         self._proxies.clear()
+        self._curves.clear()
         self.plots.clear()
         self._vertical_lines.clear()
         self._horizontal_lines.clear()
@@ -206,7 +209,7 @@ class SharedCrosshairStackedPlot(QWidget):
         self._active_index = None
 
     def _mouse_moved(self, event, index):
-        if not event:
+        if self._locked or not event:
             return
         scene_pos = event[0]
         plot = self.plots[index]
