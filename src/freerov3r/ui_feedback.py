@@ -113,7 +113,9 @@ class QuickDrawer(QDockWidget):
         self.nav_empty_label.setAlignment(Qt.AlignCenter)
         self.nav_empty_label.hide()
         layout.addWidget(self.nav_empty_label)
+        self.workspace_mode = "diagnostics"
         self.nav_search.textChanged.connect(self._filter_navigation)
+        self._apply_workspace_mode()
 
         note = QLabel(
             "Passive monitoring only. ECU transmission, coding and programming remain "
@@ -126,14 +128,26 @@ class QuickDrawer(QDockWidget):
         scroll.setWidget(body)
         self.setWidget(scroll)
 
-    def _filter_navigation(self, text):
-        query = str(text or "").strip().casefold()
-        visible_count = 0
-        for button in self.nav_buttons.values():
-            visible = not query or query in button.text().casefold()
-            button.setVisible(visible)
-            visible_count += int(visible)
+    def set_workspace_mode(self, mode):
+        self.workspace_mode = mode if mode in {"diagnostics", "research"} else "diagnostics"
+        self._apply_workspace_mode()
+
+    def _apply_workspace_mode(self):
+        query = self.nav_search.text().strip().casefold()
+        shared = {"Home", "Capture", "Settings"}
+        for name, button in self.nav_buttons.items():
+            belongs = (
+                name in shared or name == "Research"
+                if self.workspace_mode == "research"
+                else name != "Research"
+            )
+            matches = not query or query in button.text().casefold()
+            button.setVisible(belongs and matches)
+        visible_count = sum(not button.isHidden() for button in self.nav_buttons.values())
         self.nav_empty_label.setVisible(visible_count == 0)
+
+    def _filter_navigation(self, text):
+        self._apply_workspace_mode()
 
     def set_current_workspace(self, name):
         button = self.nav_buttons.get(name)

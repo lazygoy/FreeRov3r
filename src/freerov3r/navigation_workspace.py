@@ -3,7 +3,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QScrollArea, QToolButton,
+    QComboBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QToolButton,
     QVBoxLayout, QWidget,
 )
 
@@ -16,6 +16,7 @@ class NavigationWorkspace(QScrollArea):
         body_font_family,
         toggle_quick_drawer,
         on_tab_changed,
+        on_workspace_mode_changed=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -44,6 +45,21 @@ class NavigationWorkspace(QScrollArea):
         title_column.addWidget(self.workspace_title)
         title_column.addWidget(self.workspace_subtitle)
         header_layout.addLayout(title_column, 1)
+
+        self.workspace_mode_selector = QComboBox()
+        self.workspace_mode_selector.setObjectName("workspaceModeSelector")
+        self.workspace_mode_selector.addItem("Diagnostics", "diagnostics")
+        self.workspace_mode_selector.addItem("CAN Research Lab", "research")
+        self.workspace_mode_selector.setToolTip(
+            "Switch between vehicle diagnostics and passive CAN research"
+        )
+        if on_workspace_mode_changed is not None:
+            self.workspace_mode_selector.currentIndexChanged.connect(
+                lambda _index: on_workspace_mode_changed(
+                    self.workspace_mode_selector.currentData()
+                )
+            )
+        header_layout.addWidget(self.workspace_mode_selector)
 
         self.header_vehicle = QLabel("NO VEHICLE SELECTED")
         self.header_vehicle.setObjectName("headerVehicle")

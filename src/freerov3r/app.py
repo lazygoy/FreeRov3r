@@ -36,6 +36,7 @@ from .settings_tab import SettingsTab
 from .capture_tab import CaptureTab
 from .sensors_tab import SensorsTab
 from .navigation_workspace import NavigationWorkspace
+from .workspace_modes import WorkspaceMode, tab_is_visible
 from .theme import apply_theme
 from .capture_control import toggle_capture as toggle_capture_impl
 from .frame_processing import process_frame, process_frames
@@ -162,6 +163,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
         self.resize(1180, 760)
 
+        self.workspace_mode = WorkspaceMode.DIAGNOSTICS
         self._build_ui()
         self._apply_settings()
         self._update_vehicle_context()
@@ -325,6 +327,7 @@ class MainWindow(QMainWindow):
             body_font_family=self.body_font_family,
             toggle_quick_drawer=self.toggle_quick_drawer,
             on_tab_changed=self._sync_navigation_selection,
+            on_workspace_mode_changed=self._set_workspace_mode,
             parent=self,
         )
         self.workspace_scroll = self.navigation_workspace
@@ -338,8 +341,31 @@ class MainWindow(QMainWindow):
         ):
             setattr(self, name, getattr(self.navigation_workspace, name))
         self.stack.addWidget(self.navigation_workspace)
+        self._set_workspace_mode(self.workspace_mode.value)
         self.stack.setCurrentIndex(1)
         self._sync_navigation_selection(self.tabs.currentIndex())
+
+    def _set_workspace_mode(self, mode_value):
+        """Show only the tabs belonging to the selected top-level workspace."""
+        try:
+            mode = WorkspaceMode(mode_value)
+        except ValueError:
+            return
+        self.workspace_mode = mode
+        if hasattr(self, "quick_drawer"):
+            self.quick_drawer.set_workspace_mode(mode.value)
+        for index in range(self.tabs.count()):
+            self.tabs.setTabVisible(
+                index, tab_is_visible(self.tabs.tabText(index), mode)
+            )
+
+        current_index = self.tabs.currentIndex()
+        current_name = self.tabs.tabText(current_index) if current_index >= 0 else ""
+        if not tab_is_visible(current_name, mode):
+            fallback = "Research" if mode is WorkspaceMode.RESEARCH else "Capture"
+            self._navigate_to_tab(fallback)
+        if hasattr(self, "workspace_title"):
+            self._sync_navigation_selection(self.tabs.currentIndex())
 
     def _sync_navigation_selection(self, index):
         if hasattr(self, "workspace_title") and 0 <= index < self.tabs.count():
