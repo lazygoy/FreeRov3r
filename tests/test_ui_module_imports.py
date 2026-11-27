@@ -308,3 +308,10 @@ def test_theme_engine_applies_light_and_dark_styles():
     window.deleteLater()
     _QT_TEST_APP.processEvents()
 
+def test_capture_controller_is_available_from_app_module():
+    from freerov3r.app import toggle_capture_impl as app_capture_controller
+    from freerov3r.capture_control import toggle_capture
+
+    assert app_capture_controller is toggle_capture
+    assert callable(toggle_capture)
+
