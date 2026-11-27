@@ -66,3 +66,84 @@ def test_waterfall_downsampling_preserves_local_minimum_and_maximum():
     lanes = prepare_waterfall_lanes(samples, window_seconds=0, max_points=4)
     values = [value for _, value in lanes[0]["points"]]
     assert max(values) == 1.0
+
+
+
+def test_waterfall_caps_scene_at_eight_sensors_in_stable_name_order():
+    samples = []
+    for index in range(10):
+        name = f"Sensor {index:02d}"
+        samples.extend([
+            sample(f"id_{index:02d}", name, index, 1),
+            sample(f"id_{index:02d}", name, index + 1, 2),
+        ])
+
+    lanes = prepare_waterfall_lanes(samples, window_seconds=0)
+
+    assert len(lanes) == 8
+    assert [lane["sensor_id"] for lane in lanes] == [
+        f"id_{index:02d}" for index in range(8)
+    ]
+
+
+def test_waterfall_retains_raw_engineering_values_for_cursor_readout():
+    samples = [
+        sample("rpm", "Engine speed", 825, 1, "rpm"),
+        sample("rpm", "Engine speed", 1425, 2, "rpm"),
+    ]
+
+    lane = prepare_waterfall_lanes(samples, window_seconds=0)[0]
+
+    assert lane["raw_points"] == [(0.0, 825.0), (1.0, 1425.0)]
+    assert lane["minimum"] == 825
+    assert lane["maximum"] == 1425
+
+
+
+def test_waterfall_renderer_is_a_real_opengl_3d_view():
+    from pyqtgraph.opengl import GLViewWidget
+
+    from freerov3r.sensor_waterfall_gl import WaterfallPlot
+
+    assert issubclass(WaterfallPlot, GLViewWidget)
+
+
+
+def test_waterfall_cursor_data_keeps_full_resolution_when_surface_is_downsampled():
+    samples = [
+        sample("rpm", "Engine speed", value, timestamp)
+        for timestamp, value in enumerate([800, 850, 900, 950, 1000, 1050], start=1)
+    ]
+
+    lane = prepare_waterfall_lanes(samples, window_seconds=0, max_points=2)[0]
+
+    assert len(lane["points"]) <= 2
+    assert lane["raw_points"] == [
+        (float(index), float(value))
+        for index, value in enumerate([800, 850, 900, 950, 1000, 1050])
+    ]
+    assert lane["raw_times"] == [point[0] for point in lane["raw_points"]]
+
+
+
+def test_2d_scope_exposes_synchronized_cursor_signals():
+    from PySide6.QtWidgets import QWidget
+
+    from freerov3r.sensor_waterfall_2d import SharedCrosshairStackedPlot
+
+    assert issubclass(SharedCrosshairStackedPlot, QWidget)
+    assert hasattr(SharedCrosshairStackedPlot, "cursorMoved")
+    assert hasattr(SharedCrosshairStackedPlot, "cursorLocked")
+
+
+def test_2d_scope_cursor_uses_raw_engineering_values():
+    from freerov3r.sensor_waterfall_2d import SharedCrosshairStackedPlot
+
+    lane = {
+        "raw_points": [(0.0, 800.0), (1.0, 1000.0), (2.0, 1200.0)],
+        "raw_times": [0.0, 1.0, 2.0],
+    }
+
+    assert SharedCrosshairStackedPlot._nearest_value(lane, 0.2) == 800.0
+    assert SharedCrosshairStackedPlot._nearest_value(lane, 1.7) == 1200.0
+    assert SharedCrosshairStackedPlot._nearest_value(lane, 8.0) == 1200.0

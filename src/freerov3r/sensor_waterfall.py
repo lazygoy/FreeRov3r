@@ -1,16 +1,20 @@
-"""Perspective 3D waterfall/ridgeline visualization for live sensor samples."""
+"""Insight-style 3D sensor-history visualization for live vehicle samples."""
 
 import math
+from bisect import bisect_left
 
-from PySide6.QtCore import Qt, QTimer, QPointF
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QVBoxLayout, QWidget,
+    QListWidgetItem, QVBoxLayout, QSlider, QPushButton, QTabWidget, QWidget,
 )
 
 from .sensors.scaling import sample_clock, sample_time
 from .sensors.demo import generate_lr4_demo_samples
+
+
+MAX_WATERFALL_SENSORS = 8
 
 
 def _downsample_minmax(samples, clock, start, end, max_points):
@@ -58,6 +62,18 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
             continue
         grouped.setdefault(sample.sensor_id, []).append(sample)
 
+    # Keep the 3D scene deliberately sparse. Choose lanes deterministically
+    # by display name so a large PID list cannot turn into an unreadable plot.
+    if len(grouped) > MAX_WATERFALL_SENSORS:
+        ranked = sorted(
+            grouped,
+            key=lambda sensor_id: (
+                min(sample.name.casefold() for sample in grouped[sensor_id]),
+                sensor_id.casefold(),
+            ),
+        )
+        grouped = {sensor_id: grouped[sensor_id]
+                   for sensor_id in ranked[:MAX_WATERFALL_SENSORS]}
     all_samples = [sample for lane in grouped.values() for sample in lane]
     if not all_samples:
         return []
@@ -80,7 +96,17 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
                 z = 50.0 if span == 0 else (value - low) / span * 100.0
             else:
                 z = 0.5 if span == 0 else (value - low) / span
-            points.append((sample_time(sample, clock) - start, z))
+            elapsed = sample_time(sample, clock) - start
+            points.append((elapsed, z))
+        raw_visible = sorted(
+            (sample for sample in lane_samples
+             if start <= sample_time(sample, clock) <= latest),
+            key=lambda sample: sample_time(sample, clock),
+        )
+        raw_points = [
+            (sample_time(sample, clock) - start, float(sample.value))
+            for sample in raw_visible
+        ]
         last = max(lane_samples, key=lambda sample: sample_time(sample, clock))
         lanes.append({
             "sensor_id": sensor_id,
@@ -90,119 +116,10 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
             "maximum": high,
             "current": float(last.value),
             "points": points,
+            "raw_points": raw_points,
+            "raw_times": [point[0] for point in raw_points],
         })
     return sorted(lanes, key=lambda lane: lane["name"].casefold())
-
-
-class WaterfallPlot(QWidget):
-    """QPainter-based perspective ridgeline plot; no optional 3D runtime needed."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.lanes = []
-        self.duration = 1.0
-        self.yaw = 0.0
-        self.zoom = 1.0
-        self.vertical_exaggeration = 1.0
-        self._drag_pos = None
-        self.setMinimumSize(620, 360)
-        self.setMouseTracking(True)
-
-    def set_lanes(self, lanes):
-        self.lanes = lanes
-        self.duration = max(
-            (point[0] for lane in lanes for point in lane["points"]),
-            default=1.0,
-        ) or 1.0
-        self.update()
-
-    def _project(self, x, lane, z, rect):
-        left = rect.left() + rect.width() * 0.13
-        bottom = rect.top() + rect.height() * 0.82
-        x_span = rect.width() * 0.70 * self.zoom
-        depth_span = rect.width() * 0.36 * self.zoom
-        height_span = rect.height() * 0.48 * self.zoom * self.vertical_exaggeration
-        angle = math.radians(28 + self.yaw)
-        depth = lane
-        px = left + (x / self.duration) * x_span + depth * depth_span * math.cos(angle)
-        py = bottom - depth * depth_span * math.sin(angle) - z * height_span
-        return px, py
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#171329"))
-        painter.setPen(QColor("#aaa5c7"))
-        painter.drawText(18, 24, "3D SENSOR WATERFALL")
-        if not self.lanes:
-            painter.setPen(QColor("#c7c1dd"))
-            painter.drawText(self.rect(), Qt.AlignCenter, "Waiting for valid sensor samples")
-            painter.end()
-            return
-
-        count = len(self.lanes)
-        for index, lane in enumerate(reversed(self.lanes)):
-            lane_index = index / max(1, count - 1)
-            points = lane["points"]
-            if len(points) < 1:
-                continue
-            baseline = [self._project(x, lane_index, 0, self.rect()) for x, _ in points]
-            ridge = [self._project(x, lane_index, z, self.rect()) for x, z in points]
-            polygon = QPolygonF()
-            for point in ridge:
-                polygon.append(QPointF(*point))
-            for point in reversed(baseline):
-                polygon.append(QPointF(*point))
-            hue = (sum(lane["sensor_id"].encode("utf-8")) * 3) % 360
-            color = QColor.fromHsv(hue, 190, 245)
-            gradient = QLinearGradient(0, self.height() * 0.35, 0, self.height() * 0.84)
-            gradient.setColorAt(0, color.lighter(145))
-            gradient.setColorAt(1, color.darker(190))
-            painter.setPen(QPen(color.lighter(130), 1.1))
-            painter.setBrush(gradient)
-            painter.drawPolygon(polygon)
-            painter.setPen(QPen(color.lighter(155), 1.0))
-            path = QPainterPath()
-            for point_index, point in enumerate(ridge):
-                if point_index == 0:
-                    path.moveTo(*point)
-                else:
-                    path.lineTo(*point)
-            painter.setBrush(Qt.NoBrush)
-            painter.drawPath(path)
-            label_x, label_y = self._project(0, lane_index, 0, self.rect())
-            painter.setPen(QColor("#eeeaf8"))
-            label = (f'{lane["name"]} [{lane["unit"]}]  '
-                     f'{lane["minimum"]:.3g}..{lane["maximum"]:.3g}  '
-                     f'now {lane["current"]:.3g}')
-            painter.drawText(int(label_x - 105), int(label_y + 18), label)
-
-        painter.setPen(QColor("#c7c1dd"))
-        painter.drawText(18, self.height() - 16, "TIME  →")
-        painter.drawText(18, self.height() - 34, f"Window: {self.duration:.1f} s")
-        painter.end()
-
-    def wheelEvent(self, event):
-        factor = 1.12 if event.angleDelta().y() > 0 else 1 / 1.12
-        self.zoom = min(2.5, max(0.55, self.zoom * factor))
-        self.update()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self._drag_pos = event.position().toPoint()
-
-    def mouseMoveEvent(self, event):
-        if self._drag_pos is not None:
-            delta = event.position().toPoint() - self._drag_pos
-            self.yaw = min(55, max(-35, self.yaw + delta.x() * 0.35))
-            self.vertical_exaggeration = min(
-                2.5, max(0.45, self.vertical_exaggeration - delta.y() * 0.008)
-            )
-            self._drag_pos = event.position().toPoint()
-            self.update()
-
-    def mouseReleaseEvent(self, event):
-        self._drag_pos = None
 
 
 class SensorWaterfallDialog(QDialog):
@@ -211,10 +128,12 @@ class SensorWaterfallDialog(QDialog):
     def __init__(self, sensor_capture, vin_provider=None, parent=None):
         super().__init__(parent)
         self.sensor_capture = sensor_capture
+        self._sensor_choices_initialized = False
+        self._sensor_colors = {}
         self.demo_samples = generate_lr4_demo_samples()
         self.vin_provider = vin_provider or (lambda: None)
-        self.setWindowTitle("FreeRov3r | 3D Sensor Waterfall")
-        self.resize(1100, 720)
+        self.setWindowTitle("FreeRov3r | Sensor Signal Scope")
+        self.resize(1200, 860)
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         controls.addWidget(QLabel("History:"))
@@ -226,11 +145,7 @@ class SensorWaterfallDialog(QDialog):
             self.window_combo.addItem(label, seconds)
         self.window_combo.setCurrentIndex(2)
         controls.addWidget(self.window_combo)
-        controls.addWidget(QLabel("Vertical scale:"))
-        self.scale_combo = QComboBox()
-        self.scale_combo.addItem("Native units (independent per sensor)", "native")
-        self.scale_combo.addItem("Normalized (0–100%)", "normalized")
-        controls.addWidget(self.scale_combo)
+        controls.addWidget(QLabel("Scale: independent per sensor"))
         controls.addWidget(QLabel("Data source:"))
         self.source_combo = QComboBox()
         self.source_combo.addItem("Live sensor data", "live")
@@ -238,15 +153,73 @@ class SensorWaterfallDialog(QDialog):
         controls.addWidget(self.source_combo)
         controls.addStretch(1)
         layout.addLayout(controls)
+        render_controls = QHBoxLayout()
         self.sensor_list = QListWidget()
-        self.sensor_list.setMaximumHeight(88)
-        self.sensor_list.itemChanged.connect(self.refresh_plot)
+        self.sensor_list.setMaximumHeight(104)
+        self.sensor_list.itemChanged.connect(self._on_sensor_item_changed)
         layout.addWidget(self.sensor_list)
-        self.plot = WaterfallPlot(self)
-        layout.addWidget(self.plot, 1)
+        self.selection_status = QLabel(f"Select up to {MAX_WATERFALL_SENSORS} sensors")
+        self.selection_status.setStyleSheet("color: #94A3B8;")
+        layout.addWidget(self.selection_status)
+        from .sensor_waterfall_2d import SharedCrosshairStackedPlot
+        from .sensor_waterfall_gl import WaterfallPlot
+
+        self.view_tabs = QTabWidget(self)
+        self.stacked_plot = SharedCrosshairStackedPlot(self.view_tabs)
+        self.view_tabs.addTab(self.stacked_plot, "2D Signal Scope")
+
+        waterfall_page = QWidget(self.view_tabs)
+        waterfall_layout = QVBoxLayout(waterfall_page)
+        waterfall_layout.setContentsMargins(4, 4, 4, 4)
+        waterfall_layout.addLayout(render_controls)
+        self.plot = WaterfallPlot(waterfall_page)
+        waterfall_layout.addWidget(self.plot, 1)
+        self.view_tabs.addTab(waterfall_page, "3D Waterfall")
+        layout.addWidget(self.view_tabs, 1)
+
+        self.cursor_readout = QLabel("Move across the plot to inspect sensor values")
+        self.cursor_readout.setStyleSheet("color: #CBD5E1; padding: 4px;")
+        layout.addWidget(self.cursor_readout)
+        self.plot.cursorMoved.connect(self._update_cursor_readout)
+        self.stacked_plot.cursorMoved.connect(
+            lambda elapsed: self.cursor_readout.setText(
+                f"t = {elapsed:.3f} s · 2D signal scope"
+            )
+        )
         self.window_combo.currentIndexChanged.connect(self.refresh_plot)
+        self.camera_combo = QComboBox()
+        self.camera_combo.addItems(["Perspective", "Top", "Front", "Side"])
+        render_controls.addWidget(QLabel("View:"))
+        render_controls.addWidget(self.camera_combo)
+        self.camera_combo.currentTextChanged.connect(self.plot.set_camera_preset)
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(15, 90)
+        self.opacity_slider.setValue(55)
+        self.opacity_slider.setFixedWidth(90)
+        render_controls.addWidget(QLabel("Opacity:"))
+        render_controls.addWidget(self.opacity_slider)
+        self.opacity_slider.valueChanged.connect(self.plot.set_opacity)
+        self.height_slider = QSlider(Qt.Horizontal)
+        self.height_slider.setRange(50, 250)
+        self.height_slider.setValue(140)
+        self.height_slider.setFixedWidth(90)
+        render_controls.addWidget(QLabel("Height:"))
+        render_controls.addWidget(self.height_slider)
+        self.height_slider.valueChanged.connect(self.plot.set_height_scale)
+        self.color_sensor_combo = QComboBox()
+        self.color_button = QPushButton("Sensor color")
+        self.detail_combo = QComboBox()
+        for label, points in (("Detail: Low", 90), ("Detail: Medium", 180),
+                              ("Detail: High", 360), ("Detail: Ultra", 720)):
+            self.detail_combo.addItem(label, points)
+        self.detail_combo.setCurrentIndex(1)
+        render_controls.addWidget(self.detail_combo)
+        self.detail_combo.currentIndexChanged.connect(self.refresh_plot)
+        render_controls.addWidget(self.color_sensor_combo)
+        render_controls.addWidget(self.color_button)
+        self.color_button.clicked.connect(self._choose_sensor_color)
+        self.color_sensor_combo.currentIndexChanged.connect(self._sync_color_button)
         self.source_combo.currentIndexChanged.connect(self.refresh_sensor_choices)
-        self.scale_combo.currentIndexChanged.connect(self.refresh_plot)
         self.refresh_sensor_choices()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(750)
@@ -283,9 +256,43 @@ class SensorWaterfallDialog(QDialog):
                 item = QListWidgetItem(f"{name} ({sensor_id})")
                 item.setData(Qt.UserRole, sensor_id)
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Checked if not selected or sensor_id in selected else Qt.Unchecked)
+                # On first load, select only the first eight signals.
+                # When rebuilding the list, retain the user's existing choices.
+                should_select = (
+                    sensor_id in selected if self._sensor_choices_initialized
+                    else self.sensor_list.count() < MAX_WATERFALL_SENSORS
+                )
+                item.setCheckState(Qt.Checked if should_select else Qt.Unchecked)
                 self.sensor_list.addItem(item)
             self.sensor_list.blockSignals(False)
+            self._sensor_choices_initialized = True
+        self._update_selection_status()
+        self.refresh_plot()
+
+    def _update_selection_status(self):
+        count = sum(
+            self.sensor_list.item(i).checkState() == Qt.Checked
+            for i in range(self.sensor_list.count())
+        )
+        self.selection_status.setText(
+            f"{count}/{MAX_WATERFALL_SENSORS} sensors selected · maximum {MAX_WATERFALL_SENSORS}"
+        )
+
+    def _on_sensor_item_changed(self, item):
+        if item.checkState() == Qt.Checked:
+            count = sum(
+                self.sensor_list.item(i).checkState() == Qt.Checked
+                for i in range(self.sensor_list.count())
+            )
+            if count > MAX_WATERFALL_SENSORS:
+                self.sensor_list.blockSignals(True)
+                item.setCheckState(Qt.Unchecked)
+                self.sensor_list.blockSignals(False)
+                self.selection_status.setText(
+                    f"Limit reached: choose no more than {MAX_WATERFALL_SENSORS} sensors"
+                )
+                return
+        self._update_selection_status()
         self.refresh_plot()
 
     def refresh_plot(self, *_):
@@ -299,7 +306,60 @@ class SensorWaterfallDialog(QDialog):
              else self.sensor_capture.samples),
             selected_ids=selected,
             window_seconds=int(self.window_combo.currentData()),
-            scale_mode=self.scale_combo.currentData(),
+            max_points=int(self.detail_combo.currentData()),
+            scale_mode="native",
             vin=(None if self.source_combo.currentData() == "demo" else self.vin_provider()),
         )
-        self.plot.set_lanes(lanes)
+        self.stacked_plot.set_lanes(lanes, self._sensor_colors)
+        self.plot.set_lanes(lanes, self._sensor_colors)
+        self.color_sensor_combo.blockSignals(True)
+        current = self.color_sensor_combo.currentData()
+        self.color_sensor_combo.clear()
+        for lane in lanes:
+            self.color_sensor_combo.addItem(lane["name"], lane["sensor_id"])
+        self.color_sensor_combo.setCurrentIndex(max(0, self.color_sensor_combo.findData(current)))
+        self.color_sensor_combo.blockSignals(False)
+        self._sync_color_button()
+
+
+    def _sync_color_button(self):
+        sensor_id = self.color_sensor_combo.currentData()
+        color = self._sensor_colors.get(sensor_id, "#38BDF8")
+        self.color_button.setStyleSheet(
+            f"QPushButton {{ color: {color}; border: 1px solid {color}; padding: 4px 8px; }}"
+        )
+        self.color_button.setEnabled(sensor_id is not None)
+
+    def _choose_sensor_color(self):
+        from PySide6.QtWidgets import QColorDialog
+        sensor_id = self.color_sensor_combo.currentData()
+        if not sensor_id:
+            return
+        chosen = QColorDialog.getColor(
+            QColor(self._sensor_colors.get(sensor_id, "#38BDF8")),
+            self, "Sensor surface color",
+        )
+        if chosen.isValid():
+            self._sensor_colors[sensor_id] = chosen.name()
+            self.refresh_plot()
+
+    def _update_cursor_readout(self, elapsed):
+        if not self.plot.lanes:
+            return
+        parts = [f"t = {elapsed:.2f} s"]
+        for lane in self.plot.lanes:
+            points = lane.get("raw_points", [])
+            if points:
+                times = lane.get("raw_times", [])
+                index = bisect_left(times, elapsed)
+                if index == 0:
+                    point = points[0]
+                elif index >= len(points):
+                    point = points[-1]
+                else:
+                    point = min(
+                        (points[index - 1], points[index]),
+                        key=lambda candidate: abs(candidate[0] - elapsed),
+                    )
+                parts.append(f'{lane["name"]}: {point[1]:.4g} {lane["unit"]}')
+        self.cursor_readout.setText("   |   ".join(parts))

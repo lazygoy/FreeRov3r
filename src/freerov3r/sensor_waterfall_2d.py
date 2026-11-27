@@ -1,0 +1,314 @@
+"""Synchronized 2D sensor lanes for precise vehicle signal analysis."""
+from __future__ import annotations
+
+from bisect import bisect_left
+
+import pyqtgraph as pg
+from pyqtgraph import SignalProxy
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QCursor
+from PySide6.QtWidgets import (
+    QFrame, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+)
+
+BACKGROUND = "#0B1220"
+TEXT = "#CBD5E1"
+LOCKED = "#FACC15"
+PALETTE = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80",
+           "#A78BFA", "#FACC15", "#FB923C", "#60A5FA")
+
+
+class _SensorPlotWidget(pg.PlotWidget):
+    """PlotWidget that reports pointer entry/exit without stealing mouse input."""
+    entered = Signal()
+    left = Signal()
+
+    def enterEvent(self, event):
+        self.entered.emit()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.left.emit()
+        super().leaveEvent(event)
+
+
+class SharedCrosshairStackedPlot(QWidget):
+    """Stacked native-unit sensor plots with a shared, lockable time cursor.
+
+    Each sensor retains its own Y scale. X coordinates are elapsed seconds from
+    the same capture window, so cross-sensor timing comparisons remain honest.
+    """
+    cursorMoved = Signal(float)
+    cursorLocked = Signal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.lanes = []
+        self.plots = []
+        self._vertical_lines = []
+        self._horizontal_lines = []
+        self._value_labels = []
+        self._proxies = []
+        self._active_index = None
+        self._cursor_time = None
+        self._locked = False
+        self._colors = {}
+        self._sensor_ids = ()
+        self._curves = []
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setStyleSheet(
+            f"QScrollArea {{ background: {BACKGROUND}; border: 0; }}"
+        )
+        self.content = QWidget()
+        self.content.setStyleSheet(f"background: {BACKGROUND};")
+        self.plot_layout = QVBoxLayout(self.content)
+        self.plot_layout.setContentsMargins(4, 4, 4, 4)
+        self.plot_layout.setSpacing(3)
+        self.scroll.setWidget(self.content)
+        outer.addWidget(self.scroll, 1)
+        self.setStyleSheet(f"background: {BACKGROUND};")
+
+    def set_lanes(self, lanes, colors=None):
+        self.lanes = list(lanes or [])[:8]
+        self._colors = dict(colors or {})
+        sensor_ids = tuple(lane["sensor_id"] for lane in self.lanes)
+        if sensor_ids and sensor_ids == self._sensor_ids and len(self._curves) == len(self.lanes):
+            for index, lane in enumerate(self.lanes):
+                points = lane.get("raw_points") or lane.get("points") or []
+                x_values = [float(point[0]) for point in points]
+                y_values = [float(point[1]) for point in points]
+                self._curves[index].setData(x_values, y_values)
+                low, high = (min(y_values), max(y_values)) if y_values else (0.0, 1.0)
+                padding = max((high - low) * 0.12, abs(high) * 0.01, 0.01)
+                self.plots[index].setYRange(low - padding, high + padding, padding=0)
+                self.plots[index].setLabel("left", f'{lane["name"]} ({lane["unit"]})', color=TEXT)
+                color = self._colors.get(lane["sensor_id"], PALETTE[index % len(PALETTE)])
+                self._curves[index].setPen(pg.mkPen(color, width=1.8))
+            self._sync_x_ranges()
+            return
+        self._sensor_ids = sensor_ids
+        self._clear_plots()
+        if not self.lanes:
+            placeholder = QLabel("Select one or more captured sensors")
+            placeholder.setStyleSheet(f"color: {TEXT}; padding: 18px;")
+            self.plot_layout.addWidget(placeholder)
+            return
+
+        for index, lane in enumerate(self.lanes):
+            plot = _SensorPlotWidget()
+            plot.setMinimumHeight(118)
+            plot.setMouseTracking(True)
+            plot.viewport().setMouseTracking(True)
+            plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            plot.setBackground(BACKGROUND)
+            plot.showGrid(x=True, y=True, alpha=0.22)
+            plot.getAxis("left").setTextPen(QColor(TEXT))
+            plot.getAxis("bottom").setTextPen(QColor(TEXT))
+            plot.getAxis("left").setPen(QColor("#64748B"))
+            plot.getAxis("bottom").setPen(QColor("#64748B"))
+            plot.getAxis("left").setWidth(105)
+            plot.setLabel("left", f'{lane["name"]} ({lane["unit"]})',
+                          color=TEXT)
+            if index == len(self.lanes) - 1:
+                plot.setLabel("bottom", "Elapsed time", units="s", color=TEXT)
+            else:
+                plot.hideAxis("bottom")
+            plot.getViewBox().setMouseEnabled(x=False, y=False)
+            plot.getViewBox().setMenuEnabled(False)
+            points = lane.get("raw_points") or lane.get("points") or []
+            if points:
+                x_values = [float(point[0]) for point in points]
+                y_values = [float(point[1]) for point in points]
+                color = self._colors.get(
+                    lane["sensor_id"], PALETTE[index % len(PALETTE)]
+                )
+                curve = plot.plot(
+                    x_values, y_values, pen=pg.mkPen(color, width=1.8),
+                    connect="finite", antialias=True,
+                )
+                curve.setDownsampling(auto=True, method="peak")
+                self._curves.append(curve)
+                low, high = min(y_values), max(y_values)
+                padding = max((high - low) * 0.12, abs(high) * 0.01, 0.01)
+                plot.setYRange(low - padding, high + padding, padding=0)
+            if self.plots:
+                plot.setXLink(self.plots[0])
+            vertical = pg.InfiniteLine(
+                angle=90, movable=False,
+                pen=pg.mkPen("#94A3B8", width=1, style=Qt.DashLine),
+            )
+            horizontal = pg.InfiniteLine(
+                angle=0, movable=False,
+                pen=pg.mkPen("#64748B", width=1, style=Qt.DotLine),
+            )
+            plot.addItem(vertical, ignoreBounds=True)
+            plot.addItem(horizontal, ignoreBounds=True)
+            vertical.hide()
+            horizontal.hide()
+            value_label = pg.TextItem("", color=TEXT, anchor=(0, 1), fill=QColor("#172438"))
+            plot.addItem(value_label, ignoreBounds=True)
+            value_label.hide()
+            self._value_labels.append(value_label)
+            self._vertical_lines.append(vertical)
+            self._horizontal_lines.append(horizontal)
+            self.plot_layout.addWidget(plot, 1)
+            self.plots.append(plot)
+            plot.entered.connect(lambda i=index: self._set_active(i))
+            plot.left.connect(self._handle_plot_leave)
+            proxy = SignalProxy(
+                plot.scene().sigMouseMoved, rateLimit=60,
+                slot=lambda event, i=index: self._mouse_moved(event, i),
+            )
+            self._proxies.append(proxy)
+            plot.scene().sigMouseClicked.connect(
+                lambda event, i=index: self._mouse_clicked(event, i)
+            )
+
+        self._sync_x_ranges()
+
+    def _clear_plots(self):
+        self._proxies.clear()
+        self._curves.clear()
+        self.plots.clear()
+        self._vertical_lines.clear()
+        self._horizontal_lines.clear()
+        self._value_labels.clear()
+        self._active_index = None
+        while self.plot_layout.count():
+            item = self.plot_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _sync_x_ranges(self):
+        if not self.plots:
+            return
+        end = max(
+            (float(point[0]) for lane in self.lanes
+             for point in (lane.get("raw_points") or lane.get("points") or [])),
+            default=1.0,
+        )
+        self.plots[0].setXRange(0.0, max(end, 0.1), padding=0)
+
+    def _set_active(self, index):
+        self._active_index = index
+        for current, line in enumerate(self._horizontal_lines):
+            line.setVisible(current == index and self._cursor_time is not None)
+
+    def _handle_plot_leave(self):
+        # The horizontal tracker belongs only to the plot under the pointer.
+        for line in self._horizontal_lines:
+            line.hide()
+        # Moving between stacked plots should not clear the shared cursor.
+        if not self._locked and not self.rect().contains(
+            self.mapFromGlobal(QCursor.pos())
+        ):
+            self._hide_cursor()
+
+    def _hide_cursor(self):
+        if self._locked:
+            return
+        for line in self._vertical_lines + self._horizontal_lines:
+            line.hide()
+        self._active_index = None
+
+    def _mouse_moved(self, event, index):
+        if not event:
+            return
+        scene_pos = event[0]
+        plot = self.plots[index]
+        if not plot.getViewBox().sceneBoundingRect().contains(scene_pos):
+            return
+        point = plot.getViewBox().mapSceneToView(scene_pos)
+        if self._locked:
+            for current, line in enumerate(self._horizontal_lines):
+                if current == index:
+                    line.setPos(float(point.y()))
+                    line.show()
+                else:
+                    line.hide()
+            return
+        elapsed = float(point.x())
+        self._cursor_time = elapsed
+        self._active_index = index
+        pen = pg.mkPen(LOCKED if self._locked else "#CBD5E1",
+                       width=1.6 if self._locked else 1,
+                       style=Qt.SolidLine if self._locked else Qt.DashLine)
+        for current, line in enumerate(self._vertical_lines):
+            line.setPos(elapsed)
+            line.setPen(pen)
+            line.show()
+            horizontal = self._horizontal_lines[current]
+            if current == index:
+                horizontal.setPos(float(point.y()))
+                horizontal.show()
+                value = self._nearest_value(self.lanes[current], elapsed)
+                label = self._value_labels[current]
+                label.setText(
+                    f"{elapsed:.2f} s  |  {value:.5g} {self.lanes[current]['unit']}"
+                )
+                label.setPos(elapsed, float(point.y()))
+                label.show()
+            else:
+                horizontal.hide()
+                self._value_labels[current].hide()
+        self.cursorMoved.emit(elapsed)
+
+    def _mouse_clicked(self, event, index):
+        if event.button() != Qt.LeftButton:
+            return
+        scene_pos = event.scenePos()
+        plot = self.plots[index]
+        if not plot.sceneBoundingRect().contains(scene_pos):
+            return
+        elapsed = float(plot.getViewBox().mapSceneToView(scene_pos).x())
+        self._cursor_time = elapsed
+        self._locked = not self._locked
+        pen = pg.mkPen(LOCKED if self._locked else "#CBD5E1",
+                       width=1.6 if self._locked else 1,
+                       style=Qt.SolidLine if self._locked else Qt.DashLine)
+        for line in self._vertical_lines:
+            line.setPos(elapsed)
+            line.setPen(pen)
+            line.show()
+        for current, line in enumerate(self._horizontal_lines):
+            if current == index:
+                line.setPos(float(plot.getViewBox().mapSceneToView(scene_pos).y()))
+                line.show()
+            else:
+                line.hide()
+        self._value_labels[index].setText(
+            f"{elapsed:.2f} s  |  {self._nearest_value(self.lanes[index], elapsed):.5g} {self.lanes[index]['unit']}"
+        )
+        self._value_labels[index].setPos(
+            elapsed, float(plot.getViewBox().mapSceneToView(scene_pos).y())
+        )
+        self._value_labels[index].show()
+        if self._locked:
+            self.cursorLocked.emit(elapsed)
+        else:
+            self.cursorMoved.emit(elapsed)
+
+    @staticmethod
+    def _nearest_value(lane, elapsed):
+        points = lane.get("raw_points") or lane.get("points") or []
+        if not points:
+            return float("nan")
+        times = lane.get("raw_times") or [float(point[0]) for point in points]
+        index = bisect_left(times, elapsed)
+        if index <= 0:
+            return float(points[0][1])
+        if index >= len(points):
+            return float(points[-1][1])
+        before, after = points[index - 1], points[index]
+        return float(min((before, after), key=lambda point: abs(point[0] - elapsed))[1])
+
+    def clear_lock(self):
+        self._locked = False
+        self._hide_cursor()

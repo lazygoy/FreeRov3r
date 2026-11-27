@@ -3,8 +3,8 @@
 import math
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtCore import Qt, QTimer, QMargins
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDockWidget, QGridLayout, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
@@ -24,6 +24,7 @@ from .sensor_waterfall import SensorWaterfallDialog
 
 
 PANEL_COUNTS = (1, 2, 4, 6, 8)
+GRAPH_PALETTE = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80", "#A78BFA", "#FACC15", "#FB923C", "#60A5FA")
 TIME_WINDOWS = (
     ("10 seconds", 10),
     ("30 seconds", 30),
@@ -99,12 +100,20 @@ class SensorCorrelationDialog(QDialog):
             self.chart = QChart()
             self.chart.legend().setVisible(True)
             self.chart.setAnimationOptions(QChart.NoAnimation)
+            self.chart.setBackgroundBrush(QColor("#111827"))
+            self.chart.setPlotAreaBackgroundBrush(QColor("#0B1220"))
+            self.chart.setPlotAreaBackgroundVisible(True)
+            self.chart.setTitleBrush(QColor("#E5E7EB"))
             self.chart_view = QChartView(self.chart)
             self.chart_view.setRenderHint(QPainter.Antialiasing)
             self.axis_x = QValueAxis()
             self.axis_x.setTitleText("Elapsed time (s)")
             self.axis_y = QValueAxis()
             self.axis_y.setTitleText("Normalized value (0-100%)")
+            for axis in (self.axis_x, self.axis_y):
+                axis.setLabelsColor(QColor("#D1D5DB"))
+                axis.setLinePenColor(QColor("#64748B"))
+                axis.setGridLineColor(QColor("#334155"))
             self.chart.addAxis(self.axis_x, Qt.AlignBottom)
             self.chart.addAxis(self.axis_y, Qt.AlignLeft)
             layout.addWidget(self.chart_view, 1)
@@ -194,7 +203,7 @@ class SensorCorrelationDialog(QDialog):
             return
         start = min(min(stamp for stamp, _ in points) for points in grouped.values())
         end = max(max(stamp for stamp, _ in points) for points in grouped.values())
-        for sensor_id, points in grouped.items():
+        for series_index, (sensor_id, points) in enumerate(sorted(grouped.items())):
             points.sort()
             low = min(value for _, value in points)
             high = max(value for _, value in points)
@@ -202,6 +211,7 @@ class SensorCorrelationDialog(QDialog):
             series = QLineSeries()
             first = next(sample for sample in samples if sample.sensor_id == sensor_id)
             series.setName(f"{first.name} [{first.unit or 'unitless'}] ({low:.4g} to {high:.4g})")
+            series.setPen(QPen(QColor(GRAPH_PALETTE[series_index % len(GRAPH_PALETTE)]), 2.8))
             for stamp, value in points[-5000:]:
                 normalized = 50.0 if span == 0 else (value - low) * 100.0 / span
                 series.append(stamp - start, normalized)
@@ -254,13 +264,16 @@ class SensorCorrelationDialog(QDialog):
 
 class _FloatingGraphWindow(QDialog):
     def __init__(self, dock, panel):
-        super().__init__(dock)
+        super().__init__(None, Qt.Window)
         self.dock = dock
         self.panel = panel
         self._restoring = False
         self.setWindowTitle(f"FreeRov3r | {panel.windowTitle()}")
-        self.resize(760, 460)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.setMinimumSize(900, 560)
+        self.resize(1100, 700)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
         panel.setParent(self)
         layout.addWidget(panel)
 
@@ -320,15 +333,31 @@ class SensorGraphPanel(QWidget):
 
         if HAS_CHARTS:
             self.chart = QChart()
+            self.chart.setTheme(QChart.ChartThemeDark)
             self.chart.legend().setVisible(True)
+            self.chart.legend().setLabelColor(QColor("#E5E7EB"))
+            self.chart.legend().setBrush(QColor("#111827"))
             self.chart.setAnimationOptions(QChart.NoAnimation)
+            self.chart.setBackgroundBrush(QColor("#111827"))
+            self.chart.setPlotAreaBackgroundBrush(QColor("#0B1220"))
+            self.chart.setPlotAreaBackgroundVisible(True)
+            self.chart.setTitleBrush(QColor("#E5E7EB"))
+            self.chart.setBackgroundRoundness(0)
+            self.chart.setMargins(QMargins(12, 8, 12, 8))
             self.chart_view = QChartView(self.chart)
             self.chart_view.setRenderHint(QPainter.Antialiasing)
+            self.chart_view.setBackgroundBrush(QColor("#0B1220"))
+            self.chart_view.setStyleSheet("QChartView { background: #0B1220; border: 0; }")
+            self.chart_view.viewport().setStyleSheet("background: #0B1220;")
             self.chart_view.setRubberBand(QChartView.RectangleRubberBand)
             self.axis_x = QValueAxis()
-            self.axis_x.setTitleText("Elapsed time (s)")
+            self.axis_x.setTitleText("Elapsed time (seconds)")
             self.axis_y = QValueAxis()
-            self.axis_y.setTitleText("Value")
+            self.axis_y.setTitleText("Signal value")
+            for axis in (self.axis_x, self.axis_y):
+                axis.setLabelsColor(QColor("#D1D5DB"))
+                axis.setLinePenColor(QColor("#64748B"))
+                axis.setGridLineColor(QColor("#334155"))
             self.chart.addAxis(self.axis_x, Qt.AlignBottom)
             self.chart.addAxis(self.axis_y, Qt.AlignLeft)
             outer.addWidget(self.chart_view, 1)
@@ -397,12 +426,19 @@ class SensorGraphPanel(QWidget):
             sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
             if self.vehicle_vin and sample_vin != self.vehicle_vin:
                 continue
-            if sample.quality != "valid" or not math.isfinite(sample.value):
+            if sample.quality != "valid":
+                continue
+            try:
+                value = float(sample.value)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(value):
                 continue
             grouped.setdefault(sample.sensor_id, []).append(sample)
 
         all_samples = [sample for values in grouped.values() for sample in values]
         if not all_samples:
+            self.chart.setTitle("Select one or more signals above")
             self.axis_x.setRange(0, 1)
             self.axis_y.setRange(0, 1)
             return
@@ -413,9 +449,18 @@ class SensorGraphPanel(QWidget):
         start = min(sample_time(sample, clock) for sample in all_samples)
         if window:
             start = max(start, latest - window)
+        multi_signal = len(grouped) > 1
+        self.chart.setTitle(
+            "Multiple signals · each trace scaled independently to 0–100%"
+            if multi_signal else "Single signal · native units"
+        )
+        self.axis_y.setTitleText(
+            "Relative range (%) · independent per signal"
+            if multi_signal else f"Value ({next(iter(grouped.values()))[0].unit or 'unitless'})"
+        )
         plotted_values = []
 
-        for sensor_id, samples in grouped.items():
+        for index, (sensor_id, samples) in enumerate(sorted(grouped.items())):
             samples = sorted(samples, key=lambda sample: sample_time(sample, clock))
             samples = [
                 sample for sample in samples
@@ -423,26 +468,34 @@ class SensorGraphPanel(QWidget):
             ][-2000:]
             if not samples:
                 continue
+            values = [float(sample.value) for sample in samples]
+            low, high = min(values), max(values)
+            span = high - low
+            first = samples[-1]
             series = QLineSeries()
-            first = samples[0]
-            series.setName(f"{first.name} [{first.unit or 'unitless'}]")
-            hue = sum(sensor_id.encode("utf-8")) % 360
-            series.setColor(QColor.fromHsv(hue, 190, 220))
-            for sample in samples:
-                value = float(sample.value)
-                series.append(sample_time(sample, clock) - start, value)
-                plotted_values.append(value)
+            series.setName(
+                f"{first.name} [{first.unit or 'unitless'}] · {low:.4g} to {high:.4g}"
+            )
+            series.setPen(QPen(QColor(GRAPH_PALETTE[index % len(GRAPH_PALETTE)]), 3.4))
+            for sample, value in zip(samples, values):
+                if multi_signal:
+                    plotted = 50.0 if span == 0 else (value - low) * 100.0 / span
+                else:
+                    plotted = value
+                    plotted_values.append(value)
+                series.append(sample_time(sample, clock) - start, plotted)
             self.chart.addSeries(series)
             series.attachAxis(self.axis_x)
             series.attachAxis(self.axis_y)
 
         duration = max(0.1, latest - start)
         self.axis_x.setRange(0, duration)
-        if plotted_values:
+        if multi_signal:
+            self.axis_y.setRange(0, 100)
+        elif plotted_values and self.auto_scale.isChecked():
             low, high = min(plotted_values), max(plotted_values)
-            if self.auto_scale.isChecked():
-                padding = max((high - low) * 0.12, abs(high) * 0.01, 0.1)
-                self.axis_y.setRange(low - padding, high + padding)
+            padding = max((high - low) * 0.12, abs(high) * 0.01, 0.1)
+            self.axis_y.setRange(low - padding, high + padding)
 
     def toggle_popout(self):
         if self._floating_host is None:
@@ -506,7 +559,7 @@ class SensorDashboardDock(QDockWidget):
         self.save_favorite_button = QPushButton("Save layout")
         self.save_favorite_button.clicked.connect(self.save_layout_to_favorite)
         controls.addWidget(self.save_favorite_button)
-        self.waterfall_button = QPushButton("3D Waterfall")
+        self.waterfall_button = QPushButton("Sensor Scope (2D / 3D)")
         self.waterfall_button.clicked.connect(self.open_waterfall)
         controls.addWidget(self.waterfall_button)
         self.compare_button = QPushButton("Compare / Events")
@@ -745,12 +798,19 @@ class SensorDashboardDock(QDockWidget):
         panel._floating_host = host
         panel.popout_button.setText("Dock back")
         panel.topmost.setEnabled(True)
-        host.show()
+        # Reparenting a hidden widget hides it in Qt; explicitly show the
+        # graph panel inside its new top-level window.
+        panel.show()
+        host.showNormal()
+        host.raise_()
+        host.activateWindow()
 
     def restore_panel(self, panel, host):
         if panel._floating_host is not host:
             return
         host._restoring = True
+        if host.layout() is not None:
+            host.layout().removeWidget(panel)
         host.hide()
         panel._floating_host = None
         panel.topmost.blockSignals(True)
