@@ -16,6 +16,8 @@ from .hardware.esp32_dual_framed_adapter import Esp32DualFramedSerialAdapter
 from .hardware.elm327_serial_adapter import Elm327SerialAdapter
 from .hardware.elm327_obd_adapter import Elm327ObdAdapter
 from .hardware.python_can_adapter import PythonCanAdapter
+from .hardware.j2534_discovery import discover_j2534_devices
+from .hardware.j2534_adapter import J2534CanAdapter, J2534Connection
 from .core.capture.session_context import CaptureSessionContext
 
 
