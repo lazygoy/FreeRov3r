@@ -81,4 +81,3 @@ class NavigationWorkspace(QScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setWidget(workspace)
         tabs.currentChanged.connect(on_tab_changed)
-        on_tab_changed(tabs.currentIndex())
