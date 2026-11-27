@@ -105,6 +105,8 @@ def estimate_clock_mapping(samples, *, best_sample_count=8) -> dict:
         "symmetric_path_uncertainty_floor_ns": min_rtt / 2.0,
         "fit_residual_p95_ns": residuals[p95_index],
         "drift_ppm": (slope - 1.0) * 1_000_000.0,
+        "host_coverage_start_ns": min(ys),
+        "host_coverage_end_ns": max(ys),
         "mapping": {
             "host_monotonic_ns": "intercept + slope * device_time_ns",
             "intercept_ns": intercept,
@@ -114,5 +116,62 @@ def estimate_clock_mapping(samples, *, best_sample_count=8) -> dict:
             "Half the minimum round-trip delay is a precision floor only under "
             "a symmetric-path assumption. Unknown transport asymmetry and host "
             "scheduling latency are not bounded by this estimate."
+        ),
+    }
+
+
+
+def compare_clock_mappings(mapping_a: dict, mapping_b: dict) -> dict:
+    """Compare two independently calibrated device clocks on common host time."""
+    if not isinstance(mapping_a, dict) or not isinstance(mapping_b, dict):
+        raise ValueError("Two valid clock mapping results are required")
+    fit_a = mapping_a.get("mapping")
+    fit_b = mapping_b.get("mapping")
+    if not fit_a or not fit_b:
+        return {"status": "insufficient calibration", "comparison": None}
+
+    start = max(
+        mapping_a.get("host_coverage_start_ns", 0),
+        mapping_b.get("host_coverage_start_ns", 0),
+    )
+    end = min(
+        mapping_a.get("host_coverage_end_ns", 0),
+        mapping_b.get("host_coverage_end_ns", 0),
+    )
+    if end <= start:
+        return {
+            "status": "no overlapping calibration coverage",
+            "comparison": None,
+        }
+
+    def device_time(mapping, host_ns):
+        return (
+            host_ns - mapping["intercept_ns"]
+        ) / mapping["slope"]
+
+    offset_start = device_time(fit_b, start) - device_time(fit_a, start)
+    offset_end = device_time(fit_b, end) - device_time(fit_a, end)
+    duration = end - start
+    return {
+        "status": "calibrated apparent relationship; asymmetry unbounded",
+        "host_overlap_start_ns": start,
+        "host_overlap_end_ns": end,
+        "apparent_device_offset_start_ns": offset_start,
+        "apparent_device_offset_end_ns": offset_end,
+        "apparent_relative_drift_ppm": (
+            (offset_end - offset_start) / duration
+        ) * 1_000_000.0,
+        "combined_fit_residual_p95_ns": (
+            mapping_a.get("fit_residual_p95_ns", 0.0)
+            + mapping_b.get("fit_residual_p95_ns", 0.0)
+        ),
+        "combined_symmetric_path_uncertainty_floor_ns": (
+            mapping_a.get("symmetric_path_uncertainty_floor_ns", 0.0)
+            + mapping_b.get("symmetric_path_uncertainty_floor_ns", 0.0)
+        ),
+        "uncertainty_note": (
+            "Fit residual and half-RTT precision indicators assume symmetric "
+            "transport. Unknown path asymmetry and host scheduling are not "
+            "bounded; this is software clock calibration, not hardware sync."
         ),
     }
