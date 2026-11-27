@@ -352,3 +352,28 @@ def test_module_discovery_import_rejects_transmitting_or_untraceable_reports(tmp
         store.import_module_discovery_report(
             report, applicability=_applicability()
         )
+
+
+
+def test_multi_capture_import_requires_stable_ids_for_each_capture(tmp_path):
+    store = _store(tmp_path)
+    report = {
+        "method": "independent_passive_capture_comparison",
+        "transmission_performed": False,
+        "nodes": [{
+            "can_id": 0x7E8,
+            "extended": False,
+            "channel": "HS-CAN",
+            "capture_names": ["ignition_on", "engine_running"],
+        }],
+    }
+    with pytest.raises(ValueError, match="stable capture_ids"):
+        store.import_module_discovery_report(
+            report, applicability=_applicability()
+        )
+    with pytest.raises(ValueError, match="missing stable capture identifiers"):
+        store.import_module_discovery_report(
+            report,
+            applicability=_applicability(),
+            capture_ids={"ignition_on": "session-001"},
+        )
