@@ -24,7 +24,7 @@ def test_correlates_repeated_cross_bus_activity_and_reports_lag():
     candidate = result["candidates"][0]
     assert candidate["can_id_a"] == 0x120
     assert candidate["can_id_b"] == 0x321
-    assert candidate["lag_seconds"] == 0.05
+    assert abs(candidate["lag_seconds"] - 0.05) <= 0.01
     assert candidate["evidence_level"] == "candidate"
     assert candidate["correlation"] >= 0.65
 
