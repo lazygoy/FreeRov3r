@@ -436,6 +436,48 @@ class VehicleKnowledgeStore:
             if _matches(item, profile_id, model_year, engine_id)
         ]
 
+    def module_inventory(self, profile_id, *, model_year=None, engine_id=None):
+        """Return vehicle-scoped module observations without conflating them with identities.
+
+        Passive CAN nodes are observations. A module identity is only considered
+        verified when its separate knowledge record has been explicitly reviewed
+        as verified or supported.
+        """
+        applicable = self.for_vehicle(
+            profile_id, model_year=model_year, engine_id=engine_id
+        )
+        observed_nodes = [
+            item for item in applicable
+            if item.get("artifact_type") == "observed_can_node"
+        ]
+        module_records = [
+            item for item in applicable
+            if item.get("artifact_type") == "module_identity"
+        ]
+        verified_modules = [
+            item for item in module_records
+            if item.get("status") in {"verified", "supported"}
+        ]
+        return {
+            "profile_id": profile_id,
+            "model_year": model_year,
+            "engine_id": engine_id,
+            "observed_can_nodes": observed_nodes,
+            "candidate_module_identities": [
+                item for item in module_records
+                if item.get("status") in {"observed", "candidate", "documented"}
+            ],
+            "verified_module_identities": verified_modules,
+            "supported_module_identities": [
+                item for item in verified_modules if item.get("status") == "supported"
+            ],
+            "identity_warning": (
+                "Observed CAN IDs and probable UDS responder relationships are not "
+                "physical ECU identities. Only separately verified module_identity "
+                "records are listed as verified modules."
+            ),
+        }
+
     def diagnostic_catalog(self, profile_id, *, model_year=None, engine_id=None):
         """Return only verified facts and explicitly supported capabilities.
 
