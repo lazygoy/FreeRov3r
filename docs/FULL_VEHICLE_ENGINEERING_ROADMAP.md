@@ -165,3 +165,15 @@ A user may still perform read-only diagnostics, capture traffic, inspect files, 
 ## Current implementation boundary
 
 The initial Tuning workspace is a read-only research log and workflow tracker. It does not currently transmit CAN messages, spoof signals, request ECU security access, write configurations, unlock ECUs, or flash modules. Those capabilities are future stages and must be implemented separately with module-specific validation and explicit user control.
+
+
+### Independent diagnostic request permissions
+
+Standard SAE J1979 OBD-II requests and UDS diagnostic requests have separate
+capability, implementation, and authorization gates. Enabling active OBD-II
+requests does not authorize UDS. UDS requires an adapter to declare both
+\`uds_active_requests\` and \`uds_diagnostic_requests_implemented\`, plus the
+separate \`uds_requests_enabled\` policy flag. General CAN transmission remains
+a third, separately controlled capability and still requires bench mode.
+Current ESP32 firmware remains receive-only, and current ELM327 support remains
+standard OBD-II only.
