@@ -33,10 +33,11 @@ def _canonical_json(value):
 def _candidate_signature(candidate):
     if not isinstance(candidate, dict):
         raise ValueError("candidate must be a dictionary")
-    missing = [key for key in _SIGNATURE_FIELDS if key not in candidate]
+    required = [key for key in _SIGNATURE_FIELDS if key not in {"bit_a", "bit_b"}]
+    missing = [key for key in required if key not in candidate]
     if missing:
         raise ValueError("candidate is missing signature fields: " + ", ".join(missing))
-    signature = {key: candidate[key] for key in _SIGNATURE_FIELDS}
+    signature = {key: candidate.get(key) for key in _SIGNATURE_FIELDS}
     if signature["signal_type"] not in {"byte", "bit"}:
         raise ValueError("signal_type must be 'byte' or 'bit'")
     for key in ("can_id_a", "can_id_b"):
@@ -125,6 +126,8 @@ class SignalEvidenceStore:
     ):
         """Add or update a candidate, retaining independent capture provenance."""
         signature = _candidate_signature(candidate)
+        if isinstance(source_capture_ids, (str, bytes)):
+            raise ValueError("source_capture_ids must be an iterable of capture IDs, not a string")
         capture_ids = []
         for value in source_capture_ids or ():
             capture_id = str(value).strip()
@@ -143,7 +146,7 @@ class SignalEvidenceStore:
             record = {
                 "record_id": record_id,
                 "signature": signature,
-                "status": "probable",
+                "status": "probable" if len(capture_ids) >= 2 else "observed",
                 "created_at": now,
                 "updated_at": now,
                 "source_capture_ids": [],
@@ -161,6 +164,12 @@ class SignalEvidenceStore:
             document["records"].append(record)
         added = [item for item in capture_ids if item not in record["source_capture_ids"]]
         record["source_capture_ids"].extend(added)
+        advanced = (
+            record["status"] == "observed"
+            and len(record["source_capture_ids"]) >= 2
+        )
+        if advanced:
+            record["status"] = "probable"
         if vehicle_context:
             if not isinstance(vehicle_context, dict):
                 raise ValueError("vehicle_context must be a dictionary")
@@ -179,6 +188,11 @@ class SignalEvidenceStore:
             record["history"].append({
                 "at": now, "event": "capture_evidence_added",
                 "detail": {"capture_ids": added},
+            })
+        if advanced:
+            record["history"].append({
+                "at": now, "event": "evidence_level_advanced",
+                "detail": "Independent capture provenance now spans at least two captures",
             })
         record["updated_at"] = now
         self._write(document)

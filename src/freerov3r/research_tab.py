@@ -35,6 +35,7 @@ from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicit
 from freerov3r.diagnostics.cross_bus_correlation import analyze_cross_bus_correlation
 from freerov3r.diagnostics.cross_bus_signal_correlation import analyze_cross_bus_signal_correlation
 from freerov3r.diagnostics.cross_capture_signal_validation import validate_cross_capture_signals
+from freerov3r.diagnostics.signal_evidence import SignalEvidenceStore
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.dbc_signal_behavior import (
@@ -2725,6 +2726,58 @@ class ResearchTab(QWidget):
             captures.append({"name": name, "frames": self.reference_frames})
         return captures
 
+    def _save_cross_capture_candidates(self, candidates, captures, parent):
+        """Persist explicitly selected-by-action repeatable candidates and provenance."""
+        ledger_path = Path.home() / ".freerov3r" / "research" / "signal-evidence.json"
+        capture_ids = {}
+        for capture in captures:
+            name = str(capture.get("name") or "Unnamed capture")
+            metadata = capture.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            identifier = (
+                metadata.get("capture_id")
+                or metadata.get("session_id")
+                or metadata.get("session_uuid")
+                or metadata.get("imported_from")
+                or name
+            )
+            capture_ids[name] = str(identifier)
+
+        try:
+            store = SignalEvidenceStore(ledger_path)
+            saved = 0
+            for candidate in candidates:
+                evidence = candidate.get("capture_evidence") or []
+                source_ids = []
+                for item in evidence:
+                    name = str(item.get("capture_name") or "").strip()
+                    identifier = capture_ids.get(name, name)
+                    if identifier and identifier not in source_ids:
+                        source_ids.append(identifier)
+                if not source_ids:
+                    raise ValueError("A candidate has no traceable source capture references.")
+                store.add_candidate(
+                    candidate,
+                    source_capture_ids=source_ids,
+                    notes="Saved from Research workspace cross-capture validation.",
+                )
+                saved += 1
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(
+                parent, "Signal evidence save failed",
+                f"Could not save the candidate evidence ledger:\\n{exc}",
+            )
+            return
+
+        QMessageBox.information(
+            parent, "Signal evidence saved",
+            f"Saved or updated {saved} candidate record(s).\\n\\nLedger:\\n{ledger_path}",
+        )
+        self.status_label.setText(
+            f"Saved {saved} repeatable signal candidate(s) to the evidence ledger"
+        )
+
     def analyze_cross_capture_signals(self):
         """Validate signal relationships independently across loaded capture files."""
         self._flush_pending_frames()
@@ -2807,9 +2860,21 @@ class ResearchTab(QWidget):
             + "\n".join(f"- {item}" for item in report["limitations"])
         )
         layout.addWidget(notes)
+        action_row = QHBoxLayout()
+        save_button = QPushButton("Save candidates to evidence ledger")
+        save_button.setEnabled(bool(report["candidates"]))
+        save_button.setToolTip(
+            "Persist these repeatable candidates with their source capture references and review status."
+        )
+        save_button.clicked.connect(
+            lambda: self._save_cross_capture_candidates(report["candidates"], captures, dialog)
+        )
+        action_row.addWidget(save_button)
+        action_row.addStretch()
         close_button = QPushButton("Close")
         close_button.clicked.connect(dialog.accept)
-        layout.addWidget(close_button)
+        action_row.addWidget(close_button)
+        layout.addLayout(action_row)
         dialog.exec()
         self.status_label.setText(
             f"Cross-capture validation: {report['candidate_count']} repeatable candidate(s); no automatic verification"
