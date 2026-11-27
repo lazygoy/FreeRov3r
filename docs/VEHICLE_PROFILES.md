@@ -75,3 +75,38 @@ provided and tested by the plugin before they are advertised as supported.
 - Keep manufacturer-specific requests read-only until the relevant protocol,
   addressing and vehicle configuration are verified.
 - Plugins must not send ECU writes, coding or actuator commands by default.
+
+
+## Research-to-diagnostics knowledge bridge
+
+The shared vehicle knowledge catalog lives in
+\`freerov3r.core.vehicle.knowledge.VehicleKnowledgeStore\`. It is separate from
+the specialized Research evidence ledgers and is intended to be consumed by
+both Research and the Diagnostic services.
+
+Each knowledge record has an artifact type/key, structured data, explicit
+vehicle applicability, provenance, review history, and one evidence status:
+
+- \`observed\` and \`candidate\`: retained for engineering investigation only.
+- \`documented\`: source-backed and applicable to a stated vehicle, but not
+  independently verified.
+- \`verified\`: independently checked with grade-A evidence and verification
+  notes. It is available as verified knowledge, not automatically as an
+  executable feature.
+- \`supported\`: verified knowledge that also names the implementation and test
+  references proving that FreeRov3r implements and tests the capability.
+
+The Diagnostic catalog returns verified knowledge and supported capabilities
+as separate collections. It does not expose observed/candidate findings as
+production facts. A signal research record can be imported only after it has
+been reviewed as documented or verified. Importing does not delete or modify
+the original Research record and never marks the imported item supported.
+
+Applicability can be limited by profile IDs, model-year range, and engine IDs.
+Truly manufacturer-independent knowledge must be explicitly marked
+\`platform_independent\`; a generic protocol definition must not accidentally
+inherit Land Rover ECU addressing or behavior.
+
+This catalog is a data and service foundation. It does not itself create a
+live ECU scanner, decode an unverified signal, register an executable service
+routine, or enable vehicle writes.
