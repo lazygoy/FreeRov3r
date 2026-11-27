@@ -370,3 +370,35 @@ def test_diagnostic_action_helpers_are_available_from_app_module():
     assert app_request_dtc_scan is request_dtc_scan
     assert callable(request_dtc_scan)
 
+def test_vehicle_context_helper_is_available_from_app_module():
+    from freerov3r.app import update_vehicle_context as app_update_vehicle_context
+    from freerov3r.vehicle_context import update_vehicle_context
+
+    assert app_update_vehicle_context is update_vehicle_context
+
+
+def test_vehicle_context_disables_l319_workspaces_for_generic_vehicle():
+    from types import SimpleNamespace
+
+    from freerov3r.vehicle_context import update_vehicle_context
+
+    tab_state = {}
+    tabs = SimpleNamespace(
+        count=lambda: 3,
+        tabText=lambda index: ["Capture", "Special Functions", "Topology"][index],
+        setTabEnabled=lambda index, enabled: tab_state.__setitem__(index, enabled),
+        setTabToolTip=lambda index, tooltip: None,
+    )
+    window = SimpleNamespace(
+        settings={"active_vehicle": {"profile_id": "generic", "make": "Toyota", "model": "Camry"}},
+        vehicle_profiles=SimpleNamespace(get=lambda _profile: None),
+        sensor_capture=SimpleNamespace(vehicle_context={}),
+        tabs=tabs,
+        _refresh_workspace_header=lambda: None,
+        graph_tab=SimpleNamespace(set_vehicle_vin=lambda _vin: None),
+    )
+
+    update_vehicle_context(window)
+    assert window.sensor_capture.vehicle_context["vin"] is None
+    assert tab_state == {1: False, 2: False}
+
