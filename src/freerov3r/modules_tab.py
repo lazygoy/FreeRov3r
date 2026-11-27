@@ -5,12 +5,13 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
+    QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
     QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
+from .core.vehicle.knowledge import VehicleKnowledgeStore
 
 
 class ModulesTab(QWidget):
@@ -21,6 +22,10 @@ class ModulesTab(QWidget):
         self.network = network
         self.simulation_enabled = False
         self.current_module_code = None
+        self.vehicle_context = None
+        self.knowledge_store = VehicleKnowledgeStore(
+            Path.home() / ".freerov3r" / "vehicle" / "knowledge.json"
+        )
         layout = QVBoxLayout(self)
         note = QLabel("<b>Module diagnostics simulator</b><br>Synthetic L319-style module categories and example DTCs. This is a test fixture, not a scan of a real vehicle. Real ECU addressing and UDS services are not enabled.")
         note.setWordWrap(True)
@@ -47,6 +52,36 @@ class ModulesTab(QWidget):
         self.clear_all_btn.clicked.connect(self.clear_all)
         actions.addWidget(self.clear_all_btn)
         layout.addLayout(actions)
+
+        evidence_box = QGroupBox("RETAINED VEHICLE NETWORK EVIDENCE")
+        evidence_layout = QVBoxLayout(evidence_box)
+        evidence_note = QLabel(
+            "Passive capture observations only. A CAN ID or probable UDS responder is not a confirmed ECU identity. "
+            "This inventory does not represent a live scan."
+        )
+        evidence_note.setWordWrap(True)
+        evidence_layout.addWidget(evidence_note)
+        self.observed_nodes_table = QTableWidget(0, 7)
+        self.observed_nodes_table.setHorizontalHeaderLabels([
+            "Channel", "CAN ID", "Format", "Frames", "Observed role",
+            "Captures", "Evidence",
+        ])
+        self.observed_nodes_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.observed_nodes_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.observed_nodes_table.setSelectionBehavior(QTableWidget.SelectRows)
+        evidence_layout.addWidget(self.observed_nodes_table)
+        self.observed_nodes_status = QLabel("Select a vehicle to load retained network observations.")
+        evidence_layout.addWidget(self.observed_nodes_status)
+
+        self.verified_modules_table = QTableWidget(0, 4)
+        self.verified_modules_table.setHorizontalHeaderLabels([
+            "Verified module identity", "Network", "Status", "Source",
+        ])
+        self.verified_modules_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.verified_modules_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        evidence_layout.addWidget(QLabel("Independently verified module identities"))
+        evidence_layout.addWidget(self.verified_modules_table)
+        layout.addWidget(evidence_box)
 
         split = QHBoxLayout()
         self.module_tree = QTreeWidget()
@@ -88,6 +123,79 @@ class ModulesTab(QWidget):
         layout.addLayout(split)
         self.set_simulation_enabled(False)
         self.refresh_tree()
+
+    def set_vehicle_context(self, context):
+        self.vehicle_context = context
+        self.refresh_evidence_inventory()
+
+    def refresh_evidence_inventory(self):
+        """Display retained observations separately from synthetic module fixtures."""
+        self.observed_nodes_table.setRowCount(0)
+        self.verified_modules_table.setRowCount(0)
+        if self.vehicle_context is None:
+            self.observed_nodes_status.setText("No vehicle context selected.")
+            return
+        profile_id = str(getattr(self.vehicle_context, "profile_id", "generic") or "generic")
+        vehicle = getattr(self.vehicle_context, "vehicle", {}) or {}
+        model_year = vehicle.get("model_year")
+        engine_id = vehicle.get("engine_id")
+        try:
+            inventory = self.knowledge_store.module_inventory(
+                profile_id, model_year=model_year, engine_id=engine_id
+            )
+        except (OSError, ValueError) as exc:
+            self.observed_nodes_status.setText(f"Unable to load retained vehicle evidence: {exc}")
+            return
+
+        nodes = inventory["observed_can_nodes"]
+        self.observed_nodes_table.setRowCount(len(nodes))
+        for row, record in enumerate(nodes):
+            data = record.get("data") or {}
+            values = (
+                str(data.get("channel") or "Unknown"),
+                f"0x{int(data.get('can_id', 0)):X}",
+                "EXT" if data.get("extended") else "STD",
+                str(data.get("frame_count", 0)),
+                str(data.get("role") or "observed_can_node"),
+                str(len(record.get("source_capture_ids") or [])),
+                str(record.get("status") or "observed").upper(),
+            )
+            tooltip = "\n".join((
+                str(data.get("interpretation") or ""),
+                "Capture IDs: " + ", ".join(record.get("source_capture_ids") or []),
+                "Request IDs: " + ", ".join(
+                    f"0x{int(value):X}" for value in data.get("request_ids", [])
+                ),
+                "Services: " + ", ".join(
+                    f"0x{int(value):02X}" for value in data.get("services", [])
+                ),
+                "Physical ECU identity confirmed: No",
+            ))
+            for column, value in enumerate(values):
+                cell = QTableWidgetItem(value)
+                cell.setToolTip(tooltip)
+                self.observed_nodes_table.setItem(row, column, cell)
+
+        verified = inventory["verified_module_identities"]
+        self.verified_modules_table.setRowCount(len(verified))
+        for row, record in enumerate(verified):
+            data = record.get("data") or {}
+            values = (
+                str(data.get("name") or record.get("artifact_key") or "Unnamed module"),
+                str(data.get("network") or "Not specified"),
+                str(record.get("status") or "").upper(),
+                str(record.get("source_reference") or ", ".join(
+                    record.get("source_references") or []
+                )),
+            )
+            for column, value in enumerate(values):
+                self.verified_modules_table.setItem(row, column, QTableWidgetItem(value))
+
+        self.observed_nodes_status.setText(
+            f"{len(nodes)} retained CAN node observation(s); "
+            f"{len(verified)} verified module identity record(s). "
+            "No live ECU scan was performed."
+        )
 
     def set_network(self, network: SimulatedModuleNetwork):
         self.network = network
