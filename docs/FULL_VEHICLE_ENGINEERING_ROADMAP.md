@@ -249,3 +249,12 @@ the client is not wired into the Diagnostic UI. Physical use still requires
 an adapter implementation that explicitly supports UDS, correct ECU
 addressing from verified vehicle data, and integration with the adapter's
 receive ownership/threading model.
+
+
+#### UDS response deadline enforcement
+
+The UDS transaction deadline is passed into ISO-TP receive as the remaining
+time budget. ISO-TP applies that budget across the complete response payload,
+including every Consecutive Frame, instead of restarting a full timeout for
+each frame. This prevents a segmented response from extending the transaction
+indefinitely through a sequence of individually timely frames.

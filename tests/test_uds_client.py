@@ -17,7 +17,9 @@ class FakeTransport:
     def send_payload(self, payload):
         self.sent.append(bytes(payload))
 
-    def receive_payload(self):
+    def receive_payload(self, timeout=None):
+        self.receive_timeouts = getattr(self, "receive_timeouts", [])
+        self.receive_timeouts.append(timeout)
         if not self.responses:
             raise TimeoutError("no response")
         return self.responses.pop(0)
@@ -159,3 +161,13 @@ def test_read_dtc_information_decodes_dtc_records():
 
     assert transport.sent == [bytes.fromhex("19 02 FF")]
     assert result["dtcs"] == [{"dtc": 0x012345, "status": 0x0F}]
+
+
+def test_remaining_transaction_deadline_is_passed_to_iso_tp():
+    transport = FakeTransport([bytes.fromhex("62 F1 90 12 34")])
+    client = make_client(transport)
+
+    client.read_data_by_identifier([0xF190], confirmed=True, timeout=1.25)
+
+    assert len(transport.receive_timeouts) == 1
+    assert 0 < transport.receive_timeouts[0] <= 1.25

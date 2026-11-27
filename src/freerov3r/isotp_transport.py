@@ -198,9 +198,24 @@ class IsoTpTransport:
             block_count += 1
         return {"payload_bytes": len(payload), "frames_sent": frames_sent}
 
-    def receive_payload(self):
-        """Receive one ISO-TP payload and issue Flow Control when required."""
-        frame = self._receive_matching(self.rx_id, self.timeout)
+    def receive_payload(self, timeout=None):
+        """Receive one ISO-TP payload within one overall response deadline.
+
+        The optional timeout bounds the complete ISO-TP payload, including all
+        Consecutive Frames, rather than restarting the timeout for each frame.
+        """
+        response_timeout = self.timeout if timeout is None else float(timeout)
+        if response_timeout <= 0:
+            raise ValueError("receive timeout must be positive")
+        deadline = time.monotonic() + response_timeout
+
+        def receive_next():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise IsoTpTimeout("Timed out waiting for complete ISO-TP payload")
+            return self._receive_matching(self.rx_id, remaining)
+
+        frame = receive_next()
         data = bytes(frame.data)
         pci_type = data[0] >> 4
 
@@ -222,7 +237,7 @@ class IsoTpTransport:
         block_count = 0
 
         while len(result) < expected_length:
-            next_frame = self._receive_matching(self.rx_id, self.timeout)
+            next_frame = receive_next()
             chunk = bytes(next_frame.data)
             if chunk[0] >> 4 != 2:
                 raise IsoTpProtocolError("Expected Consecutive Frame during segmented transfer")
