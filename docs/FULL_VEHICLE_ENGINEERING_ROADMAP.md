@@ -258,3 +258,13 @@ time budget. ISO-TP applies that budget across the complete response payload,
 including every Consecutive Frame, instead of restarting a full timeout for
 each frame. This prevents a segmented response from extending the transaction
 indefinitely through a sequence of individually timely frames.
+
+
+#### UDS request transmission deadline
+
+The same UDS transaction deadline also bounds ISO-TP request transmission.
+For segmented requests, Flow Control WAIT frames and block boundaries consume
+the remaining deadline rather than restarting a full timeout. STmin delays
+that cannot fit within the remaining budget fail before another Consecutive
+Frame is sent. A blocking hardware driver's own send call remains subject to
+that driver's timeout behavior.
