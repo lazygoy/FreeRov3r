@@ -212,3 +212,44 @@ Mocked tests cover export validation, ABI-shaped structures, successful and
 empty inventories, bounded module counts, API error handling, item destruction,
 and session cleanup. Real vendor DLL compatibility remains unverified until
 tested against an identified API implementation and VCI.
+
+
+## D-PDU capability and resource-ID slice
+
+The branch now includes `hardware.dpdu_mdf`, which parses the standard
+`MVCI_MODULE_DESCRIPTION` MDF and `MVCI_CABLE_DESCRIPTION` CDF files.
+
+MDF parsing extracts:
+- PINTYPE IDs and names.
+- BUSTYPE IDs and names.
+- PROTOCOL IDs and names.
+- RESOURCE IDs, bus/protocol references, and module-side pin assignments.
+- MODULETYPE IDs and the resources associated with each module type.
+
+CDF parsing extracts cable definitions and the mappings between MVCI module
+pins and DLC pins. The mapping helper requires one explicitly selected cable.
+It does not assume that a cable is physically attached, and it fails if a
+resource pin is not mapped by that cable.
+
+The D-PDU runtime now also exposes
+`DPduApiRuntime.enumerate_resource_ids()`. It builds the standard
+`PDU_RSC_DATA` structure from bus type ID, protocol ID, and DLC pin/type
+pairs, calls `PDUGetResourceIds`, copies the returned module/resource ID
+lists, and releases the API-owned result with `PDUDestroyItem`.
+
+This operation queries the D-PDU API's constructed resource table. It does
+not call `PDUModuleConnect`, create a ComLogicalLink, or transmit vehicle
+traffic. Resource availability and conflicts are separate checks and are not
+inferred from an ID match. The selected module handle and pin mapping must
+come from the matching module inventory, MDF, and selected CDF cable.
+
+The parser is bounded by file-size and object-count limits, resolves XML
+IDREF relationships, supports namespaced XML, and rejects unresolved resource
+references rather than guessing. Tests cover MDF resource resolution, module
+type membership, CDF pin mapping, namespaced documents, invalid references,
+relative description paths, and mocked PDUGetResourceIds memory handling.
+
+The ISO description model defines resources as a bus type, protocol, and
+physical pins; the MDF supplies supported IDs and the CDF maps module pins to
+the vehicle connector. PDUGetResourceIds accepts those identifiers and
+returns API-allocated resource-ID items that the application must destroy.
