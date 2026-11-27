@@ -1,4 +1,4 @@
-"""Perspective 3D waterfall/ridgeline visualization for live sensor samples."""
+"""Insight-style 3D sensor-history visualization for live vehicle samples."""
 
 import math
 
