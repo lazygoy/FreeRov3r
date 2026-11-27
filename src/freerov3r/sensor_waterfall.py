@@ -409,6 +409,7 @@ class SensorWaterfallDialog(QDialog):
              else self.sensor_capture.samples),
             selected_ids=selected,
             window_seconds=int(self.window_combo.currentData()),
+            max_points=int(self.detail_combo.currentData()),
             scale_mode=self.scale_combo.currentData(),
             vin=(None if self.source_combo.currentData() == "demo" else self.vin_provider()),
         )
