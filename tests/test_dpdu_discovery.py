@@ -147,3 +147,23 @@ def test_discovery_does_not_load_any_library(tmp_path):
 
     assert len(modules) == 1
     assert modules[0].library_file == "this-file-does-not-exist.dll"
+
+def test_rdf_resolves_relative_mdf_and_cdf_paths_from_root_directory(tmp_path):
+    (tmp_path / "mdf.xml").write_text("<MVCI_MODULE_DESCRIPTION/>", encoding="utf-8")
+    (tmp_path / "cdf.xml").write_text("<MVCI_CABLE_DESCRIPTION/>", encoding="utf-8")
+    rdf = _write_rdf(
+        tmp_path / "root.xml",
+        """
+        <MVCI_PDU_API>
+          <SHORT_NAME>RelativePaths</SHORT_NAME>
+          <LIBRARY_FILE URI="file:/opt/vendor/pdu.dll"/>
+          <MODULE_DESCRIPTION_FILE URI="mdf.xml"/>
+          <CABLE_DESCRIPTION_FILE URI="cdf.xml"/>
+        </MVCI_PDU_API>
+        """,
+    )
+
+    registration = parse_d_pdu_root_file(rdf)[0]
+
+    assert registration.module_description_file == str(tmp_path / "mdf.xml")
+    assert registration.cable_description_file == str(tmp_path / "cdf.xml")
