@@ -33,10 +33,11 @@ def _canonical_json(value):
 def _candidate_signature(candidate):
     if not isinstance(candidate, dict):
         raise ValueError("candidate must be a dictionary")
-    missing = [key for key in _SIGNATURE_FIELDS if key not in candidate]
+    required = [key for key in _SIGNATURE_FIELDS if key not in {"bit_a", "bit_b"}]
+    missing = [key for key in required if key not in candidate]
     if missing:
         raise ValueError("candidate is missing signature fields: " + ", ".join(missing))
-    signature = {key: candidate[key] for key in _SIGNATURE_FIELDS}
+    signature = {key: candidate.get(key) for key in _SIGNATURE_FIELDS}
     if signature["signal_type"] not in {"byte", "bit"}:
         raise ValueError("signal_type must be 'byte' or 'bit'")
     for key in ("can_id_a", "can_id_b"):
