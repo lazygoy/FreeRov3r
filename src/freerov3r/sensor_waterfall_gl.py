@@ -32,6 +32,8 @@ class WaterfallPlot(gl.GLViewWidget):
         self._camera_initialized = False
         self._scene_sensor_ids = ()
         self._surface_items = []
+        self._underside_items = []
+        self._side_items = []
         self._contour_items = []
         self._text_items = []
         self._cursor_line = None
@@ -86,10 +88,11 @@ class WaterfallPlot(gl.GLViewWidget):
         z = np.clip(np.where(raw_z > 1.0, raw_z / 100.0, raw_z), 0.0, 1.0)
         z *= self.height_scale
         lane_y = index * LANE_SPACING
-        # Four-point cross-section creates a raised, beveled ribbon, not a paper-thin sheet.
+        # A raised crown plus a separate, low-opacity underside gives each
+        # trace visible thickness instead of the old single-sheet appearance.
         y = np.asarray([lane_y - 0.48, lane_y - 0.23, lane_y + 0.23, lane_y + 0.48], dtype=np.float32)
-        floor = np.zeros_like(z)
-        z_grid = np.column_stack((floor, z, z, floor)).astype(np.float32)
+        z_top = np.column_stack((z * 0.34, z, z, z * 0.34)).astype(np.float32)
+        z_bottom = np.column_stack((z * 0.08, z * 0.08, z * 0.08, z * 0.08)).astype(np.float32)
 
         color = pg.mkColor(self._colors.get(
             lane["sensor_id"], PALETTE[index % len(PALETTE)]
@@ -97,26 +100,38 @@ class WaterfallPlot(gl.GLViewWidget):
         red, green, blue, _ = color.getRgbF()
         intensity = np.clip(z / max(self.height_scale, 1e-6), 0.0, 1.0)
         rgba = np.empty((len(x), 4, 4), dtype=np.float32)
-        brightness = 0.58 + 0.42 * intensity[:, None]
+        brightness = 0.62 + 0.38 * intensity[:, None]
         rgba[:, :, 0] = red * brightness
         rgba[:, :, 1] = green * brightness
         rgba[:, :, 2] = blue * brightness
-        side_alpha = self.opacity * (0.18 + 0.30 * intensity)
-        crest_alpha = self.opacity * (0.42 + 0.48 * intensity)
-        rgba[:, 0, 3] = side_alpha
-        rgba[:, 1, 3] = crest_alpha
-        rgba[:, 2, 3] = crest_alpha
-        rgba[:, 3, 3] = side_alpha
+        edge_alpha = self.opacity * (0.28 + 0.30 * intensity)
+        crown_alpha = self.opacity * (0.58 + 0.38 * intensity)
+        rgba[:, 0, 3] = edge_alpha
+        rgba[:, 1, 3] = crown_alpha
+        rgba[:, 2, 3] = crown_alpha
+        rgba[:, 3, 3] = edge_alpha
 
+        # The underside is deliberately ghosted so overlapping history remains visible.
+        underside_rgba = rgba.copy()
+        underside_rgba[:, :, 3] = self.opacity * (0.10 + 0.12 * intensity[:, None])
         crest = np.column_stack((
             x, np.full_like(x, lane_y), z + 0.018,
         )).astype(np.float32)
-        label = (
-            f'{lane["name"]} [{lane["unit"]}]  '
-            f'min {lane["minimum"]:.4g}  max {lane["maximum"]:.4g}  '
-            f'now {lane["current"]:.4g}'
-        )
-        return x, y, z_grid, rgba, crest, (red, green, blue), label, lane_y
+        lower_crest = np.column_stack((
+            x, np.full_like(x, lane_y), z * 0.08,
+        )).astype(np.float32)
+        side_top = [
+            np.column_stack((x, np.full_like(x, lane_y - 0.48), z * 0.34)),
+            np.column_stack((x, np.full_like(x, lane_y + 0.48), z * 0.34)),
+        ]
+        side_bottom = [
+            np.column_stack((x, np.full_like(x, lane_y - 0.48), z * 0.08)),
+            np.column_stack((x, np.full_like(x, lane_y + 0.48), z * 0.08)),
+        ]
+        # Keep the name short and physically anchored at the near end of its lane.
+        label = f'{lane["name"]}  [{lane["unit"]}]'
+        return (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
+                lower_crest, side_top, side_bottom, (red, green, blue), label, lane_y)
 
     def _build_scene(self):
         camera_elevation = self.opts.get("elevation", 28)
@@ -125,6 +140,8 @@ class WaterfallPlot(gl.GLViewWidget):
         first_scene = not self._camera_initialized
         self.clear()
         self._surface_items = []
+        self._underside_items = []
+        self._side_items = []
         self._contour_items = []
         self._text_items = []
         self._cursor_line = None
@@ -159,40 +176,62 @@ class WaterfallPlot(gl.GLViewWidget):
         self.addItem(self._axis_item)
 
         for index, lane in enumerate(self.lanes):
-            x, y, z_grid, rgba, crest, rgb, label, lane_y = self._lane_geometry(index, lane)
+            (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
+             lower_crest, side_top, side_bottom, rgb, label, lane_y) = self._lane_geometry(index, lane)
             if len(x) >= 2:
                 surface = gl.GLSurfacePlotItem(
-                    x=x,
-                    y=y,
-                    z=z_grid,
-                    colors=rgba,
-                    glOptions="translucent",
-                    smooth=False,
-                    computeNormals=False,
-                    drawEdges=True,
-                edgeColor=(0.78, 0.88, 1.0, min(0.72, self.opacity * 0.9)),
+                    x=x, y=y, z=z_top, colors=rgba,
+                    glOptions="translucent", smooth=False,
+                    computeNormals=False, drawEdges=True,
+                    edgeColor=(0.82, 0.91, 1.0, min(0.82, self.opacity)),
+                )
+                underside = gl.GLSurfacePlotItem(
+                    x=x, y=y, z=z_bottom, colors=underside_rgba,
+                    glOptions="translucent", smooth=False,
+                    computeNormals=False, drawEdges=False,
                 )
                 self.addItem(surface)
+                self.addItem(underside)
                 red, green, blue = rgb
                 contour = gl.GLLinePlotItem(
                     pos=crest,
-                    color=(red, green, blue, min(1.0, self.opacity + 0.25)),
-                    width=3.0,
-                    antialias=True,
-                    mode="line_strip",
+                    color=(red, green, blue, min(1.0, self.opacity + 0.35)),
+                    width=3.0, antialias=True, mode="line_strip",
                     glOptions="translucent",
                 )
+                lower = gl.GLLinePlotItem(
+                    pos=lower_crest,
+                    color=(red, green, blue, self.opacity * 0.20),
+                    width=1.4, antialias=True, mode="line_strip",
+                    glOptions="translucent",
+                )
+                sides = []
+                for top_edge, bottom_edge in zip(side_top, side_bottom):
+                    for edge, alpha, width in (
+                        (top_edge, self.opacity * 0.68, 1.5),
+                        (bottom_edge, self.opacity * 0.20, 1.0),
+                    ):
+                        item = gl.GLLinePlotItem(
+                            pos=edge, color=(red, green, blue, alpha),
+                            width=width, antialias=True, mode="line_strip",
+                            glOptions="translucent",
+                        )
+                        self.addItem(item)
+                        sides.append(item)
                 self.addItem(contour)
+                self.addItem(lower)
             else:
-                surface = None
-                contour = None
+                surface = underside = contour = lower = None
+                sides = []
             self._surface_items.append(surface)
-            self._contour_items.append(contour)
+            self._underside_items.append(underside)
+            self._side_items.append(sides)
+            self._contour_items.append((contour, lower))
 
             text = gl.GLTextItem(
-                pos=(0.0, lane_y - 0.48, 0.04),
+                pos=(-0.18, lane_y - 0.70, 0.10),
                 text=label,
-                color=(0.88, 0.92, 0.98, 1.0),
+                color=(rgb[0], rgb[1], rgb[2], 1.0),
             )
             self.addItem(text)
             self._text_items.append(text)
@@ -247,19 +286,35 @@ class WaterfallPlot(gl.GLViewWidget):
             return
 
         for index, lane in enumerate(self.lanes):
-            x, y, z_grid, rgba, crest, rgb, label, lane_y = self._lane_geometry(index, lane)
+            (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
+             lower_crest, side_top, side_bottom, rgb, label, lane_y) = self._lane_geometry(index, lane)
             surface = self._surface_items[index]
             red, green, blue = rgb
             if surface is not None:
-                surface.setData(x=x, y=y, z=z_grid, colors=rgba)
-                self._contour_items[index].setData(
-                    pos=crest,
-                    color=(red, green, blue, min(1.0, self.opacity + 0.32)),
+                surface.setData(x=x, y=y, z=z_top, colors=rgba)
+                self._underside_items[index].setData(
+                    x=x, y=y, z=z_bottom, colors=underside_rgba
                 )
+                contour, lower = self._contour_items[index]
+                contour.setData(
+                    pos=crest,
+                    color=(red, green, blue, min(1.0, self.opacity + 0.35)),
+                )
+                lower.setData(
+                    pos=lower_crest,
+                    color=(red, green, blue, self.opacity * 0.20),
+                )
+                for item, edge, alpha in zip(
+                    self._side_items[index],
+                    (side_top[0], side_bottom[0], side_top[1], side_bottom[1]),
+                    (self.opacity * 0.68, self.opacity * 0.20,
+                     self.opacity * 0.68, self.opacity * 0.20),
+                ):
+                    item.setData(pos=edge, color=(red, green, blue, alpha))
             self._text_items[index].setData(
-                pos=(0.0, lane_y - 0.48, 0.04),
+                pos=(-0.18, lane_y - 0.70, 0.10),
                 text=label,
-                color=(0.88, 0.92, 0.98, 1.0),
+                color=(red, green, blue, 1.0),
             )
 
         if self._axis_item is not None:
