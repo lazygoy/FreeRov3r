@@ -161,7 +161,9 @@ def analyze_cross_bus_signal_correlation(
     Message-ID pairs are bounded using the existing activity-correlation
     analysis. Byte relationships use a stable XOR mask across old/new values;
     bit relationships are same or inverted transitions at matching bit offsets.
-    Positive lag means channel B follows channel A.
+    Transition coverage is matched transitions divided by the larger event stream,
+    so one-sided or sparse matches are penalized. Positive lag means channel B
+    follows channel A.
     """
     for name, value in (
         ("max_lag_seconds", max_lag_seconds),
