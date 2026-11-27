@@ -336,6 +336,7 @@ class MainWindow(QMainWindow):
             setattr(self, name, getattr(self.navigation_workspace, name))
         self.stack.addWidget(self.navigation_workspace)
         self.stack.setCurrentIndex(1)
+        self._sync_navigation_selection(self.tabs.currentIndex())
 
     def _sync_navigation_selection(self, index):
         if hasattr(self, "workspace_title") and 0 <= index < self.tabs.count():
