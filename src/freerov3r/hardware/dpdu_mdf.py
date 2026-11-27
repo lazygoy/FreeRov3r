@@ -150,7 +150,8 @@ def _text(element: ET.Element, name: str, default: str = "") -> str:
 
 def _integer(value: str, *, field: str) -> int:
     try:
-        number = int(value.strip(), 0)
+        token = value.strip()
+        number = int(token, 16) if token.lower().startswith("0x") else int(token, 10)
     except (AttributeError, ValueError) as exc:
         raise DPduDescriptionError(f"Invalid {field} value: {value!r}") from exc
     if not 0 <= number <= 0xFFFFFFFF:
