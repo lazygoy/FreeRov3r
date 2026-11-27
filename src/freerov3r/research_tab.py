@@ -1235,7 +1235,11 @@ class ResearchTab(QWidget):
         self._clock_sync_worker.completed.connect(self._on_clock_calibration_completed)
         self._clock_sync_worker.failed.connect(self._on_clock_calibration_failed)
         self._clock_sync_worker.finished.connect(
-            lambda: self.set_clock_sync_adapters(self._clock_sync_adapters)
+            lambda: self.clock_calibration_button.setEnabled(
+                len(self._clock_sync_adapters) == 2
+                and all(bool(getattr(item, "connected", False))
+                        for item in self._clock_sync_adapters)
+            )
         )
         self._clock_sync_worker.start()
 
