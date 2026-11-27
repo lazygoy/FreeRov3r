@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QVBoxLayout, QWidget,
+    QListWidgetItem, QVBoxLayout, QWidget, QSlider, QPushButton,
 )
 
 from .sensors.scaling import sample_clock, sample_time
@@ -95,7 +95,8 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
                 z = 50.0 if span == 0 else (value - low) / span * 100.0
             else:
                 z = 0.5 if span == 0 else (value - low) / span
-            points.append((sample_time(sample, clock) - start, z))
+            elapsed = sample_time(sample, clock) - start
+            points.append((elapsed, z))
         last = max(lane_samples, key=lambda sample: sample_time(sample, clock))
         lanes.append({
             "sensor_id": sensor_id,
@@ -105,11 +106,12 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
             "maximum": high,
             "current": float(last.value),
             "points": points,
+            "raw_points": [(sample_time(sample, clock) - start, float(sample.value)) for sample in visible],
         })
     return sorted(lanes, key=lambda lane: lane["name"].casefold())
 
 
-class WaterfallPlot(QWidget):
+class _LegacyWaterfallPlot(QWidget):
     """QPainter-based perspective ridgeline plot; no optional 3D runtime needed."""
 
     def __init__(self, parent=None):
@@ -241,6 +243,8 @@ class SensorWaterfallDialog(QDialog):
     def __init__(self, sensor_capture, vin_provider=None, parent=None):
         super().__init__(parent)
         self.sensor_capture = sensor_capture
+        self._sensor_choices_initialized = False
+        self._sensor_colors = {}
         self.demo_samples = generate_lr4_demo_samples()
         self.vin_provider = vin_provider or (lambda: None)
         self.setWindowTitle("FreeRov3r | 3D Sensor Waterfall")
@@ -275,9 +279,39 @@ class SensorWaterfallDialog(QDialog):
         self.selection_status = QLabel(f"Select up to {MAX_WATERFALL_SENSORS} sensors")
         self.selection_status.setStyleSheet("color: #94A3B8;")
         layout.addWidget(self.selection_status)
+        from .sensor_waterfall_gl import WaterfallPlot
         self.plot = WaterfallPlot(self)
         layout.addWidget(self.plot, 1)
+        self.cursor_readout = QLabel("Move across the plot to inspect sensor values")
+        self.cursor_readout.setStyleSheet("color: #CBD5E1; padding: 4px;")
+        layout.addWidget(self.cursor_readout)
+        self.plot.cursorMoved.connect(self._update_cursor_readout)
         self.window_combo.currentIndexChanged.connect(self.refresh_plot)
+        self.camera_combo = QComboBox()
+        self.camera_combo.addItems(["Perspective", "Top", "Front", "Side"])
+        controls.addWidget(QLabel("View:"))
+        controls.addWidget(self.camera_combo)
+        self.camera_combo.currentTextChanged.connect(self.plot.set_camera_preset)
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(15, 90)
+        self.opacity_slider.setValue(55)
+        self.opacity_slider.setFixedWidth(90)
+        controls.addWidget(QLabel("Opacity:"))
+        controls.addWidget(self.opacity_slider)
+        self.opacity_slider.valueChanged.connect(self.plot.set_opacity)
+        self.height_slider = QSlider(Qt.Horizontal)
+        self.height_slider.setRange(50, 250)
+        self.height_slider.setValue(140)
+        self.height_slider.setFixedWidth(90)
+        controls.addWidget(QLabel("Height:"))
+        controls.addWidget(self.height_slider)
+        self.height_slider.valueChanged.connect(self.plot.set_height_scale)
+        self.color_sensor_combo = QComboBox()
+        self.color_button = QPushButton("Sensor color")
+        controls.addWidget(self.color_sensor_combo)
+        controls.addWidget(self.color_button)
+        self.color_button.clicked.connect(self._choose_sensor_color)
+        self.color_sensor_combo.currentIndexChanged.connect(self._sync_color_button)
         self.source_combo.currentIndexChanged.connect(self.refresh_sensor_choices)
         self.scale_combo.currentIndexChanged.connect(self.refresh_plot)
         self.refresh_sensor_choices()
@@ -319,12 +353,13 @@ class SensorWaterfallDialog(QDialog):
                 # On first load, select only the first eight signals.
                 # When rebuilding the list, retain the user's existing choices.
                 should_select = (
-                    sensor_id in selected if selected
+                    sensor_id in selected if self._sensor_choices_initialized
                     else self.sensor_list.count() < MAX_WATERFALL_SENSORS
                 )
                 item.setCheckState(Qt.Checked if should_select else Qt.Unchecked)
                 self.sensor_list.addItem(item)
             self.sensor_list.blockSignals(False)
+            self._sensor_choices_initialized = True
         self._update_selection_status()
         self.refresh_plot()
 
@@ -368,4 +403,45 @@ class SensorWaterfallDialog(QDialog):
             scale_mode=self.scale_combo.currentData(),
             vin=(None if self.source_combo.currentData() == "demo" else self.vin_provider()),
         )
-        self.plot.set_lanes(lanes)
+        self.plot.set_lanes(lanes, self._sensor_colors)
+        self.color_sensor_combo.blockSignals(True)
+        current = self.color_sensor_combo.currentData()
+        self.color_sensor_combo.clear()
+        for lane in lanes:
+            self.color_sensor_combo.addItem(lane["name"], lane["sensor_id"])
+        self.color_sensor_combo.setCurrentIndex(max(0, self.color_sensor_combo.findData(current)))
+        self.color_sensor_combo.blockSignals(False)
+        self._sync_color_button()
+
+
+    def _sync_color_button(self):
+        sensor_id = self.color_sensor_combo.currentData()
+        color = self._sensor_colors.get(sensor_id, "#38BDF8")
+        self.color_button.setStyleSheet(
+            f"QPushButton {{ color: {color}; border: 1px solid {color}; padding: 4px 8px; }}"
+        )
+        self.color_button.setEnabled(sensor_id is not None)
+
+    def _choose_sensor_color(self):
+        from PySide6.QtWidgets import QColorDialog
+        sensor_id = self.color_sensor_combo.currentData()
+        if not sensor_id:
+            return
+        chosen = QColorDialog.getColor(
+            QColor(self._sensor_colors.get(sensor_id, "#38BDF8")),
+            self, "Sensor surface color",
+        )
+        if chosen.isValid():
+            self._sensor_colors[sensor_id] = chosen.name()
+            self.refresh_plot()
+
+    def _update_cursor_readout(self, elapsed):
+        if not self.plot.lanes:
+            return
+        parts = [f"t = {elapsed:.2f} s"]
+        for lane in self.plot.lanes:
+            points = lane.get("raw_points", [])
+            if points:
+                _, value = min(points, key=lambda point: abs(point[0] - elapsed))
+                parts.append(f'{lane["name"]}: {value:.4g} {lane["unit"]}')
+        self.cursor_readout.setText("   |   ".join(parts))
