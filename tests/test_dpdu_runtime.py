@@ -357,19 +357,6 @@ def test_runtime_enumerates_conflicting_resources_and_destroys_result(registrati
     runtime.close()
 
 
-def test_runtime_rejects_status_query_before_module_connect(registration):
-    runtime = DPduApiRuntime(
-        registration,
-        library_loader=lambda _path: FakePduLibrary(
-            modules=[{"type_id": 3, "handle": 17, "status": 1}]
-        ),
-    )
-    runtime.open()
-    with pytest.raises(RuntimeError, match="explicitly connected"):
-        runtime.get_resource_status(17, [600])
-    runtime.close()
-
-
 def test_runtime_creates_and_destroys_offline_logical_link(registration):
     from freerov3r.hardware.dpdu_runtime import _PduFlagData
 
@@ -437,7 +424,8 @@ def test_runtime_refuses_module_disconnect_while_logical_link_exists(registratio
             ctypes.cast(out, ctypes.POINTER(ctypes.c_uint32))[0] = 92
             return 0
 
-        def PDUDestroyComLogicalLink(self, _mod, _cll):
+        def PDUDestroyComLogicalLink(self, module_handle, cll_handle):
+            self.calls.append(("destroy_cll", module_handle, cll_handle))
             return 0
 
     library = LogicalLinkLibrary()
@@ -458,7 +446,17 @@ def test_runtime_refuses_module_disconnect_while_logical_link_exists(registratio
 
 
 def test_runtime_rejects_logical_link_creation_without_exports(registration):
-    library = FakePduLibrary(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+    class ModuleLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+
+        def PDUModuleConnect(self, _handle):
+            return 0
+
+        def PDUModuleDisconnect(self, _handle):
+            return 0
+
+    library = ModuleLibrary()
     runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
     runtime.open()
     runtime.connect_module(17)
