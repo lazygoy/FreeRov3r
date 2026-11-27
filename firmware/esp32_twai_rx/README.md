@@ -2,7 +2,7 @@
 
 ## Hardware
 
-Target: ESP32-S3 DevKitC-1 N16R8 and the user's SN65HVD230 transceiver module.
+Target: ESP32-S3 DevKitC-1 N16R8 and SN65HVD230 CAN transceiver.
 
 | ESP32-S3 | SN65HVD230 |
 |---|---|
@@ -10,81 +10,126 @@ Target: ESP32-S3 DevKitC-1 N16R8 and the user's SN65HVD230 transceiver module.
 | GND | GND |
 | GPIO5 | CTX |
 | GPIO4 | CRX |
-| CANH | OBD-II pin 6 |
-| CANL | OBD-II pin 14 |
+| CANH | CANH on the target network |
+| CANL | CANL on the target network |
 
-The SN65HVD230 module is the physical-layer transceiver. The ESP32-S3's
-built-in TWAI controller handles CAN framing. Never connect GPIO directly
-to CANH or CANL.
+The SN65HVD230 is the physical-layer transceiver. The ESP32-S3 TWAI
+controller handles CAN framing. Never connect GPIO directly to CANH/CANL.
 
-Power the ESP32 from USB. Do not connect OBD-II pin 16 (vehicle battery)
-to the ESP32 or transceiver's 3.3 V supply. Share signal ground using the
-appropriate OBD ground reference. Do not add a 120-ohm terminator when
-connecting to an already-terminated vehicle network.
+Power the ESP32 from USB. Do not connect OBD-II pin 16 (vehicle battery) to
+the ESP32 or transceiver 3.3 V supply. Use an appropriate OBD ground reference.
+Do not add a 120-ohm terminator when connected to an already-terminated
+vehicle network.
 
-## Firmware
+## Build settings
 
-Open `esp32_twai_rx.ino` in Arduino IDE with an ESP32 Arduino core that
-provides `driver/twai.h`. Select the ESP32-S3 DevKitC-1 board.
+Open `esp32_twai_rx.ino` in Arduino IDE with an ESP32 Arduino core providing
+`driver/twai.h`. Select the ESP32-S3 DevKitC-1 board.
 
-Default CAN speed is 500 kbit/s. To change it, edit the
-`FREEROV3R_CAN_BITRATE` definition to one of:
+The source supports these build-time settings:
+
+| Define | Default | Purpose |
+|---|---:|---|
+| `FREEROV3R_CAN_BITRATE` | `500000` | CAN bitrate: 125000, 250000, 500000, or 1000000 |
+| `FREEROV3R_CAN_CHANNEL` | `0` | Logical channel number sent in binary CAN frame records |
+| `FREEROV3R_BINARY_PROTOCOL` | `0` | Set to `1` for version 1 binary USB protocol; `0` retains legacy text output |
 
 For simultaneous LR4 HS-CAN and MS-CAN capture, build and upload the firmware
-twice, once for each board:
+to two boards:
 
-1. Board connected to OBD-II pins 6/14 (HS-CAN): use `500000`.
-2. Board connected to OBD-II pins 3/11 (MS-CAN): use `125000`.
+1. HS-CAN board, OBD-II pins 6/14: bitrate `500000`, channel `0`.
+2. MS-CAN board, OBD-II pins 3/11: bitrate `125000`, channel `1`.
 
-The boards use the same source and serial protocol. Only the compile-time
-bitrate differs. In FreeRov3r, select **ESP32 dual serial (two CAN buses)** and
-enter the two COM ports in the same order, for example `COM4,COM5`. The first
-port is labeled HS-CAN and the second MS-CAN.
+For the new binary protocol, set `FREEROV3R_BINARY_PROTOCOL=1` in the Arduino
+build flags. Example compiler flags:
 
-- `125000`
-- `250000`
-- `500000`
-- `1000000`
+```text
+-DFREEROV3R_BINARY_PROTOCOL=1
+-DFREEROV3R_CAN_BITRATE=500000
+-DFREEROV3R_CAN_CHANNEL=0
+```
 
-The serial output is 921600 baud. FreeRov3r's ESP32 adapter uses the same
-default.
+For the MS-CAN board, use `125000` and channel `1`. In Arduino IDE, build
+flags can be supplied through the selected board's build configuration or
+with a build system such as PlatformIO. Do not paste these defines into the
+middle of the sketch after they have already been used.
 
-## Receive-only behavior
+Serial speed is 921600 baud. Use FreeRov3r's **ESP32 framed USB serial**
+adapter for binary protocol firmware. The existing **ESP32 serial** adapter
+continues to support the legacy text firmware. The two formats are not
+interchangeable.
 
-The TWAI driver is installed in `TWAI_MODE_LISTEN_ONLY`, with its transmit
-queue disabled. There is no serial command handler and no CAN transmit call.
-In listen-only mode the controller does not transmit frames or acknowledge
-received frames. This is the intended mode for observing another scanner's
-traffic without participating in vehicle communication.
+## Binary protocol v1
 
-The firmware reports startup metadata and bus/queue alerts as comment lines
-beginning with `#`. Protocol v2 CAN data frames append the ESP32-local receive
-timestamp in microseconds since that board booted:
+The binary stream uses the same versioned envelope as
+`freerov3r.hardware.device_protocol`:
+
+```text
+magic[2] = "FR"
+version:u8
+message_type:u8
+flags:u8
+sequence:u32 (big endian)
+payload_length:u16 (big endian)
+payload[payload_length]
+crc16:u16 (CRC-16/CCITT-FALSE, big endian)
+```
+
+Implemented device-to-host message types:
+
+- `HELLO (0x01)`: firmware identity, protocol version and listen-only mode.
+- `DEVICE_STATUS (0x12)`: startup, error and TWAI alert text.
+- `FRAME_RX (0x20)`: channel, frame flags, DLC, CAN ID, device timestamp and
+  Classical-CAN data bytes.
+
+The CAN frame payload is big-endian for multi-byte fields:
+`channel:u8 | flags:u8 | DLC:u8 | CAN_ID:u32 | device_time_us:u64 | data`.
+Flag bit 0 indicates an extended identifier. Flag bit 1 is reserved for
+remote frames; the current firmware omits remote frames.
+
+Sequence numbers increase for every emitted protocol message. The timestamp
+is microseconds since this ESP32 boot and is not synchronized with the PC or
+another ESP32. FreeRov3r records a separate host monotonic receive timestamp.
+
+This first firmware protocol implementation is deliberately transmit-free:
+it does not parse host commands, configure CAN dynamically, acknowledge
+requests, or send CAN frames. USB serial carries device-to-host data only.
+
+## Legacy text protocol
+
+With `FREEROV3R_BINARY_PROTOCOL=0`, the firmware emits text lines such as:
 
 ```text
 S,00000123,2,0102,123456789
 E,18DAF110,8,032201F190000000,123456790
 ```
 
-FreeRov3r also records a host monotonic timestamp when each serial frame is
-received. The ESP32 timestamp helps measure per-board delivery delay, but the
-two boards' clocks are independent and must not be compared as if synchronized.
-Use the host monotonic timestamps for the shared capture timeline. Older
-four-field and legacy three-field frame formats remain accepted by FreeRov3r.
+Startup metadata and alerts begin with `#`. The existing legacy serial
+adapter remains compatible with this mode.
 
-The explicit S/E flag preserves standard-versus-extended frame format even
-when an extended identifier has a numeric value below 0x800.
+## Receive-only behavior
+
+TWAI is always installed in `TWAI_MODE_LISTEN_ONLY`, with its transmit queue
+disabled. No CAN transmit function is called. In listen-only mode the
+controller does not transmit frames or acknowledge received frames.
+
+The current binary protocol implementation does not enable vehicle
+diagnostic polling, UDS requests, or general CAN transmission. Those are
+separate future capabilities requiring independent implementation and
+authorization.
 
 ## Validation sequence
 
 1. Compile and upload with the CAN transceiver disconnected from the vehicle.
-2. Open the serial monitor at 921600 baud and confirm the listen-only startup
-   metadata appears.
-3. Use a known CAN test source on a properly terminated bench bus to confirm
-   frame reception and standard/extended ID parsing.
-4. Confirm the adapter reports no transmit capability and no frames are sent.
-5. Only then connect to the vehicle network, without adding termination.
+2. Confirm the firmware emits either legacy startup metadata or valid binary
+   HELLO and READY messages.
+3. On a properly terminated bench CAN bus, verify standard and extended frame
+   IDs, DLC, payload and device timestamps.
+4. Confirm sequence numbers increase and FreeRov3r reports no decoder CRC
+   errors or sequence gaps under controlled traffic.
+5. Confirm the adapter reports receive-only operation and no frames are sent.
+6. Only after bench validation, connect to the vehicle network without adding
+   termination.
 
-The software's listen-only setting is not a substitute for checking wiring,
-power, and the actual hardware before vehicle connection. The firmware is
-Classical CAN only; it does not support CAN FD.
+The software listen-only setting does not replace checking wiring, power and
+the actual hardware. This firmware supports Classical CAN only, not CAN FD.
