@@ -66,3 +66,34 @@ def test_waterfall_downsampling_preserves_local_minimum_and_maximum():
     lanes = prepare_waterfall_lanes(samples, window_seconds=0, max_points=4)
     values = [value for _, value in lanes[0]["points"]]
     assert max(values) == 1.0
+
+
+
+def test_waterfall_caps_scene_at_eight_sensors_in_stable_name_order():
+    samples = []
+    for index in range(10):
+        name = f"Sensor {index:02d}"
+        samples.extend([
+            sample(f"id_{index:02d}", name, index, 1),
+            sample(f"id_{index:02d}", name, index + 1, 2),
+        ])
+
+    lanes = prepare_waterfall_lanes(samples, window_seconds=0)
+
+    assert len(lanes) == 8
+    assert [lane["sensor_id"] for lane in lanes] == [
+        f"id_{index:02d}" for index in range(8)
+    ]
+
+
+def test_waterfall_retains_raw_engineering_values_for_cursor_readout():
+    samples = [
+        sample("rpm", "Engine speed", 825, 1, "rpm"),
+        sample("rpm", "Engine speed", 1425, 2, "rpm"),
+    ]
+
+    lane = prepare_waterfall_lanes(samples, window_seconds=0)[0]
+
+    assert lane["raw_points"] == [(0.0, 825.0), (1.0, 1425.0)]
+    assert lane["minimum"] == 825
+    assert lane["maximum"] == 1425
