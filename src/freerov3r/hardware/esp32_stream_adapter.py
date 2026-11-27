@@ -1,7 +1,8 @@
-"""Receive-only PC transports for the versioned ESP32 device protocol.
+"""CAN receive-only PC transports with a restricted ESP32 clock-calibration path.
 
-USB serial and Wi-Fi TCP expose the same byte-stream contract. This adapter
-only consumes FRAME_RX messages; it intentionally has no command/write path.
+USB serial and Wi-Fi TCP expose the same byte-stream contract. The only
+host-to-device command implemented here is TIME_SYNC_REQ; CAN frames and
+vehicle diagnostic requests cannot be transmitted by this adapter.
 """
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ from ..models import CanFrame
 
 
 class Esp32FramedStreamAdapter(CanAdapter):
-    """Shared receive and decode logic for ESP32 byte-stream transports."""
+    """Shared CAN receive and clock-calibration logic for ESP32 transports."""
 
     def __init__(self, *, channel_names=None, read_size=4096, transport_label="stream"):
         if isinstance(read_size, bool) or not isinstance(read_size, int) or read_size < 1:
@@ -75,7 +76,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
 
     @property
     def description(self):
-        return f"FreeRov3r ESP32 framed {self.transport_label} (receive-only)"
+        return f"FreeRov3r ESP32 framed {self.transport_label} (CAN receive-only)"
 
     @property
     def diagnostics(self):
@@ -151,6 +152,10 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.device_status_messages = 0
         self.queue_drops.clear()
         self.wifi_host = self.wifi_port = None
+        self.clock_calibration = None
+        with self._clock_sync_condition:
+            self._clock_sync_pending.clear()
+            self._clock_sync_results.clear()
         self._open_transport()
         self._opened = True
         self.bytes_received = 0
@@ -182,6 +187,10 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self._close_transport()
         self._pending_frames.clear()
         self.decoder = MessageStreamDecoder()
+        with self._clock_sync_condition:
+            self._clock_sync_pending.clear()
+            self._clock_sync_results.clear()
+            self._clock_sync_condition.notify_all()
         self._opened = False
         self._open_transport()
         self._opened = True
