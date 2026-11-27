@@ -251,8 +251,8 @@ def test_sensors_tab_constructs_with_callbacks():
     _QT_TEST_APP.processEvents()
 
 def test_navigation_workspace_remains_available_from_app_module():
-    from freerovr.app import NavigationWorkspace as app_navigation_workspace
-    from freerovr.navigation_workspace import NavigationWorkspace
+    from freerov3r.app import NavigationWorkspace as app_navigation_workspace
+    from freerov3r.navigation_workspace import NavigationWorkspace
 
     assert app_navigation_workspace is NavigationWorkspace
 
@@ -261,9 +261,9 @@ def test_navigation_workspace_constructs_with_tabs():
     global _QT_TEST_APP
 
     from PySide6.QtCore import QCoreApplication, QEvent
-    from PySide6.QtWidgets import QApplication, QTabWidget
+    from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
 
-    from freerovr.navigation_workspace import NavigationWorkspace
+    from freerov3r.navigation_workspace import NavigationWorkspace
 
     _QT_TEST_APP = QApplication.instance() or QApplication([])
     tabs = QTabWidget()
