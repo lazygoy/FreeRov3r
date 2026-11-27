@@ -219,3 +219,33 @@ A future adapter bridge must additionally enforce the adapter capability
 model and the separate UDS transmit permission before constructing this
 transport. The codec in \`diagnostics.uds\` remains a separate application
 layer.
+
+
+### Guarded read-only UDS transaction client
+
+\`diagnostics.uds_client.UdsDiagnosticClient\` connects the UDS payload codec
+to an injected ISO-TP endpoint. It does not select ECU CAN identifiers, open
+hardware, discover responders, or provide a general CAN transmit interface.
+
+Before sending a request, all of these independent conditions must pass:
+
+1. The adapter declares UDS active requests.
+2. The adapter's UDS request implementation flag is true.
+3. The separate \`TransmitPolicy.uds_requests_enabled\` permission is true.
+4. \`SafetyPolicy.allow_transmit\` is true.
+5. The individual transaction has explicit operator confirmation.
+6. The injected ISO-TP endpoint independently authorizes every outgoing CAN
+   data and Flow Control frame.
+
+Only UDS ReadDataByIdentifier (0x22) and the bounded ReadDTCInformation (0x19)
+subfunctions 0x01, 0x02, and 0x0A are accepted. Write services, session
+control, security access, routine control, reset, and programming are rejected
+before transport activity. NRC 0x78 response-pending is handled with a
+bounded count and transaction timeout.
+
+This client is transport-injected and testable without vehicle hardware. No
+current ELM327 or ESP32 adapter is declared UDS-capable by this change, and
+the client is not wired into the Diagnostic UI. Physical use still requires
+an adapter implementation that explicitly supports UDS, correct ECU
+addressing from verified vehicle data, and integration with the adapter's
+receive ownership/threading model.
