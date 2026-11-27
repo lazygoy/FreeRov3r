@@ -126,6 +126,8 @@ class SignalEvidenceStore:
     ):
         """Add or update a candidate, retaining independent capture provenance."""
         signature = _candidate_signature(candidate)
+        if isinstance(source_capture_ids, (str, bytes)):
+            raise ValueError("source_capture_ids must be an iterable of capture IDs, not a string")
         capture_ids = []
         for value in source_capture_ids or ():
             capture_id = str(value).strip()
@@ -144,7 +146,7 @@ class SignalEvidenceStore:
             record = {
                 "record_id": record_id,
                 "signature": signature,
-                "status": "probable",
+                "status": "probable" if len(capture_ids) >= 2 else "observed",
                 "created_at": now,
                 "updated_at": now,
                 "source_capture_ids": [],
@@ -162,6 +164,12 @@ class SignalEvidenceStore:
             document["records"].append(record)
         added = [item for item in capture_ids if item not in record["source_capture_ids"]]
         record["source_capture_ids"].extend(added)
+        if record["status"] == "observed" and len(record["source_capture_ids"]) >= 2:
+            record["status"] = "probable"
+            record["history"].append({
+                "at": now, "event": "evidence_level_advanced",
+                "detail": "Independent capture provenance now spans at least two captures",
+            })
         if vehicle_context:
             if not isinstance(vehicle_context, dict):
                 raise ValueError("vehicle_context must be a dictionary")
