@@ -251,7 +251,7 @@ def test_runtime_rejects_resource_query_without_dlc_pin_data(registration):
     runtime.close()
 
 
-def test_runtime_resource_status_requires_explicit_offline_module_connection(registration):
+def test_runtime_resource_status_is_read_without_module_connection(registration):
     from freerov3r.hardware.dpdu_runtime import (
         _PduResourceStatusItem,
         _PduResourceStatusData,
@@ -260,14 +260,6 @@ def test_runtime_resource_status_requires_explicit_offline_module_connection(reg
     class StatusLibrary(FakePduLibrary):
         def __init__(self):
             super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
-
-        def PDUModuleConnect(self, handle):
-            self.calls.append(("module_connect", handle))
-            return 0
-
-        def PDUModuleDisconnect(self, handle):
-            self.calls.append(("module_disconnect", handle))
-            return 0
 
         def PDUGetResourceStatus(self, item_ptr):
             item = ctypes.cast(
@@ -281,28 +273,19 @@ def test_runtime_resource_status_requires_explicit_offline_module_connection(reg
                 ctypes.POINTER(_PduResourceStatusData),
             )
             records[0].resource_status = 0
-            records[1].resource_status = 0x3
+            records[1].resource_status = 3
             return 0
 
     library = StatusLibrary()
     runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
     runtime.open()
 
-    with pytest.raises(RuntimeError, match="explicitly connected"):
-        runtime.get_resource_status(17, [600])
-
-    runtime.connect_module(17)
     statuses = runtime.get_resource_status(17, [600, 601])
 
-    assert [(s.resource_id, s.in_use, s.available, s.raw_status) for s in statuses] == [
-        (600, False, True, 0),
-        (601, True, False, 3),
-    ]
-    runtime.disconnect_module(17)
-    assert ("module_connect", 17) in library.calls
-    assert ("module_disconnect", 17) in library.calls
+    assert [(s.resource_id, s.raw_status) for s in statuses] == [(600, 0), (601, 3)]
+    assert ("resource_status", 0x1100, 2) in library.calls
+    assert not any(call[0] == "module_connect" for call in library.calls)
     runtime.close()
-
 
 def test_runtime_disconnects_connected_modules_during_close(registration):
     class ConnectedLibrary(FakePduLibrary):
@@ -384,4 +367,103 @@ def test_runtime_rejects_status_query_before_module_connect(registration):
     runtime.open()
     with pytest.raises(RuntimeError, match="explicitly connected"):
         runtime.get_resource_status(17, [600])
+    runtime.close()
+
+
+def test_runtime_creates_and_destroys_offline_logical_link(registration):
+    from freerov3r.hardware.dpdu_runtime import _PduFlagData
+
+    class LogicalLinkLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+            self.next_cll = 91
+
+        def PDUModuleConnect(self, handle):
+            self.calls.append(("module_connect", handle))
+            return 0
+
+        def PDUModuleDisconnect(self, handle):
+            self.calls.append(("module_disconnect", handle))
+            return 0
+
+        def PDUCreateComLogicalLink(
+            self, module_handle, resource_data, resource_id, tag, output_handle, flags
+        ):
+            flag_data = ctypes.cast(flags, ctypes.POINTER(_PduFlagData)).contents
+            self.calls.append((
+                "create_cll", module_handle, resource_data, resource_id, tag,
+                flag_data.num_flag_bytes,
+            ))
+            ctypes.cast(output_handle, ctypes.POINTER(ctypes.c_uint32))[0] = self.next_cll
+            return 0
+
+        def PDUDestroyComLogicalLink(self, module_handle, cll_handle):
+            self.calls.append(("destroy_cll", module_handle, cll_handle))
+            return 0
+
+    library = LogicalLinkLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+
+    with pytest.raises(RuntimeError, match="module must be explicitly connected"):
+        runtime.create_logical_link(17, 600)
+
+    runtime.connect_module(17)
+    link = runtime.create_logical_link(17, 600)
+
+    assert (link.module_handle, link.logical_link_handle, link.resource_id) == (17, 91, 600)
+    assert link.initial_state == "offline"
+    assert ("create_cll", 17, None, 600, None, 0) in library.calls
+
+    runtime.destroy_logical_link(17, 91)
+    assert ("destroy_cll", 17, 91) in library.calls
+    runtime.disconnect_module(17)
+    runtime.close()
+
+
+def test_runtime_refuses_module_disconnect_while_logical_link_exists(registration):
+    class LogicalLinkLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+
+        def PDUModuleConnect(self, handle):
+            return 0
+
+        def PDUModuleDisconnect(self, handle):
+            self.calls.append(("module_disconnect", handle))
+            return 0
+
+        def PDUCreateComLogicalLink(self, _mod, _rsc, _rid, _tag, out, _flags):
+            ctypes.cast(out, ctypes.POINTER(ctypes.c_uint32))[0] = 92
+            return 0
+
+        def PDUDestroyComLogicalLink(self, _mod, _cll):
+            return 0
+
+    library = LogicalLinkLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+    runtime.connect_module(17)
+    runtime.create_logical_link(17, 600)
+
+    with pytest.raises(RuntimeError, match="Destroy all ComLogicalLinks"):
+        runtime.disconnect_module(17)
+
+    runtime.close()
+    assert library.calls[-3:] == [
+        ("destroy_cll", 17, 92),
+        ("module_disconnect", 17),
+        ("destruct",),
+    ]
+
+
+def test_runtime_rejects_logical_link_creation_without_exports(registration):
+    library = FakePduLibrary(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+    runtime.connect_module(17)
+
+    with pytest.raises(DPduApiError, match="PDUCreateComLogicalLink"):
+        runtime.create_logical_link(17, 600)
+
     runtime.close()
