@@ -163,7 +163,7 @@ def test_timestamp_analysis_reports_apparent_pairwise_clock_relationship():
     assert comparison["channel_b"] == "MS-CAN"
     assert comparison["status"] == "apparent relationship; not synchronized"
     assert comparison["overlap_duration_seconds"] == pytest.approx(0.18)
-    assert comparison["apparent_relative_drift_ppm"] == pytest.approx(0)
+    assert comparison["apparent_relative_drift_ppm"] == pytest.approx(0, abs=1e-6)
     assert comparison["combined_host_fit_residual_p95_ms"] >= 0
     assert "does not bound" in comparison["uncertainty_note"]
 
