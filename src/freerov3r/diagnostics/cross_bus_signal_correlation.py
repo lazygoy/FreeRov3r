@@ -265,7 +265,7 @@ def analyze_cross_bus_signal_correlation(
         if best is None:
             return
         _, lag, count, agreement, match_type, paired_count, mask = best
-        coverage = count / max(1, min(len(events_a), len(events_b)))
+        coverage = count / max(1, max(len(events_a), len(events_b)))
         if (
             count < minimum_transitions or agreement < minimum_agreement
             or coverage < minimum_transition_coverage
