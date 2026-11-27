@@ -315,3 +315,45 @@ def test_capture_controller_is_available_from_app_module():
     assert app_capture_controller is toggle_capture
     assert callable(toggle_capture)
 
+def test_frame_processing_helpers_are_available_from_app_module():
+    from freerov3r.app import process_frame as app_process_frame
+    from freerov3r.app import process_frames as app_process_frames
+    from freerov3r.frame_processing import process_frame, process_frames
+
+    assert app_process_frame is process_frame
+    assert app_process_frames is process_frames
+
+
+def test_frame_processor_records_non_obd_can_frame():
+    from types import SimpleNamespace
+
+    from freerov3r.frame_processing import process_frame
+
+    window = SimpleNamespace(
+        vin_decoder=SimpleNamespace(feed=lambda *_args: None),
+        session=SimpleNamespace(add=lambda _frame: None),
+        can_monitor=SimpleNamespace(
+            add=lambda _frame: None,
+            matches=lambda *_args: True,
+        ),
+        research_tab=SimpleNamespace(observe_frame=lambda _frame: None),
+        frame_counter=0,
+        frame_count_label=SimpleNamespace(setText=lambda _text: None),
+        can_id_filter=SimpleNamespace(text=lambda: ""),
+        can_format_filter=SimpleNamespace(currentText=lambda: "All"),
+        active_interface="virtual",
+        obd_scaling_context={},
+        log=SimpleNamespace(appendPlainText=lambda _line: None),
+    )
+    frame = SimpleNamespace(
+        timestamp=1.25,
+        arbitration_id=0x123,
+        data=bytes([0x01, 0x02]),
+        is_extended_id=False,
+    )
+
+    line = process_frame(window, frame)
+    assert "00000123" in line
+    assert "STD" in line
+    assert window.frame_counter == 1
+

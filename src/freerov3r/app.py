@@ -66,6 +66,7 @@ from .sensors_tab import SensorsTab
 from .navigation_workspace import NavigationWorkspace
 from .theme import apply_theme
 from .capture_control import toggle_capture as toggle_capture_impl
+from .frame_processing import process_frame, process_frames
 from .responsive_banner import ResponsiveBanner
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -1193,63 +1194,10 @@ class MainWindow(QMainWindow):
         self.show_toast("DTC scan failed", "warning")
 
     def on_frames(self, frames):
-        """Process receiver batches with one visible log/counter update."""
-        log_lines = []
-        for frame in frames:
-            line = self.on_frame(frame, update_display=False)
-            if line:
-                log_lines.append(line)
-        self.frame_count_label.setText(f"Frames: {self.frame_counter}")
-        if log_lines:
-            self.log.appendPlainText("\n".join(log_lines))
+        process_frames(self, frames)
 
     def on_frame(self, frame, update_display=True):
-        detected_vin = self.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
-        if detected_vin:
-            self._apply_detected_vin(detected_vin)
-        self.session.add(frame)
-        self.can_monitor.add(frame)
-        self.research_tab.observe_frame(frame)
-        self.frame_counter += 1
-        if update_display:
-            self.frame_count_label.setText(f"Frames: {self.frame_counter}")
-        ts = frame.timestamp or 0
-        line = None
-        if self.can_monitor.matches(frame, self.can_id_filter.text(), self.can_format_filter.currentText()):
-            frame_type = "EXT" if frame.is_extended_id else "STD"
-            line = (
-                f"{ts:.6f}  {frame.arbitration_id:08X}  {frame_type}  "
-                f"DLC {len(frame.data)}  {frame.data.hex(' ').upper()}"
-            )
-            if update_display:
-                self.log.appendPlainText(line)
-        measurements = decode_mode01_measurements(frame, self.obd_scaling_context)
-        if measurements:
-            simulated = self.active_interface == "simulator"
-            display_values = []
-            for pid, key, name, value, unit in measurements:
-                sensor_id = f"obd_{pid:02X}" if key == "value" else f"obd_{pid:02X}_{key}"
-                self.sensor_capture.add(SensorSample(
-                    timestamp=ts or time.time(), sensor_id=sensor_id, name=name,
-                    value=value, unit=unit, source="simulated" if simulated else "ecu",
-                    ecu="SIMULATED ECU" if simulated else None,
-                    signal=f"Mode 01 PID {pid:02X}" + (f" {key}" if key != "value" else ""),
-                    metadata={"can_id": frame.arbitration_id, "raw": frame.data.hex(),
-                             "vin": self.capture_vin or "UNASSIGNED"},
-                    monotonic_timestamp=time.monotonic(),
-                ))
-                self.graph_tab.mark_sample(sensor_id)
-                known = any(
-                    self.graph_tab._sensor_id(self.graph_tab.sensor_list.item(i)) == sensor_id
-                    for i in range(self.graph_tab.sensor_list.count())
-                )
-                if not known:
-                    self.graph_tab.refresh_sensor_list()
-                display_values.append(f"{value:.2f} {unit}")
-                self.sensor_log.appendPlainText(f"{name}: {value:.2f} {unit} [{sensor_id}]")
-            self.obd_tab.update_value(measurements[0][0], " | ".join(display_values))
-
-        return line
+        return process_frame(self, frame, update_display=update_display)
 
     def _update_receiver_health(self):
         """Publish live ESP32 adapter diagnostics to the Research workspace."""
