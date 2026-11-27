@@ -5,7 +5,6 @@ import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QVector3D, QFont
 
 
 PALETTE = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80",
@@ -36,9 +35,7 @@ class WaterfallPlot(gl.GLViewWidget):
         self._side_items = []
         self._side_surface_items = []
         self._contour_items = []
-        self._text_items = []
         self._cursor_line = None
-        self._axis_item = None
         self._cursor_fraction = 0.0
         self.setMinimumSize(820, 420)
         self.setBackgroundColor("#0B1220")
@@ -146,7 +143,7 @@ class WaterfallPlot(gl.GLViewWidget):
         label = f'{lane["name"]}  [{lane["unit"]}]'
         return (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
                 lower_crest, side_top, side_bottom, side_y, side_z, side_rgba,
-                (red, green, blue), label, lane_y)
+                (red, green, blue), lane_y)
 
     def _build_scene(self):
         camera_elevation = self.opts.get("elevation", 28)
@@ -159,9 +156,7 @@ class WaterfallPlot(gl.GLViewWidget):
         self._side_items = []
         self._side_surface_items = []
         self._contour_items = []
-        self._text_items = []
         self._cursor_line = None
-        self._axis_item = None
 
         if not self.lanes:
             self._scene_sensor_ids = ()
@@ -169,38 +164,15 @@ class WaterfallPlot(gl.GLViewWidget):
             return
 
         count = len(self.lanes)
-        grid = gl.GLGridItem()
-        grid.setSize(
-            x=self.time_extent,
-            y=max(1.0, count * LANE_SPACING),
-            z=0,
-        )
-        grid.setSpacing(x=self.time_extent / 10.0, y=LANE_SPACING)
-        grid.setColor((0.25, 0.34, 0.45, 0.38))
-        grid.translate(
-            self.time_extent / 2.0,
-            (count - 1) * LANE_SPACING / 2.0,
-            0,
-        )
-        self.addItem(grid)
-
-        self._axis_item = gl.GLAxisItem(size=QVector3D(
-            self.time_extent,
-            max(1.0, count * LANE_SPACING),
-            self.height_scale,
-        ))
-        self.addItem(self._axis_item)
-
         for index, lane in enumerate(self.lanes):
             (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
              lower_crest, side_top, side_bottom, side_y, side_z, side_rgba,
-             rgb, label, lane_y) = self._lane_geometry(index, lane)
+             rgb, lane_y) = self._lane_geometry(index, lane)
             if len(x) >= 2:
                 surface = gl.GLSurfacePlotItem(
                     x=x, y=y, z=z_top, colors=rgba.reshape(-1, 4),
                     glOptions="translucent", smooth=False,
-                    computeNormals=False, drawEdges=True,
-                    edgeColor=(0.82, 0.91, 1.0, min(0.82, self.opacity)),
+                    computeNormals=False, drawEdges=False,
                 )
                 # GLSurfacePlotItem's MeshData indexes colors by flattened
                 # vertex index. A (rows, columns, 4) array is not accepted.
@@ -230,27 +202,9 @@ class WaterfallPlot(gl.GLViewWidget):
                     width=3.0, antialias=True, mode="line_strip",
                     glOptions="translucent",
                 )
-                lower = gl.GLLinePlotItem(
-                    pos=lower_crest,
-                    color=(red, green, blue, self.opacity * 0.20),
-                    width=1.4, antialias=True, mode="line_strip",
-                    glOptions="translucent",
-                )
+                lower = None
                 sides = []
-                for top_edge, bottom_edge in zip(side_top, side_bottom):
-                    for edge, alpha, width in (
-                        (top_edge, self.opacity * 0.68, 1.5),
-                        (bottom_edge, self.opacity * 0.20, 1.0),
-                    ):
-                        item = gl.GLLinePlotItem(
-                            pos=edge, color=(red, green, blue, alpha),
-                            width=width, antialias=True, mode="line_strip",
-                            glOptions="translucent",
-                        )
-                        self.addItem(item)
-                        sides.append(item)
                 self.addItem(contour)
-                self.addItem(lower)
             else:
                 surface = underside = contour = lower = None
                 sides = []
@@ -260,15 +214,6 @@ class WaterfallPlot(gl.GLViewWidget):
             self._side_items.append(sides)
             self._side_surface_items.append(side_surfaces)
             self._contour_items.append((contour, lower))
-
-            text = gl.GLTextItem(
-                pos=(0.70, lane_y - 0.10, 0.24),
-                text=label,
-                color=(rgb[0], rgb[1], rgb[2], 1.0),
-                font=QFont("Arial", 11, QFont.Bold),
-            )
-            self.addItem(text)
-            self._text_items.append(text)
 
         self._cursor_line = gl.GLLinePlotItem(
             pos=np.asarray([
@@ -342,30 +287,7 @@ class WaterfallPlot(gl.GLViewWidget):
                     pos=crest,
                     color=(red, green, blue, min(1.0, self.opacity + 0.35)),
                 )
-                lower.setData(
-                    pos=lower_crest,
-                    color=(red, green, blue, self.opacity * 0.20),
-                )
-                for item, edge, alpha in zip(
-                    self._side_items[index],
-                    (side_top[0], side_bottom[0], side_top[1], side_bottom[1]),
-                    (self.opacity * 0.68, self.opacity * 0.20,
-                     self.opacity * 0.68, self.opacity * 0.20),
-                ):
-                    item.setData(pos=edge, color=(red, green, blue, alpha))
-            self._text_items[index].setData(
-                pos=(0.28, lane_y - 0.76, 0.18),
-                text=label,
-                color=(red, green, blue, 1.0),
-                font=QFont("Arial", 11, QFont.Bold),
-            )
 
-        if self._axis_item is not None:
-            self._axis_item.setSize(
-                x=self.time_extent,
-                y=max(1.0, len(self.lanes) * LANE_SPACING),
-                z=self.height_scale,
-            )
         self._update_cursor_line()
         self.update()
 
