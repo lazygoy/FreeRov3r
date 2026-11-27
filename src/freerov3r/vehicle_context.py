@@ -23,6 +23,8 @@ def update_vehicle_context(window):
                 "VIN identification indicates a vehicle outside the supported L319 family. Generic OBD-II/CAN tools remain available."
             )
 
+    if hasattr(window, "modules_tab"):
+        window.modules_tab.set_vehicle_context(context)
     if vin and hasattr(window, "modules_tab"):
         network = window.module_networks.setdefault(vin, SimulatedModuleNetwork())
         window.modules_tab.set_network(network)

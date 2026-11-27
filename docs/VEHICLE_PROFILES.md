@@ -129,3 +129,11 @@ A CAN node with a probable UDS responder role is never rendered as a named ECU
 unless a separate \`module_identity\` record has passed explicit verification.
 This keeps passive discovery useful to diagnostics without overstating what a
 capture proves.
+
+
+The Diagnostic **Modules** workspace now presents retained vehicle network
+evidence in a separate read-only section above the synthetic module simulator.
+Observed CAN nodes and verified module identities are displayed in separate
+tables. Opening the Modules workspace refreshes the evidence from the active
+vehicle profile. The simulator remains explicitly labelled synthetic and its
+scan/clear controls do not operate on physical ECUs.

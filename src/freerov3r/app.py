@@ -265,6 +265,10 @@ class MainWindow(QMainWindow):
             history_callback=self.record_vehicle_event,
         )
         self.tabs.addTab(self.modules_tab, "Modules")
+        self.tabs.currentChanged.connect(
+            lambda index: self.modules_tab.refresh_evidence_inventory()
+            if self.tabs.widget(index) is self.modules_tab else None
+        )
         self.special_functions_tab = SpecialFunctionsTab(
             vin_provider=lambda: self.settings.get("current_vin"),
             history_callback=self.record_vehicle_event,
