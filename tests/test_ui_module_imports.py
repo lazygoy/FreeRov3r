@@ -219,3 +219,34 @@ def test_capture_tab_constructs_with_callbacks():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_sensors_tab_remains_available_from_app_module():
+    from freerov3r.app import SensorsTab as app_sensors_tab
+    from freerov3r.sensors_tab import SensorsTab
+
+    assert app_sensors_tab is SensorsTab
+
+
+def test_sensors_tab_constructs_with_callbacks():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.sensors_tab import SensorsTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = SensorsTab(
+        add_or_update_vehicle=lambda: None,
+        set_current_vehicle=lambda: None,
+        on_vehicle_selected=lambda _item: None,
+        export_llm_report=lambda: None,
+        export_sensor_csv=lambda: None,
+    )
+    assert tab.vin_edit.text() == ""
+    assert tab.vehicle_list.count() == 0
+    assert tab.sensor_log.isReadOnly()
+
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
