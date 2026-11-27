@@ -183,3 +183,69 @@ def test_runtime_rejects_repeated_open(registration):
         runtime.open()
 
     runtime.close()
+
+def test_runtime_queries_resource_ids_using_mdf_cdf_pin_ids(registration):
+    from freerov3r.hardware.dpdu_runtime import (
+        _PduResourceIdItem,
+        _PduResourceIdItemData,
+        _PduResourceData,
+    )
+
+    class ResourceLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__()
+            self.resource_records = (ctypes.c_uint32 * 2)(600, 601)
+            self.group = (_PduResourceIdItemData * 1)()
+            self.group[0] = _PduResourceIdItemData(
+                17, 2, ctypes.cast(self.resource_records, ctypes.POINTER(ctypes.c_uint32))
+            )
+            self.item = _PduResourceIdItem(
+                0x1000, 1,
+                ctypes.cast(self.group, ctypes.POINTER(_PduResourceIdItemData))
+            )
+            self.item_ptr = ctypes.pointer(self.item)
+            self.request_seen = None
+
+        def PDUGetResourceIds(self, module_handle, request, output):
+            self.calls.append(("get_resource_ids", module_handle))
+            req = ctypes.cast(request, ctypes.POINTER(_PduResourceData)).contents
+            self.request_seen = (
+                int(req.bus_type_id),
+                int(req.protocol_id),
+                int(req.num_pin_data),
+                tuple(
+                    (int(req.dlc_pin_data[i].dlc_pin_number),
+                     int(req.dlc_pin_data[i].dlc_pin_type_id))
+                    for i in range(req.num_pin_data)
+                ),
+            )
+            ctypes.cast(
+                output, ctypes.POINTER(ctypes.POINTER(_PduResourceIdItem))
+            )[0] = self.item_ptr
+            return 0
+
+    library = ResourceLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+
+    matches = runtime.enumerate_resource_ids(
+        17, 300, 400, [(6, 2000), (14, 2001)]
+    )
+
+    assert library.request_seen == (300, 400, 2, ((6, 2000), (14, 2001)))
+    assert matches[0].module_handle == 17
+    assert matches[0].resource_ids == (600, 601)
+    assert any(call[0] == "destroy_item" for call in library.calls)
+
+    runtime.close()
+
+
+def test_runtime_rejects_resource_query_without_dlc_pin_data(registration):
+    library = FakePduLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+
+    with pytest.raises(ValueError, match="dlc_pins"):
+        runtime.enumerate_resource_ids(17, 300, 400, [])
+
+    runtime.close()
