@@ -84,7 +84,8 @@ from .diagnostic_actions import (
     _on_readiness_scan_failed as _on_readiness_scan_failed_action,
     _on_dtc_scan_completed as _on_dtc_scan_completed_action,
     _on_dtc_scan_failed as _on_dtc_scan_failed_action,
-)from .responsive_banner import ResponsiveBanner
+)
+from .responsive_banner import ResponsiveBanner
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .asset_loader import ASSET_DIR, load_asset_pixmap
