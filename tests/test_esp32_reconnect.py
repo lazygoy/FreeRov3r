@@ -62,7 +62,7 @@ def test_reconnect_resets_partial_protocol_buffer():
     adapter._open_transport = lambda: setattr(adapter, "connection", FakeConnection())
     adapter._close_transport = lambda: None
     adapter.open()
-    adapter.decoder.buffer.extend(b"partial-frame")
+    adapter.decoder._buffer.extend(b"partial-frame")
 
     adapter.reconnect()
 
