@@ -106,7 +106,10 @@ class UdsDiagnosticClient:
             raise UdsRequestDenied(str(exc)) from exc
 
         deadline = time.monotonic() + float(timeout)
-        self.transport.send_payload(request)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise UdsTransactionTimeout("UDS transaction deadline expired before transmission")
+        self.transport.send_payload(request, timeout=remaining)
         pending_count = 0
 
         while True:

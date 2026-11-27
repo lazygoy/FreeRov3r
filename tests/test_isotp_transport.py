@@ -188,3 +188,48 @@ def test_segmented_receive_uses_one_overall_timeout_deadline():
 
     assert len(requested_timeouts) == 2
     assert 0 < requested_timeouts[1] <= requested_timeouts[0] <= 0.02
+
+
+def test_flow_control_wait_frames_share_one_deadline():
+    incoming = [
+        CanFrame(0x7E8, bytes.fromhex("31 00 00")),
+        CanFrame(0x7E8, bytes.fromhex("30 00 00")),
+    ]
+    requested_timeouts = []
+
+    def receive(timeout):
+        requested_timeouts.append(timeout)
+        return incoming.pop(0)
+
+    transport = IsoTpTransport(
+        lambda frame: None,
+        receive,
+        lambda frame: True,
+        tx_id=0x7E0,
+        rx_id=0x7E8,
+        timeout=0.5,
+    )
+
+    assert transport._wait_flow_control(timeout=0.25) == (0, 0.0)
+    assert len(requested_timeouts) == 2
+    assert 0 < requested_timeouts[1] <= requested_timeouts[0] <= 0.25
+
+
+def test_segmented_send_does_not_violate_stmin_when_deadline_is_short():
+    incoming = [CanFrame(0x7E8, bytes.fromhex("30 00 01"))]
+    sent = []
+
+    transport = IsoTpTransport(
+        sent.append,
+        lambda timeout: incoming.pop(0) if incoming else None,
+        lambda frame: True,
+        tx_id=0x7E0,
+        rx_id=0x7E8,
+        timeout=0.5,
+    )
+
+    with pytest.raises(IsoTpTimeout, match="STmin delay"):
+        transport.send_payload(bytes(range(1, 11)), timeout=0.0005)
+
+    assert len(sent) == 1
+    assert sent[0].data[0] >> 4 == 1

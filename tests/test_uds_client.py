@@ -14,8 +14,10 @@ class FakeTransport:
         self.responses = list(responses)
         self.sent = []
 
-    def send_payload(self, payload):
+    def send_payload(self, payload, timeout=None):
         self.sent.append(bytes(payload))
+        self.send_timeouts = getattr(self, "send_timeouts", [])
+        self.send_timeouts.append(timeout)
 
     def receive_payload(self, timeout=None):
         self.receive_timeouts = getattr(self, "receive_timeouts", [])
@@ -171,3 +173,13 @@ def test_remaining_transaction_deadline_is_passed_to_iso_tp():
 
     assert len(transport.receive_timeouts) == 1
     assert 0 < transport.receive_timeouts[0] <= 1.25
+
+
+def test_remaining_transaction_deadline_is_passed_to_iso_tp_send():
+    transport = FakeTransport([bytes.fromhex("62 F1 90 12 34")])
+    client = make_client(transport)
+
+    client.read_data_by_identifier([0xF190], confirmed=True, timeout=1.25)
+
+    assert len(transport.send_timeouts) == 1
+    assert 0 < transport.send_timeouts[0] <= 1.25
