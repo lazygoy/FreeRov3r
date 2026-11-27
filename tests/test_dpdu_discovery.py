@@ -65,8 +65,8 @@ def test_parse_rdf_supports_namespaced_elements_and_text_paths(tmp_path):
     assert len(modules) == 1
     assert modules[0].short_name == "Namespaced"
     assert modules[0].library_file == "./vendor.dll"
-    assert modules[0].module_description_file == "./mdf.xml"
-    assert modules[0].cable_description_file == "./cdf.xml"
+    assert modules[0].module_description_file == str(tmp_path / "mdf.xml")
+    assert modules[0].cable_description_file == str(tmp_path / "cdf.xml")
 
 
 def test_parse_rdf_ignores_entries_missing_required_identity_or_library(tmp_path):
