@@ -151,3 +151,29 @@ Selecting J2534 routes capture startup through `J2534CanAdapter` using the
 selected bitrate. The existing Receiver owns the adapter lifecycle on its
 worker thread. The initial J2534 selection is receive-only; it does not enable
 OBD polling, UDS requests, or CAN transmission.
+
+
+## D-PDU API discovery slice
+
+The branch now includes `hardware.dpdu_discovery`. On Windows it reads the
+standard `HKLM\\SOFTWARE\\D-PDU API` registry key and its `Root File`
+string value in both 64-bit and 32-bit registry views. It parses the referenced
+D-PDU API root description file (RDF), extracting each MVCI_PDU_API entry's
+symbolic name, library path, module description file (MDF), cable description
+file (CDF), description, and supplier.
+
+The parser accepts the standard URI attributes and plain path text, handles
+namespaced XML tags, bounds RDF file size and module count, and ignores
+incomplete or malformed entries. On Linux it can inspect
+`/etc/pdu_api_root.xml`; tests may inject root-file paths.
+
+Discovery is passive: it does not load any D-PDU DLL, call PDU functions,
+enumerate live VCI resources, or connect to a vehicle. The RDF identifies
+installed D-PDU API implementations, not necessarily currently connected
+physical VCIs. Runtime integration must next load a selected API DLL and use
+its standard module/resource enumeration functions to determine live devices.
+
+The D-PDU discovery implementation follows the ISO 22900-2 root-file discovery
+model and RDF entry structure. The standard defines the root file as the
+application entry point for installed MVCI protocol modules, with library,
+MDF, and CDF references. The 2022 edition is the current published edition.
