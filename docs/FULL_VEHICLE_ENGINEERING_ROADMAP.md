@@ -194,3 +194,28 @@ identify an ECU. Session-control, security-access, routine-control, reset,
 write-data, and programming services are intentionally excluded. Physical
 requests still require an adapter that implements UDS, the independent UDS
 permission gate, and the safety policy.
+
+
+### Active ISO-TP transport core
+
+\`freerov3r.isotp_transport.IsoTpTransport\` adds a callback-driven active
+classic-CAN ISO-TP endpoint. It supports normal addressing, 11-bit and 29-bit
+CAN IDs, Single/First/Consecutive Frames, Flow Control CTS/WAIT/OVERFLOW,
+block size, STmin, sequence rollover, optional padding, and bounded 12-bit
+payload lengths.
+
+The transport has no adapter dependency and does not open hardware. The
+caller must provide an explicit per-frame authorization callback; it is
+checked for every outgoing diagnostic data frame and Flow Control frame.
+The caller also owns the receive callback, which must provide exclusive
+access to frames for the configured channel/IDs while a transaction is in
+progress. No ESP32 transmit support is implied, and no physical adapter is
+currently wired to this transport.
+
+Current limitations: classic CAN only (8-byte frames), normal addressing
+only, no CAN FD, no extended addressing, no functional addressing, no
+automatic ECU discovery, and no UDS service execution policy integration.
+A future adapter bridge must additionally enforce the adapter capability
+model and the separate UDS transmit permission before constructing this
+transport. The codec in \`diagnostics.uds\` remains a separate application
+layer.
