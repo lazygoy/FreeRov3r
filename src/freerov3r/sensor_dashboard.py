@@ -559,7 +559,7 @@ class SensorDashboardDock(QDockWidget):
         self.save_favorite_button = QPushButton("Save layout")
         self.save_favorite_button.clicked.connect(self.save_layout_to_favorite)
         controls.addWidget(self.save_favorite_button)
-        self.waterfall_button = QPushButton("3D Waterfall")
+        self.waterfall_button = QPushButton("Sensor Scope (2D / 3D)")
         self.waterfall_button.clicked.connect(self.open_waterfall)
         controls.addWidget(self.waterfall_button)
         self.compare_button = QPushButton("Compare / Events")
