@@ -114,7 +114,7 @@ class UdsDiagnosticClient:
             if remaining <= 0:
                 raise UdsTransactionTimeout("UDS response deadline expired")
             try:
-                response = self.transport.receive_payload()
+                response = self.transport.receive_payload(timeout=remaining)
             except IsoTpTimeout as exc:
                 raise UdsTransactionTimeout("Timed out waiting for UDS response") from exc
 
