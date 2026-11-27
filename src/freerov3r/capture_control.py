@@ -14,6 +14,7 @@ from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
 from .hardware.elm327_serial_adapter import Elm327SerialAdapter
 from .hardware.elm327_obd_adapter import Elm327ObdAdapter
 from .hardware.python_can_adapter import PythonCanAdapter
+from .core.capture.session_context import CaptureSessionContext
 
 
 def toggle_capture(window):
@@ -23,20 +24,27 @@ def toggle_capture(window):
         diagnostics = getattr(window.active_adapter, "diagnostics", None)
         if isinstance(diagnostics, dict):
             window._last_receiver_diagnostics = diagnostics
-        elapsed = max(0.0, time.time() - (window.capture_started_at or time.time()))
-        capture_samples = window.sensor_capture.samples_since(window.capture_start_sample_index)
+        context = window.capture_session_context
+        elapsed = context.elapsed_seconds() if context else max(
+            0.0, time.time() - (window.capture_started_at or time.time())
+        )
+        sample_start = context.sample_start_index if context else window.capture_start_sample_index
+        frame_start = context.frame_start_index if context else window.capture_start_frame_index
+        capture_samples = window.sensor_capture.samples_since(sample_start)
         capture_samples_dropped = max(
             0,
             window.sensor_capture.total_samples_added
             - window.capture_start_sample_index
             - len(capture_samples),
         )
-        capture_frames = window.session.frames[window.capture_start_frame_index:]
+        capture_frames = window.session.frames[frame_start:]
         archive_path = window.history_store.archive_capture(
-            window.capture_vin,
+            (context.vin if context else window.capture_vin),
             {
-                "interface": window.active_interface,
-                "started_at": window.capture_started_at,
+                "interface": context.interface if context else window.active_interface,
+                "channel": context.channel if context else window.capture_channel,
+                "bitrate": context.bitrate if context else window.capture_bitrate,
+                "started_at": context.started_at if context else window.capture_started_at,
                 "duration_seconds": round(elapsed, 2),
                 "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
                 "frames": [
@@ -56,16 +64,25 @@ def toggle_capture(window):
         )
         window.record_vehicle_event(
             "capture_completed", "CAN capture stopped",
-            {"interface": window.active_interface,
-             "channel": window.capture_channel or "Unknown",
-             "bitrate": window.capture_bitrate or "Unknown",
-             "frames": len(capture_frames),
-             "sensor_samples": len(capture_samples),
-             "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
-             "duration_seconds": round(elapsed, 2),
-             "archive_file": str(archive_path)},
-            vin=window.capture_vin or "UNASSIGNED",
+            {
+                **(context.event_metadata(
+                    frame_count=len(capture_frames),
+                    sample_count=len(capture_samples),
+                    dropped_samples=capture_samples_dropped,
+                ) if context else {
+                    "interface": window.active_interface,
+                    "channel": window.capture_channel or "Unknown",
+                    "bitrate": window.capture_bitrate or "Unknown",
+                    "frames": len(capture_frames),
+                    "sensor_samples": len(capture_samples),
+                    "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
+                    "duration_seconds": round(elapsed, 2),
+                }),
+                "archive_file": str(archive_path),
+            },
+            vin=(context.vin if context else window.capture_vin) or "UNASSIGNED",
         )
+        window.capture_session_context = None
         window.capture_started_at = None
         window.capture_channel = None
         window.capture_bitrate = None
@@ -133,12 +150,20 @@ def toggle_capture(window):
     window.research_tab.set_receiver_diagnostics({})
     window.capture_vin = window.settings.get("current_vin")
     window.research_tab.set_context(window.capture_vin, interface)
-    window.capture_started_at = time.time()
+    window.capture_session_context = CaptureSessionContext.begin(
+        interface=interface,
+        channel=channel,
+        bitrate=bitrate,
+        vin=window.capture_vin,
+        frame_start_index=len(window.session.frames),
+        sample_start_index=window.sensor_capture.total_samples_added,
+    )
+    window.capture_started_at = window.capture_session_context.started_at
     window.capture_channel = channel
     window.capture_bitrate = bitrate
     window.capture_start_frames = 0
-    window.capture_start_sample_index = window.sensor_capture.total_samples_added
-    window.capture_start_frame_index = len(window.session.frames)
+    window.capture_start_sample_index = window.capture_session_context.sample_start_index
+    window.capture_start_frame_index = window.capture_session_context.frame_start_index
     window.record_vehicle_event(
         "capture_started", "CAN capture started",
         {"interface": interface, "channel": channel, "bitrate": bitrate},
