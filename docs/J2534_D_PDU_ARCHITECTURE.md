@@ -194,14 +194,15 @@ is released with `PDUDestroyItem`, and the API session is closed with
 
 This is deliberately a module-interface inventory, not a claim that every
 reported module is ready for diagnostics. A module must report an appropriate
-status and be explicitly connected in a later, separate step before resources
-or diagnostic links can be used. Opening the API and enumerating modules do not call `PDUModuleConnect`.
-Separate explicit methods now support `PDUGetResourceIds` and
-`PDUGetConflictingResources` while offline. `PDUModuleConnect` is available
-only as an explicit offline module-initialization step required before
-`PDUGetResourceStatus`. No `PDUCreateComLogicalLink` or communication
-primitive is exposed, and no vehicle-bus communication or transmit path is
-exposed by this resource-inventory stage.
+status and be explicitly connected before module-specific operations that
+require READY state. Opening the API and enumerating modules do not call
+`PDUModuleConnect`. Separate methods support `PDUGetResourceIds`,
+`PDUGetResourceStatus`, and `PDUGetConflictingResources`; the first and
+third remain available without module connection, and resource status is an
+API-level query that does not require module connection. Explicit
+`PDUModuleConnect` is required before creating a ComLogicalLink. The runtime
+now supports offline CLL creation and destruction, but still does not call
+`PDUConnect`, create a ComPrimitive, or communicate on the vehicle bus.
 
 The module enumeration ABI follows ISO 22900-2:2022 clauses 8.4.2, 8.4.3,
 8.4.20, 8.4.24, 8.7.2.2, and 10.1.4.2 / 10.1.4.6. The standard explicitly
@@ -245,6 +246,7 @@ not call `PDUModuleConnect`, create a ComLogicalLink, or transmit vehicle
 traffic. Resource availability and conflicts are separate checks and are not
 inferred from an ID match. The selected module handle and pin mapping must
 come from the matching module inventory, MDF, and selected CDF cable.
+The separate CLL lifecycle is documented below.
 
 The parser is bounded by file-size and object-count limits, resolves XML
 IDREF relationships, supports namespaced XML, and rejects unresolved resource
