@@ -352,6 +352,8 @@ class MainWindow(QMainWindow):
         except ValueError:
             return
         self.workspace_mode = mode
+        if hasattr(self, "quick_drawer"):
+            self.quick_drawer.set_workspace_mode(mode.value)
         for index in range(self.tabs.count()):
             self.tabs.setTabVisible(
                 index, tab_is_visible(self.tabs.tabText(index), mode)
