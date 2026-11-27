@@ -1274,7 +1274,7 @@ class ResearchTab(QWidget):
         )
         lines.append("Full calibration record:")
         lines.append(json.dumps(result, indent=2))
-        self.clock_calibration_report.setPlainText("\\n".join(lines))
+        self.clock_calibration_report.setPlainText("\n".join(lines))
         self.clock_calibration_status.setText(
             "Calibration complete. Results are software clock estimates, not hardware synchronization."
         )
