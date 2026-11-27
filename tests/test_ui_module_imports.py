@@ -99,3 +99,28 @@ def test_obd_tab_constructs_with_default_settings():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_modules_tab_remains_available_from_app_module():
+    from freerov3r.app import ModulesTab as app_modules_tab
+    from freerov3r.modules_tab import ModulesTab
+
+    assert app_modules_tab is ModulesTab
+
+
+def test_modules_tab_constructs_with_simulated_network():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.diagnostics.simulated_modules import SimulatedModuleNetwork
+    from freerov3r.modules_tab import ModulesTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = ModulesTab(SimulatedModuleNetwork())
+    assert tab.module_tree.topLevelItemCount() > 0
+    assert tab.dtc_table.rowCount() == 0
+
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
