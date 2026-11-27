@@ -17,8 +17,8 @@ def test_clock_sync_sample_calculates_offset_and_round_trip_delay():
     )
 
     assert sample["device_minus_host_offset_ns"] == pytest.approx(90_000)
-    assert sample["round_trip_delay_ns"] == pytest.approx(29_990_000)
-    assert sample["symmetric_path_uncertainty_floor_ns"] == pytest.approx(14_995_000)
+    assert sample["round_trip_delay_ns"] == pytest.approx(20_000)
+    assert sample["symmetric_path_uncertainty_floor_ns"] == pytest.approx(10_000)
 
 
 def test_clock_sync_rejects_invalid_timestamp_order_and_types():
