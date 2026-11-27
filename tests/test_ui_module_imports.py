@@ -185,3 +185,37 @@ def test_settings_tab_constructs_and_exposes_controls():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_capture_tab_remains_available_from_app_module():
+    from freerov3r.app import CaptureTab as app_capture_tab
+    from freerov3r.capture_tab import CaptureTab
+
+    assert app_capture_tab is CaptureTab
+
+
+def test_capture_tab_constructs_with_callbacks():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from freerov3r.capture_tab import CaptureTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = CaptureTab(
+        mode_label=QLabel("Mode"),
+        settings={"max_log_lines": 1200},
+        refresh_serial_ports=lambda: None,
+        toggle_capture=lambda: None,
+        refresh_can_display=lambda: None,
+        export_capture=lambda: None,
+        clear_capture_display=lambda: None,
+        back_to_tasks=lambda: None,
+    )
+    assert tab.backend.count() == 10
+    assert tab.log.maximumBlockCount() == 1200
+    assert tab.can_format_filter.count() == 3
+
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
