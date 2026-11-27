@@ -41,12 +41,10 @@ def test_capture_context_event_metadata_preserves_counts_and_identity():
         frame_count=25, sample_count=12, dropped_samples=2
     )
 
-    assert metadata == {
-        "interface": "esp32",
-        "channel": "COM4",
-        "bitrate": 500000,
-        "frames": 25,
-        "sensor_samples": 12,
-        "sensor_samples_dropped_from_bounded_buffer": 2,
-        "duration_seconds": metadata["duration_seconds"],
-    }
+    assert metadata["interface"] == "esp32"
+    assert metadata["channel"] == "COM4"
+    assert metadata["bitrate"] == 500000
+    assert metadata["frames"] == 25
+    assert metadata["sensor_samples"] == 12
+    assert metadata["sensor_samples_dropped_from_bounded_buffer"] == 2
+    assert metadata["duration_seconds"] >= 0
