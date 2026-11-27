@@ -2,10 +2,10 @@
 
 from PySide6.QtCore import Qt
 
-from .hardware.interface_discovery import discover_interfaces
+from .hardware.interface_inventory import discover_all_interfaces
 
 
-def refresh_serial_ports(window, discover=discover_interfaces):
+def refresh_serial_ports(window, discover=discover_all_interfaces):
     """Inventory serial interfaces and select only a single clear candidate."""
     current = window.channel_edit.currentText().strip()
     ports = discover()
