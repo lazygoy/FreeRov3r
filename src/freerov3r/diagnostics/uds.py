@@ -161,6 +161,11 @@ def decode_uds_response(response, *, request=None):
             raise ValueError("ReadDTCInformation response is missing its subfunction")
         result["subfunction"] = payload[1] & 0x7F
         result["subfunction_echo"] = bool(payload[1] & 0x80)
+        if request_payload is not None:
+            if len(request_payload) < 2 or request_payload[0] != 0x19:
+                raise ValueError("Malformed ReadDTCInformation request")
+            if result["subfunction"] != request_payload[1]:
+                raise ValueError("Response subfunction does not match the request")
         result["data"] = payload[2:].hex()
         if result["subfunction"] == 0x02:
             if len(payload) < 3:
