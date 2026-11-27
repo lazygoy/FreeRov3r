@@ -123,7 +123,9 @@ def analyze_cross_bus_correlation(
             if sum(counts.values()) >= minimum_frames
         ][:max_ids_per_channel]
 
-    max_lag_bins = int(max_lag_seconds / bin_width_seconds)
+    max_lag_bins = min(
+        int(max_lag_seconds / bin_width_seconds), max(0, bin_count - 20)
+    )
     candidates = []
     for channel_index, channel_a in enumerate(channels):
         for channel_b in channels[channel_index + 1:]:
@@ -144,7 +146,7 @@ def analyze_cross_bus_correlation(
                         correlation = _pearson(left, right)
                         if correlation is None:
                             continue
-                        candidate = (correlation, -abs(lag), -lag, lag)
+                        candidate = (correlation, -abs(lag), lag, lag)
                         if best is None or candidate > best:
                             best = candidate
                     if best is None:
