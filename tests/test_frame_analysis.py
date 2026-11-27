@@ -20,7 +20,7 @@ def _isotp_frames(payload, can_id=0x7E8):
         frames.append(bytes([0x20 | sequence]) + remaining[:7])
         remaining = remaining[7:]
         sequence = (sequence + 1) & 0x0F
-    return [frame.ljust(8, b"\\x00") for frame in frames]
+    return [frame.ljust(8, b"\x00") for frame in frames]
 
 
 def test_frame_analysis_is_qt_independent_and_returns_empty_result():
@@ -36,7 +36,7 @@ def test_frame_analysis_is_qt_independent_and_returns_empty_result():
 def test_frame_analysis_reassembles_vin_across_multiple_frames():
     decoder = VinFrameDecoder()
     context = Mode01ScalingContext()
-    payload = b"\\x49\\x02\\x01" + VIN.encode("ascii")
+    payload = b"\x49\x02\x01" + VIN.encode("ascii")
     results = [
         analyze_frame(
             CanFrame(arbitration_id=0x7E8, data=frame),
