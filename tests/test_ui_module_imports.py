@@ -74,3 +74,28 @@ def test_sensor_graph_tab_constructs_with_empty_capture():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_obd_tab_remains_available_from_app_module():
+    from freerov3r.app import OBDTab as app_obd_tab
+    from freerov3r.obd_tab import OBDTab
+
+    assert app_obd_tab is OBDTab
+
+
+def test_obd_tab_constructs_with_default_settings():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.obd_tab import OBDTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = OBDTab(settings={}, settings_save_callback=lambda _settings: None)
+    assert tab.table.rowCount() > 0
+    assert tab.activity_timer.isActive()
+
+    tab.activity_timer.stop()
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
