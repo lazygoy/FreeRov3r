@@ -5,14 +5,13 @@ from bisect import bisect_left
 
 import pyqtgraph as pg
 from pyqtgraph import SignalProxy
-from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QColor, QCursor, QPen
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QCursor
 from PySide6.QtWidgets import (
-    QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 BACKGROUND = "#0B1220"
-GRID = "#263449"
 TEXT = "#CBD5E1"
 LOCKED = "#FACC15"
 PALETTE = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80",
