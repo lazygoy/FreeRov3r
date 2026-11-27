@@ -10,3 +10,9 @@ def test_vehicle_history_tab_remains_available_from_app_module():
     from freerov3r.vehicle_history_tab import VehicleHistoryTab
 
     assert app_history_tab is VehicleHistoryTab
+
+def test_solutions_tab_remains_available_from_app_module():
+    from freerov3r.app import SolutionsTab as app_solutions_tab
+    from freerov3r.solutions_tab import SolutionsTab
+
+    assert app_solutions_tab is SolutionsTab
