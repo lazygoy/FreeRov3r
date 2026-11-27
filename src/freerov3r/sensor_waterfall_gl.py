@@ -139,8 +139,6 @@ class WaterfallPlot(gl.GLViewWidget):
             wall[:, :, 2] = blue
             wall[:, :, 3] = self.opacity * (0.16 + 0.12 * intensity[:, None])
             side_rgba.append(wall.reshape(-1, 4))
-        # Keep the name short and physically anchored at the near end of its lane.
-        label = f'{lane["name"]}  [{lane["unit"]}]'
         return (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
                 lower_crest, side_top, side_bottom, side_y, side_z, side_rgba,
                 (red, green, blue), lane_y)
@@ -267,7 +265,7 @@ class WaterfallPlot(gl.GLViewWidget):
         for index, lane in enumerate(self.lanes):
             (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
              lower_crest, side_top, side_bottom, side_y, side_z, side_rgba,
-             rgb, label, lane_y) = self._lane_geometry(index, lane)
+             rgb, lane_y) = self._lane_geometry(index, lane)
             surface = self._surface_items[index]
             red, green, blue = rgb
             if surface is not None:
