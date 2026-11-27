@@ -164,12 +164,12 @@ class SignalEvidenceStore:
             document["records"].append(record)
         added = [item for item in capture_ids if item not in record["source_capture_ids"]]
         record["source_capture_ids"].extend(added)
-        if record["status"] == "observed" and len(record["source_capture_ids"]) >= 2:
+        advanced = (
+            record["status"] == "observed"
+            and len(record["source_capture_ids"]) >= 2
+        )
+        if advanced:
             record["status"] = "probable"
-            record["history"].append({
-                "at": now, "event": "evidence_level_advanced",
-                "detail": "Independent capture provenance now spans at least two captures",
-            })
         if vehicle_context:
             if not isinstance(vehicle_context, dict):
                 raise ValueError("vehicle_context must be a dictionary")
@@ -188,6 +188,11 @@ class SignalEvidenceStore:
             record["history"].append({
                 "at": now, "event": "capture_evidence_added",
                 "detail": {"capture_ids": added},
+            })
+        if advanced:
+            record["history"].append({
+                "at": now, "event": "evidence_level_advanced",
+                "detail": "Independent capture provenance now spans at least two captures",
             })
         record["updated_at"] = now
         self._write(document)
