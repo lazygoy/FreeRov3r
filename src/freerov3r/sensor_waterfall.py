@@ -3,7 +3,7 @@
 import math
 
 from PySide6.QtCore import Qt, QTimer, QPointF
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QVBoxLayout, QWidget,
