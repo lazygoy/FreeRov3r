@@ -85,3 +85,9 @@ def test_codec_does_not_claim_to_transmit_or_identify_ecu():
     # Codec output is an application payload, not a CAN frame or ECU identity.
     request = build_read_data_by_identifier_request([0xF190])
     assert request == b"\x22\xf1\x90"
+
+
+
+def test_decode_rejects_wrong_dtc_subfunction():
+    with pytest.raises(ValueError, match="subfunction"):
+        decode_uds_response("59 0A 00", request="19 02 FF")
