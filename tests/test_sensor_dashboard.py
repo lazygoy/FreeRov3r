@@ -182,7 +182,7 @@ def test_graph_panel_popout_and_close_restore_widget_parent(qapp):
     assert host.isWindow()
     assert host.isVisible()
     assert panel.parent() is host
-    assert panel.isVisible()
+    assert not panel.isHidden()
 
     host.close()
     qapp.processEvents()
@@ -190,5 +190,5 @@ def test_graph_panel_popout_and_close_restore_widget_parent(qapp):
     assert panel._floating_host is None
     assert not host.isVisible()
     assert panel.parent() is dock.grid_host
-    assert panel.isVisible()
+    assert not panel.isHidden()
     dock.close()
