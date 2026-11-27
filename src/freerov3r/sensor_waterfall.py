@@ -13,6 +13,9 @@ from .sensors.scaling import sample_clock, sample_time
 from .sensors.demo import generate_lr4_demo_samples
 
 
+MAX_WATERFALL_SENSORS = 8
+
+
 def _downsample_minmax(samples, clock, start, end, max_points):
     """Keep temporal shape and sharp transients while limiting render work."""
     ordered = sorted(samples, key=lambda sample: sample_time(sample, clock))
@@ -58,6 +61,18 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
             continue
         grouped.setdefault(sample.sensor_id, []).append(sample)
 
+    # Keep the 3D scene deliberately sparse. Choose lanes deterministically
+    # by display name so a large PID list cannot turn into an unreadable plot.
+    if len(grouped) > MAX_WATERFALL_SENSORS:
+        ranked = sorted(
+            grouped,
+            key=lambda sensor_id: (
+                min(sample.name.casefold() for sample in grouped[sensor_id]),
+                sensor_id.casefold(),
+            ),
+        )
+        grouped = {sensor_id: grouped[sensor_id]
+                   for sensor_id in ranked[:MAX_WATERFALL_SENSORS]}
     all_samples = [sample for lane in grouped.values() for sample in lane]
     if not all_samples:
         return []
@@ -255,8 +270,11 @@ class SensorWaterfallDialog(QDialog):
         layout.addLayout(controls)
         self.sensor_list = QListWidget()
         self.sensor_list.setMaximumHeight(104)
-        self.sensor_list.itemChanged.connect(self.refresh_plot)
+        self.sensor_list.itemChanged.connect(self._on_sensor_item_changed)
         layout.addWidget(self.sensor_list)
+        self.selection_status = QLabel(f"Select up to {MAX_WATERFALL_SENSORS} sensors")
+        self.selection_status.setStyleSheet("color: #94A3B8;")
+        layout.addWidget(self.selection_status)
         self.plot = WaterfallPlot(self)
         layout.addWidget(self.plot, 1)
         self.window_combo.currentIndexChanged.connect(self.refresh_plot)
@@ -298,9 +316,42 @@ class SensorWaterfallDialog(QDialog):
                 item = QListWidgetItem(f"{name} ({sensor_id})")
                 item.setData(Qt.UserRole, sensor_id)
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Checked if not selected or sensor_id in selected else Qt.Unchecked)
+                # On first load, select only the first eight signals.
+                # When rebuilding the list, retain the user's existing choices.
+                should_select = (
+                    sensor_id in selected if selected
+                    else self.sensor_list.count() < MAX_WATERFALL_SENSORS
+                )
+                item.setCheckState(Qt.Checked if should_select else Qt.Unchecked)
                 self.sensor_list.addItem(item)
             self.sensor_list.blockSignals(False)
+        self._update_selection_status()
+        self.refresh_plot()
+
+    def _update_selection_status(self):
+        count = sum(
+            self.sensor_list.item(i).checkState() == Qt.Checked
+            for i in range(self.sensor_list.count())
+        )
+        self.selection_status.setText(
+            f"{count}/{MAX_WATERFALL_SENSORS} sensors selected · maximum {MAX_WATERFALL_SENSORS}"
+        )
+
+    def _on_sensor_item_changed(self, item):
+        if item.checkState() == Qt.Checked:
+            count = sum(
+                self.sensor_list.item(i).checkState() == Qt.Checked
+                for i in range(self.sensor_list.count())
+            )
+            if count > MAX_WATERFALL_SENSORS:
+                self.sensor_list.blockSignals(True)
+                item.setCheckState(Qt.Unchecked)
+                self.sensor_list.blockSignals(False)
+                self.selection_status.setText(
+                    f"Limit reached: choose no more than {MAX_WATERFALL_SENSORS} sensors"
+                )
+                return
+        self._update_selection_status()
         self.refresh_plot()
 
     def refresh_plot(self, *_):
