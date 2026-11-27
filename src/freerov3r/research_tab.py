@@ -48,7 +48,9 @@ except ImportError:
     QListWidget = QListWidgetItem = None
     HAS_RESEARCH_CHARTS = False
 from freerov3r.can_research import compare_module_discovery, discover_modules
-from freerov3r.can_research.protocol_hints import classify_can_payload, classify_uds_payload
+from freerov3r.can_research.protocol_hints import (
+    UDS_SERVICES, classify_can_payload, classify_uds_payload,
+)
 
 from freerov3r.isotp import (
     pair_uds_transactions, reassemble_isotp, summarize_ecu_address_pairs,
