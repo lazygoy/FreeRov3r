@@ -124,3 +124,35 @@ def test_modules_tab_constructs_with_simulated_network():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_vehicle_setup_wizard_and_workers_remain_available_from_app_module():
+    from freerov3r.app import (
+        VehicleSetupWizard as app_wizard,
+        VinDecodeWorker as app_decode_worker,
+        VinQueryWorker as app_query_worker,
+    )
+    from freerov3r.vehicle_setup_wizard import (
+        VehicleSetupWizard, VinDecodeWorker, VinQueryWorker,
+    )
+
+    assert app_wizard is VehicleSetupWizard
+    assert app_decode_worker is VinDecodeWorker
+    assert app_query_worker is VinQueryWorker
+
+
+def test_vehicle_setup_wizard_constructs():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.vehicle_setup_wizard import VehicleSetupWizard
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    dialog = VehicleSetupWizard(current_settings={})
+    assert dialog.isModal()
+    assert dialog.result_data is None
+
+    dialog.deleteLater()
+    QCoreApplication.sendPostedEvents(dialog, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
