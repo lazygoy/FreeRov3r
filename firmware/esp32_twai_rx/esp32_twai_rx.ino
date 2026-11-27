@@ -23,6 +23,27 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#ifndef FREEROV3R_WIFI_ENABLED
+#define FREEROV3R_WIFI_ENABLED 0
+#endif
+
+#if FREEROV3R_BINARY_PROTOCOL && FREEROV3R_WIFI_ENABLED
+#include <WiFi.h>
+#ifndef FREEROV3R_WIFI_SSID
+#error "Set FREEROV3R_WIFI_SSID at build time; no default network is configured."
+#endif
+#ifndef FREEROV3R_WIFI_PASSWORD
+#error "Set FREEROV3R_WIFI_PASSWORD at build time; no default password is configured."
+#endif
+#ifndef FREEROV3R_WIFI_PORT
+#define FREEROV3R_WIFI_PORT 3333
+#endif
+static WiFiServer wifiServer(FREEROV3R_WIFI_PORT);
+static QueueHandle_t wifiOutputQueue = nullptr;
+static volatile bool wifiClientConnected = false;
+static volatile uint32_t wifiQueueDrops = 0;
+#endif
+
 static constexpr gpio_num_t CAN_TX_PIN = GPIO_NUM_5;
 static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_4;
 
@@ -67,6 +88,9 @@ struct OutputItem {
 static QueueHandle_t outputQueue = nullptr;
 static volatile uint32_t outputQueueDrops = 0;
 static uint32_t reportedOutputQueueDrops = 0;
+#if FREEROV3R_WIFI_ENABLED
+static uint32_t wifiMessageSequence = 0;
+#endif
 
 static bool enqueueFrame(const twai_message_t &frame, uint64_t timestampUs) {
   if (!outputQueue) {
@@ -88,7 +112,12 @@ static bool enqueueStatus(const char *status) {
   OutputItem item = {};
   item.kind = OUTPUT_ITEM_STATUS;
   strncpy(item.status, status, sizeof(item.status) - 1);
-  return xQueueSend(outputQueue, &item, 0) == pdTRUE;
+  const bool queued = xQueueSend(outputQueue, &item, 0) == pdTRUE;
+#if FREEROV3R_WIFI_ENABLED
+  if (queued && wifiClientConnected && wifiOutputQueue &&
+      xQueueSend(wifiOutputQueue, &item, 0) != pdTRUE) ++wifiQueueDrops;
+#endif
+  return queued;
 }
 
 static void writeU16(uint8_t *out, uint16_t value) {
@@ -148,6 +177,92 @@ static void sendHello() {
       "FreeRov3r ESP32-S3;protocol=1;mode=listen-only;can=classical";
   sendMessage(MSG_HELLO, (const uint8_t *)hello, sizeof(hello) - 1);
 }
+#if FREEROV3R_WIFI_ENABLED
+static bool wifiWriteMessage(WiFiClient &client, uint8_t type,
+                             const uint8_t *payload, uint16_t length) {
+  uint8_t packet[11 + 64 + 2];
+  if (length > 64) return false;
+  packet[0] = 'F'; packet[1] = 'R';
+  packet[2] = PROTOCOL_VERSION; packet[3] = type; packet[4] = 0;
+  writeU32(&packet[5], wifiMessageSequence++);
+  writeU16(&packet[9], length);
+  if (length) memcpy(&packet[11], payload, length);
+  uint16_t crc = crc16Ccitt(packet, 11 + length);
+  writeU16(&packet[11 + length], crc);
+  return client.write(packet, 13 + length) == (size_t)(13 + length);
+}
+
+static bool wifiSendItem(WiFiClient &client, const OutputItem &item) {
+  if (item.kind == OUTPUT_ITEM_STATUS) {
+    return wifiWriteMessage(client, MSG_DEVICE_STATUS,
+        (const uint8_t *)item.status, strlen(item.status));
+  }
+  uint8_t payload[23] = {0};
+  payload[0] = FREEROV3R_CAN_CHANNEL;
+  payload[1] = item.frame.extd ? 0x01 : 0x00;
+  payload[2] = item.frame.data_length_code;
+  writeU32(&payload[3], item.frame.identifier);
+  writeU64(&payload[7], item.timestampUs);
+  for (uint8_t i = 0; i < item.frame.data_length_code; ++i)
+    payload[15 + i] = item.frame.data[i];
+  return wifiWriteMessage(client, MSG_FRAME_RX, payload,
+                          15 + item.frame.data_length_code);
+}
+
+static void wifiWriterTask(void *parameter) {
+  (void)parameter;
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(FREEROV3R_WIFI_SSID, FREEROV3R_WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) vTaskDelay(pdMS_TO_TICKS(500));
+  wifiServer.begin();
+  wifiServer.setNoDelay(true);
+
+  WiFiClient client;
+  OutputItem item;
+  uint32_t reportedDrops = 0;
+  for (;;) {
+    if (!client || !client.connected()) {
+      if (client) client.stop();
+      wifiClientConnected = false;
+      WiFiClient incoming = wifiServer.available();
+      if (incoming) {
+        client = incoming;
+        client.setNoDelay(true);
+        // Do not replay stale frames from a previous TCP session.
+        while (xQueueReceive(wifiOutputQueue, &item, 0) == pdTRUE) {}
+        wifiClientConnected = true;
+        static const char hello[] =
+            "FreeRov3r ESP32-S3;protocol=1;mode=listen-only;can=classical;transport=tcp";
+        wifiWriteMessage(client, MSG_HELLO, (const uint8_t *)hello,
+                         sizeof(hello) - 1);
+        static const char ready[] = "READY,LISTEN_ONLY,TCP";
+        wifiWriteMessage(client, MSG_DEVICE_STATUS,
+                         (const uint8_t *)ready, sizeof(ready) - 1);
+      }
+    }
+
+    if (client && client.connected() &&
+        xQueueReceive(wifiOutputQueue, &item, pdMS_TO_TICKS(20)) == pdTRUE) {
+      if (!wifiSendItem(client, item)) {
+        client.stop();
+        wifiClientConnected = false;
+      }
+    }
+
+    const uint32_t dropped = wifiQueueDrops;
+    if (client && client.connected() && dropped != reportedDrops) {
+      char status[64];
+      snprintf(status, sizeof(status), "STATS,WIFI_QUEUE_DROPS,%lu",
+               (unsigned long)dropped);
+      wifiWriteMessage(client, MSG_DEVICE_STATUS,
+                       (const uint8_t *)status, strlen(status));
+      reportedDrops = dropped;
+    }
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+#endif
+
 static void sendCanFrame(const twai_message_t &msg, uint64_t timestampUs);
 
 static void serialWriterTask(void *parameter) {
@@ -241,6 +356,19 @@ void setup() {
     sendStatus("ERROR,OUTPUT_TASK_CREATE");
     while (true) delay(1000);
   }
+#if FREEROV3R_WIFI_ENABLED
+  wifiOutputQueue = xQueueCreate(128, sizeof(OutputItem));
+  if (!wifiOutputQueue) {
+    sendStatus("ERROR,WIFI_QUEUE_CREATE");
+    while (true) delay(1000);
+  }
+  BaseType_t wifiTaskResult = xTaskCreatePinnedToCore(
+      wifiWriterTask, "fr_wifi_writer", 6144, nullptr, 1, nullptr, 1);
+  if (wifiTaskResult != pdPASS) {
+    sendStatus("ERROR,WIFI_TASK_CREATE");
+    while (true) delay(1000);
+  }
+#endif
   sendHello();
   sendStatus("READY,LISTEN_ONLY");
 #else
