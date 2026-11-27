@@ -74,7 +74,7 @@ def test_usb_adapter_handles_fragmented_stream_and_multiple_frames():
     assert adapter.diagnostics["decoder_buffered_bytes"] == 0
 
 
-def test_adapter_ignores_control_messages_and_counts_sequence_gaps():
+def test_adapter_parses_control_messages_and_counts_sequence_gaps():
     control = encode_message(ProtocolMessage(MessageType.DEVICE_STATUS, 1, b"ok"))
     adapter = Esp32FramedSerialAdapter()
     adapter.connection = FakeSerial([control + frame_message(3)])
@@ -83,7 +83,9 @@ def test_adapter_ignores_control_messages_and_counts_sequence_gaps():
     frame = adapter.receive(timeout=0.1)
 
     assert frame is not None
-    assert adapter.diagnostics["ignored_messages"] == 1
+    assert adapter.diagnostics["ignored_messages"] == 0
+    assert adapter.diagnostics["device_status"] == "ok"
+    assert adapter.diagnostics["device_status_messages"] == 1
     assert adapter.diagnostics["sequence_gaps"] == 1
 
 
