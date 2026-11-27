@@ -363,3 +363,10 @@ def test_startup_splash_helper_remains_available_from_app_module():
 
     assert app_show_startup_splash is show_startup_splash
 
+def test_diagnostic_action_helpers_are_available_from_app_module():
+    from freerov3r.app import request_dtc_scan_action as app_request_dtc_scan
+    from freerov3r.diagnostic_actions import request_dtc_scan
+
+    assert app_request_dtc_scan is request_dtc_scan
+    assert callable(request_dtc_scan)
+
