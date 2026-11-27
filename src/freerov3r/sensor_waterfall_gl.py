@@ -153,9 +153,8 @@ class WaterfallPlot(gl.GLViewWidget):
 
         for index, lane in enumerate(self.lanes):
             x, y, z_grid, rgba, crest, rgb, label, lane_y = self._lane_geometry(index, lane)
-            if len(x) < 2:
-                continue
-            surface = gl.GLSurfacePlotItem(
+            if len(x) >= 2:
+                surface = gl.GLSurfacePlotItem(
                 x=x,
                 y=y,
                 z=z_grid,
@@ -165,7 +164,9 @@ class WaterfallPlot(gl.GLViewWidget):
                 computeNormals=False,
                 drawEdges=False,
             )
-            self.addItem(surface)
+                self.addItem(surface)
+            else:
+                surface = None
             self._surface_items.append(surface)
 
             text = gl.GLTextItem(
@@ -185,7 +186,9 @@ class WaterfallPlot(gl.GLViewWidget):
                 mode="line_strip",
                 glOptions="translucent",
             )
-            self.addItem(contour)
+                self.addItem(contour)
+            else:
+                contour = None
             self._contour_items.append(contour)
 
         self._cursor_line = gl.GLLinePlotItem(
@@ -234,12 +237,13 @@ class WaterfallPlot(gl.GLViewWidget):
         for index, lane in enumerate(self.lanes):
             x, y, z_grid, rgba, crest, rgb, label, lane_y = self._lane_geometry(index, lane)
             surface = self._surface_items[index]
-            surface.setData(x=x, y=y, z=z_grid, colors=rgba)
             red, green, blue = rgb
-            self._contour_items[index].setData(
-                pos=crest,
-                color=(red, green, blue, min(1.0, self.opacity + 0.32)),
-            )
+            if surface is not None:
+                surface.setData(x=x, y=y, z=z_grid, colors=rgba)
+                self._contour_items[index].setData(
+                    pos=crest,
+                    color=(red, green, blue, min(1.0, self.opacity + 0.32)),
+                )
             self._text_items[index].setData(
                 pos=(0.0, lane_y - 0.48, 0.04),
                 text=label,
