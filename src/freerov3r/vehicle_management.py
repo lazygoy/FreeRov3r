@@ -73,4 +73,37 @@ def on_vehicle_selected(window, item):
 
 
 def _apply_detected_vin(window, vin):
+    """Use a validated VIN decoded from observed diagnostic response traffic."""
+    previous = window.settings.get("current_vin")
+    if previous == vin:
+        return
+    if previous and previous != vin:
+        window.log.appendPlainText(
+            f"VIN mismatch: selected {previous}, scan data reports {vin}. Using scan-reported VIN."
+        )
+    identification = identify_vehicle(vin)
+    vehicle = window.settings.setdefault("vehicles", {}).get(vin, {})
+    vehicle.update({
+        "make": identification.get("make") or vehicle.get("make", ""),
+        "model": identification.get("model") or vehicle.get("model", ""),
+        "model_year": identification.get("model_year") or vehicle.get("model_year"),
+        "profile_id": identification.get("profile_id", "generic"),
+        "variant_id": identification.get("variant_id"),
+        "identification_confidence": identification.get("confidence", "unknown"),
+    })
+    window.settings["vehicles"][vin] = vehicle
+    window.settings["active_vehicle"] = vehicle.copy()
+    window.settings["current_vin"] = vin
+    if window.receiver and window.receiver.isRunning():
+        window.capture_vin = vin
+    window._refresh_vehicle_list()
+    window._update_vehicle_context()
+    window.save_current_settings()
+    window.record_vehicle_event(
+        "vin_detected", "VIN decoded from diagnostic traffic",
+        {"vin": vin, "source": "OBD Mode 09 PID 02 or UDS DID F190"}, vin=vin
+    )
+    window.log.appendPlainText(f"VIN detected from scan data: {vin}")
+    window.show_toast(f"VIN identified: {vin}", "success")
+
 
