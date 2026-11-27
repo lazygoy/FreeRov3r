@@ -465,3 +465,103 @@ def test_runtime_rejects_logical_link_creation_without_exports(registration):
         runtime.create_logical_link(17, 600)
 
     runtime.close()
+
+
+def test_runtime_sets_uint32_com_param_in_offline_logical_link(registration):
+    from freerov3r.hardware.dpdu_runtime import _PduParamItem
+
+    class ComParamLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+            self.value = ctypes.c_uint32(50000)
+            self.param_item = _PduParamItem(
+                0x2000, 77, 0x00000105, 3,
+                ctypes.cast(ctypes.pointer(self.value), ctypes.c_void_p),
+            )
+            self.param_ptr = ctypes.pointer(self.param_item)
+
+        def PDUModuleConnect(self, _handle):
+            return 0
+
+        def PDUModuleDisconnect(self, _handle):
+            return 0
+
+        def PDUCreateComLogicalLink(self, _mod, _rsc, _rid, _tag, output, _flags):
+            ctypes.cast(output, ctypes.POINTER(ctypes.c_uint32))[0] = 91
+            return 0
+
+        def PDUDestroyComLogicalLink(self, _mod, _cll):
+            return 0
+
+        def PDUGetComParam(self, module, cll, param_id, output):
+            self.calls.append(("get_param", module, cll, param_id))
+            ctypes.cast(
+                output, ctypes.POINTER(ctypes.POINTER(_PduParamItem))
+            )[0] = self.param_ptr
+            return 0
+
+        def PDUSetComParam(self, module, cll, item_ptr):
+            item = ctypes.cast(item_ptr, ctypes.POINTER(_PduParamItem)).contents
+            self.calls.append((
+                "set_param", module, cll, item.com_param_id,
+                item.data_type, item.param_class, self.value.value,
+            ))
+            return 0
+
+    library = ComParamLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+    runtime.connect_module(17)
+    runtime.create_logical_link(17, 600)
+
+    assert runtime.set_com_param_uint32(17, 91, 77, 250000) == 250000
+    assert library.value.value == 250000
+    assert ("set_param", 17, 91, 77, 0x00000105, 3, 250000) in library.calls
+    assert any(call[0] == "destroy_item" for call in library.calls)
+
+    runtime.close()
+
+
+def test_runtime_rejects_unsupported_com_param_type_and_frees_item(registration):
+    from freerov3r.hardware.dpdu_runtime import _PduParamItem
+
+    class ComParamLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+            self.value = ctypes.c_uint8(1)
+            self.param_item = _PduParamItem(
+                0x2000, 77, 0x00000101, 3,
+                ctypes.cast(ctypes.pointer(self.value), ctypes.c_void_p),
+            )
+            self.param_ptr = ctypes.pointer(self.param_item)
+
+        def PDUModuleConnect(self, _handle):
+            return 0
+
+        def PDUModuleDisconnect(self, _handle):
+            return 0
+
+        def PDUCreateComLogicalLink(self, _mod, _rsc, _rid, _tag, output, _flags):
+            ctypes.cast(output, ctypes.POINTER(ctypes.c_uint32))[0] = 91
+            return 0
+
+        def PDUDestroyComLogicalLink(self, _mod, _cll):
+            return 0
+
+        def PDUGetComParam(self, _module, _cll, _param, output):
+            ctypes.cast(
+                output, ctypes.POINTER(ctypes.POINTER(_PduParamItem))
+            )[0] = self.param_ptr
+            return 0
+
+    library = ComParamLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+    runtime.connect_module(17)
+    runtime.create_logical_link(17, 600)
+
+    with pytest.raises(DPduApiError, match="only supports PDU_PT_UNUM32"):
+        runtime.set_com_param_uint32(17, 91, 77, 5)
+
+    assert any(call[0] == "destroy_item" for call in library.calls)
+    runtime.close()
