@@ -1,0 +1,108 @@
+# J2534 and D-PDU Integration Architecture
+
+## Scope
+
+FreeRov3r will support a hardware-independent diagnostic interface spanning:
+
+- SAE J2534 Pass-Thru devices, beginning with API 04.04 and adding 05.00 only where a driver exposes it.
+- ISO 22900-2 D-PDU API / MVCI modules.
+- Existing native CAN, SocketCAN, ESP32, ELM327, and simulator adapters.
+- Vehicle-independent CAN, ISO-TP, OBD-II, and UDS services.
+- Vehicle profiles and plugins that describe verified ECU addressing, services, identifiers, and capabilities.
+
+J2534 and D-PDU are interface standards, not universal ECU unlocks. They standardize access to communication hardware; vehicle-specific diagnostic sequences, credentials, programming data, and authorization remain separate concerns.
+
+## Existing foundation
+
+The repository already has:
+
+- `hardware.base.CanAdapter` as a small receive-oriented adapter abstraction.
+- `hardware.capabilities.AdapterCapabilities` and independent `TransmitPolicy` gates.
+- `isotp_transport.IsoTpTransport` for bounded classic-CAN ISO-TP transport.
+- `diagnostics.uds` for a read-only UDS payload codec.
+- `diagnostics.uds_client.UdsDiagnosticClient` for guarded read-only UDS transactions.
+- Separate safety authorization in `safety.SafetyPolicy`.
+
+The J2534/D-PDU work must extend these layers. It must not create a second ISO-TP or UDS engine.
+
+## Planned layers
+
+### 1. Driver inventory
+
+The first implementation is read-only Windows registry discovery. It reports the registered device name, vendor, FunctionLibrary DLL path, optional configuration application, API version, and registry location.
+
+Discovery must not load vendor DLLs, open hardware, probe a vehicle, or transmit. Missing or malformed registrations are reported as unavailable rather than guessed.
+
+### 2. J2534 runtime adapter
+
+A later Windows-specific adapter will load the registered vendor DLL only after an explicit user-selected open action. It will isolate vendor calls behind a narrow runtime interface and map J2534 statuses, errors, messages, filters, and channel lifecycle into FreeRov3r's internal types.
+
+Requirements:
+
+- Explicit DLL path and API-version selection.
+- Correct Windows calling convention and fixed-width/native ABI declarations.
+- Serialized access to vendor functions unless a vendor documents thread safety.
+- Bounded waits and cancellation where the API permits.
+- Deterministic close/cleanup on errors.
+- No silent fallback to another device or API version.
+- Device capabilities must be based on declared and tested support, not on the existence of a DLL.
+
+### 3. D-PDU / MVCI adapter
+
+D-PDU support will be a separate provider because its module discovery, resource model, protocol configuration, and lifecycle differ from J2534. The application will discover installed MVCI protocol modules and their module-description metadata, then expose supported resources through the same internal adapter contract.
+
+J2534 and D-PDU may share normalized CAN/diagnostic operations, but their vendor APIs must remain isolated behind separate provider implementations.
+
+### 4. Protocol services
+
+CAN framing, ISO-TP, UDS payload encoding/decoding, OBD-II, DTC handling, and transaction policy remain vehicle-independent. An adapter provides frames or diagnostic PDUs; it does not decide which ECU service is appropriate.
+
+The transport layer must preserve:
+- Addressing mode and transmit/receive identifiers.
+- CAN classic/CAN FD support as explicitly declared.
+- Padding and timing parameters.
+- Flow-control behavior.
+- Message timestamps and source-interface metadata.
+- Per-frame authorization for active transmission.
+
+### 5. Vehicle profiles and plugins
+
+The first complete reference profile remains Land Rover L319 / Discovery 3 and Discovery 4, with the naturally aspirated 5.0L petrol V8 as the initial validation target.
+
+Profiles must state exact supported model years, engine/ECU variants, network buses, addressing, service coverage, and evidence confidence. Unknown or unverified values remain unknown. Other manufacturers can contribute profiles without changing the shared transport engine.
+
+## Safety and authorization model
+
+The following are independent permissions and must never be inferred from device discovery:
+
+1. Passive receive/capture.
+2. Standard OBD-II diagnostic requests.
+3. UDS diagnostic requests.
+4. General raw CAN transmission.
+5. UDS session control, security access, routines, reset, write services, and programming.
+
+The initial J2534 discovery feature grants none of these permissions.
+
+Read-only UDS support remains the default diagnostic scope. Security-access research may document observed seed/key exchanges and implement authorized access for a verified, supported ECU when the method and authorization are established. It must not turn into a generic immobilizer or anti-theft defeat feature.
+
+Programming remains disabled unless exact ECU identity, file compatibility, verified original backups, stable power, a validated recovery route, and explicit operator approval are all present. The existing dual-location recovery archive requirements remain mandatory.
+
+## Development sequence and exit criteria
+
+| Step | Work | Exit criteria |
+|---|---|---|
+| 1 | J2534 registry discovery | Deterministic inventory; malformed entries ignored; no DLL loading or vehicle I/O |
+| 2 | J2534 ABI/runtime wrapper | Mocked API tests; vendor DLL lifecycle and error mapping verified |
+| 3 | J2534 CAN receive path | Timestamped frames; filters and timeouts verified on supported hardware |
+| 4 | J2534 controlled transmit path | Independent capability/policy gates and per-frame authorization tested |
+| 5 | D-PDU/MVCI discovery | Installed module metadata and supported resources inventoried |
+| 6 | D-PDU runtime adapter | Provider lifecycle and protocol mapping verified with a supported VCI |
+| 7 | Shared ISO-TP/UDS integration | Reuse existing transport/client; no duplicate protocol implementation |
+| 8 | LR3/LR4 profile validation | ECU identities, addressing, services, and results recorded with evidence |
+| 9 | Security and programming research | Module-specific authorization, backup, recovery, and verification gates proven |
+
+A feature is not considered hardware-verified because it passes mocked tests. Hardware verification must identify the exact VCI model, driver version, firmware, API version, vehicle, ECU identity, and test result.
+
+## First implementation
+
+`hardware.j2534_discovery` performs registry-only inventory for the J2534 04.04 and 05.00 registration roots. It is intentionally not a J2534 communication adapter. No vendor DLL is loaded and no vehicle communication is attempted.
