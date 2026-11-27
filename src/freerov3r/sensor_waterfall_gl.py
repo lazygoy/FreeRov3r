@@ -178,7 +178,6 @@ class WaterfallPlot(gl.GLViewWidget):
                     pos=crest,
                     color=(red, green, blue, min(1.0, self.opacity + 0.25)),
                     width=3.0,
-                    width=3.0,
                     antialias=True,
                     mode="line_strip",
                     glOptions="translucent",
