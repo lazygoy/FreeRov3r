@@ -105,6 +105,12 @@ static bool enqueueFrame(const twai_message_t &frame, uint64_t timestampUs) {
     ++outputQueueDrops;
     return false;
   }
+#if FREEROV3R_WIFI_ENABLED
+  if (wifiClientConnected && wifiOutputQueue &&
+      xQueueSend(wifiOutputQueue, &item, 0) != pdTRUE) {
+    ++wifiQueueDrops;
+  }
+#endif
   return true;
 }
 static bool enqueueStatus(const char *status) {
@@ -216,6 +222,11 @@ static void wifiWriterTask(void *parameter) {
   while (WiFi.status() != WL_CONNECTED) vTaskDelay(pdMS_TO_TICKS(500));
   wifiServer.begin();
   wifiServer.setNoDelay(true);
+  const String ipText = WiFi.localIP().toString();
+  char networkStatus[64];
+  snprintf(networkStatus, sizeof(networkStatus), "WIFI_READY,%s,%u",
+           ipText.c_str(), (unsigned)FREEROV3R_WIFI_PORT);
+  enqueueStatus(networkStatus);
 
   WiFiClient client;
   OutputItem item;
@@ -231,6 +242,7 @@ static void wifiWriterTask(void *parameter) {
         // Do not replay stale frames from a previous TCP session.
         while (xQueueReceive(wifiOutputQueue, &item, 0) == pdTRUE) {}
         wifiClientConnected = true;
+        enqueueStatus("WIFI_CLIENT_CONNECTED");
         static const char hello[] =
             "FreeRov3r ESP32-S3;protocol=1;mode=listen-only;tcp=1";
         wifiWriteMessage(client, MSG_HELLO, (const uint8_t *)hello,
