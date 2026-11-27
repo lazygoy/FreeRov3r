@@ -119,3 +119,13 @@ as \`observed_can_node\` records with capture provenance and explicit
 probable traffic role, not a named ECU. The import requires a report that
 explicitly states no transmission occurred and a traceable capture/session ID.
 It never creates a verified module identity or a supported diagnostic feature.
+
+
+The diagnostic-side module inventory API is
+\`VehicleKnowledgeStore.module_inventory(profile_id, model_year, engine_id)\`.
+It returns observed CAN nodes separately from candidate/documented module
+identity records, verified module identities, and supported module identities.
+A CAN node with a probable UDS responder role is never rendered as a named ECU
+unless a separate \`module_identity\` record has passed explicit verification.
+This keeps passive discovery useful to diagnostics without overstating what a
+capture proves.

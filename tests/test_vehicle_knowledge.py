@@ -377,3 +377,65 @@ def test_multi_capture_import_requires_stable_ids_for_each_capture(tmp_path):
             applicability=_applicability(),
             capture_ids={"ignition_on": "session-001"},
         )
+
+
+
+def test_module_inventory_separates_observed_nodes_from_verified_identities(tmp_path):
+    store = _store(tmp_path)
+    node = store.add_observation(
+        "observed_can_node",
+        "HS-CAN:STD:7E8",
+        {
+            "can_id": 0x7E8,
+            "extended": False,
+            "channel": "HS-CAN",
+            "identity_confirmed": False,
+            "role": "candidate_uds_responder",
+        },
+        applicability=_applicability(),
+        source_capture_ids=["capture-001"],
+    )
+    candidate = store.add_observation(
+        "module_identity",
+        "engine_control_module",
+        {"name": "Engine control module", "can_id": 0x7E8},
+        applicability=_applicability(),
+        source_references=["Land Rover workshop manual, section 303"],
+    )
+    inventory = store.module_inventory(
+        "land_rover_l319_lr4", model_year=2012, engine_id="508PN"
+    )
+    assert [item["record_id"] for item in inventory["observed_can_nodes"]] == [
+        node["record_id"]
+    ]
+    assert [item["record_id"] for item in inventory["candidate_module_identities"]] == [
+        candidate["record_id"]
+    ]
+    assert inventory["verified_module_identities"] == []
+    assert inventory["supported_module_identities"] == []
+    assert "not physical ECU identities" in inventory["identity_warning"]
+
+
+def test_module_inventory_only_lists_verified_or_supported_module_identities(tmp_path):
+    store = _store(tmp_path)
+    record = store.add_observation(
+        "module_identity",
+        "body_control_module",
+        {"name": "Body control module", "network": "MS-CAN"},
+        applicability=_applicability(),
+        source_references=["verified wiring diagram reference"],
+    )
+    store.review(
+        record["record_id"], "verified",
+        source_reference="Land Rover electrical library, 2012 LR4",
+        vehicle_applicability="2012 LR4 5.0L 508PN",
+        evidence_grade="A",
+        verification_notes="Confirmed against the applicable wiring diagram and vehicle connector identification",
+    )
+    inventory = store.module_inventory(
+        "land_rover_l319_lr4", model_year=2012, engine_id="508PN"
+    )
+    assert [item["record_id"] for item in inventory["verified_module_identities"]] == [
+        record["record_id"]
+    ]
+    assert inventory["supported_module_identities"] == []
