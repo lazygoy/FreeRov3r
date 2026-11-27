@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import ctypes
 import os
-from ctypes import POINTER, byref, c_char, c_uint8, c_uint32, c_void_p
+from ctypes import POINTER, byref, c_uint8, c_uint32, c_void_p
 from dataclasses import dataclass
 from typing import Callable
 
