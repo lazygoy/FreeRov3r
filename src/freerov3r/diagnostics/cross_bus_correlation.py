@@ -105,13 +105,11 @@ def analyze_cross_bus_correlation(
         result["status"] = "capture too short for correlation"
         return result
 
-    grouped = defaultdict(Counter)
-    channel_counts = Counter()
+    grouped = defaultdict(lambda: defaultdict(Counter))
     for timestamp, channel, can_id, extended in valid:
         bin_index = int((timestamp - origin) / bin_width_seconds)
         key = (can_id, extended)
         grouped[channel][key][bin_index] += 1
-        channel_counts[channel] += 1
 
     # Limit the pair search to the most frequently observed IDs on each bus.
     id_sets = {}
