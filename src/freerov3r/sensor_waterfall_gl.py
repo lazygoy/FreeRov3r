@@ -27,6 +27,7 @@ class WaterfallPlot(gl.GLViewWidget):
         self.opacity = 0.55
         self.height_scale = 1.4
         self._colors = {}
+        self._camera_initialized = False
         self.setMinimumSize(820, 420)
         self.setBackgroundColor("#0B1220")
         self.setMouseTracking(True)
@@ -60,6 +61,10 @@ class WaterfallPlot(gl.GLViewWidget):
         )
 
     def _build_scene(self):
+        camera_elevation = self.opts.get("elevation", 28)
+        camera_azimuth = self.opts.get("azimuth", -48)
+        camera_distance = self.opts.get("distance", 14)
+        first_scene = not self._camera_initialized
         self.clear()
         if not self.lanes:
             self.update()
@@ -101,6 +106,13 @@ class WaterfallPlot(gl.GLViewWidget):
                 smooth=False, computeNormals=False, drawEdges=False,
             )
             self.addItem(surface)
+            self.addItem(gl.GLTextItem(
+                pos=(0.0, index * spacing - 0.48, 0.04),
+                text=(f'{lane["name"]} [{lane["unit"]}]  '
+                      f'min {lane["minimum"]:.4g}  max {lane["maximum"]:.4g}  '
+                      f'now {lane["current"]:.4g}'),
+                color=(0.88, 0.92, 0.98, 1.0),
+            ))
             crest = np.column_stack((
                 x, np.full_like(x, index * spacing), z + 0.012,
             )).astype(np.float32)
@@ -120,10 +132,18 @@ class WaterfallPlot(gl.GLViewWidget):
             self.duration / 2.0, (count - 1) * spacing / 2.0,
             self.height_scale * 0.32,
         )
-        self.setCameraPosition(
-            distance=max(10.0, self.duration * 1.35, count * 2.2),
-            elevation=28, azimuth=-48,
-        )
+        if first_scene:
+            self.setCameraPosition(
+                distance=max(10.0, self.duration * 1.35, count * 2.2),
+                elevation=28, azimuth=-48,
+            )
+            self._camera_initialized = True
+        else:
+            self.setCameraPosition(
+                distance=camera_distance,
+                elevation=camera_elevation,
+                azimuth=camera_azimuth,
+            )
         self.update()
 
     def mouseMoveEvent(self, event):
