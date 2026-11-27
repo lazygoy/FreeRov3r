@@ -137,7 +137,10 @@ class ModulesTab(QWidget):
             return
         profile_id = str(getattr(self.vehicle_context, "profile_id", "generic") or "generic")
         vehicle = getattr(self.vehicle_context, "vehicle", {}) or {}
-        model_year = vehicle.get("model_year")
+        try:
+            model_year = int(vehicle.get("model_year"))
+        except (TypeError, ValueError):
+            model_year = None
         engine_id = vehicle.get("engine_id")
         try:
             inventory = self.knowledge_store.module_inventory(
