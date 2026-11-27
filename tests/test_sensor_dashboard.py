@@ -164,3 +164,25 @@ def test_legacy_sensor_favorite_loads_into_first_graph(qapp):
     assert all(not panel.selected_sensor_ids() for panel in dock.panels[1:])
 
     dock.close()
+
+
+
+def test_graph_panel_popout_and_close_restore_widget_parent(qapp):
+    from types import SimpleNamespace
+
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    dock = SensorDashboardDock(SimpleNamespace(samples=[]))
+    panel = dock.panels[0]
+
+    panel.toggle_popout()
+    host = panel._floating_host
+    assert host is not None
+    assert panel.parent() is host
+
+    host.close()
+    qapp.processEvents()
+
+    assert panel._floating_host is None
+    assert panel.parent() is dock.grid_host
+    dock.close()
