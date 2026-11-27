@@ -156,3 +156,74 @@ def test_wifi_adapter_validates_tcp_port():
     adapter = Esp32WifiAdapter("192.168.4.1", port=70000)
     with pytest.raises(ValueError, match="valid ESP32 Wi-Fi"):
         adapter.open()
+
+
+def control_message(message_type, sequence, text):
+    return encode_message(
+        ProtocolMessage(message_type, sequence, text.encode("utf-8"))
+    )
+
+
+def test_adapter_parses_hello_wifi_endpoint_and_queue_drop_status():
+    stream = b"".join(
+        [
+            control_message(
+                MessageType.HELLO,
+                1,
+                "FreeRov3r ESP32-S3;protocol=1;mode=listen-only;can=classical",
+            ),
+            control_message(MessageType.DEVICE_STATUS, 2, "WIFI_READY,192.168.1.44,3333"),
+            control_message(MessageType.DEVICE_STATUS, 3, "STATS,WIFI_QUEUE_DROPS,17"),
+            frame_message(4),
+        ]
+    )
+    adapter = Esp32FramedSerialAdapter()
+    adapter.connection = FakeSerial([stream])
+    adapter._opened = True
+
+    frame = adapter.receive(timeout=0.1)
+    status = adapter.diagnostics
+
+    assert frame.arbitration_id == 0x123
+    assert status["device_info"] == {
+        "protocol": "1",
+        "mode": "listen-only",
+        "can": "classical",
+        "description": "FreeRov3r ESP32-S3",
+    }
+    assert status["wifi_host"] == "192.168.1.44"
+    assert status["wifi_port"] == 3333
+    assert status["queue_drops"] == {"wifi_queue_drops": 17}
+    assert status["device_status_messages"] == 2
+
+
+def test_adapter_ignores_malformed_status_fields_without_crashing():
+    stream = b"".join(
+        [
+            control_message(MessageType.DEVICE_STATUS, 1, "WIFI_READY,192.168.1.5,notaport"),
+            control_message(MessageType.DEVICE_STATUS, 2, "STATS,USB_QUEUE_DROPS,negative"),
+            frame_message(3),
+        ]
+    )
+    adapter = Esp32FramedSerialAdapter()
+    adapter.connection = FakeSerial([stream])
+    adapter._opened = True
+
+    assert adapter.receive(timeout=0.1) is not None
+    assert adapter.diagnostics["wifi_host"] is None
+    assert adapter.diagnostics["queue_drops"] == {}
+    assert adapter.diagnostics["device_status"] == "STATS,USB_QUEUE_DROPS,negative"
+
+
+def test_adapter_clears_device_status_on_reopen():
+    adapter = Esp32FramedSerialAdapter()
+    adapter.device_info["protocol"] = "1"
+    adapter.device_status = "READY,LISTEN_ONLY"
+    adapter.queue_drops["usb_queue_drops"] = 4
+    adapter._open_transport = lambda: None
+
+    adapter.open()
+
+    assert adapter.diagnostics["device_info"] == {}
+    assert adapter.diagnostics["device_status"] is None
+    assert adapter.diagnostics["queue_drops"] == {}
