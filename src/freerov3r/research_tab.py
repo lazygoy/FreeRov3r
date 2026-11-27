@@ -34,6 +34,7 @@ from freerov3r.hardware.clock_sync import calibrate_two_devices
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 from freerov3r.diagnostics.cross_bus_correlation import analyze_cross_bus_correlation
 from freerov3r.diagnostics.cross_bus_signal_correlation import analyze_cross_bus_signal_correlation
+from freerov3r.diagnostics.cross_capture_signal_validation import validate_cross_capture_signals
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.dbc_signal_behavior import (
@@ -1095,6 +1096,12 @@ class ResearchTab(QWidget):
         )
         self.cross_bus_signal_button.clicked.connect(self.analyze_cross_bus_signals)
         dbc_controls.addWidget(self.cross_bus_signal_button)
+        self.cross_capture_validation_button = QPushButton("Validate across captures")
+        self.cross_capture_validation_button.setToolTip(
+            "Check whether byte/bit relationships recur consistently in multiple independent capture files."
+        )
+        self.cross_capture_validation_button.clicked.connect(self.analyze_cross_capture_signals)
+        dbc_controls.addWidget(self.cross_capture_validation_button)
         dbc_controls.setContentsMargins(0, 0, 0, 0)
         dbc_controls.setSpacing(5)
         root.addLayout(dbc_controls)
@@ -2699,6 +2706,115 @@ class ResearchTab(QWidget):
             f"Cross-bus analysis: {report['candidate_count']} candidate relationship(s); correlation only"
         )
 
+    def _signal_validation_capture_set(self):
+        """Collect independently recorded captures without combining their clocks."""
+        if self.sequence_captures:
+            return list(self.sequence_captures)
+        captures = []
+        if self.frames:
+            name = (
+                self.metadata.get("session_name")
+                or Path(self.metadata.get("imported_from", "Working capture")).name
+            )
+            captures.append({"name": name, "frames": self.frames})
+        if self.reference_frames:
+            name = (
+                self.reference_metadata.get("session_name")
+                or Path(self.reference_metadata.get("imported_from", "Reference capture")).name
+            )
+            captures.append({"name": name, "frames": self.reference_frames})
+        return captures
+
+    def analyze_cross_capture_signals(self):
+        """Validate signal relationships independently across loaded capture files."""
+        self._flush_pending_frames()
+        captures = self._signal_validation_capture_set()
+        if len(captures) < 2:
+            QMessageBox.information(
+                self, "Cross-capture signal validation",
+                "Load at least two independent capture files using Load sequences, "
+                "or load a working capture and a comparison capture.",
+            )
+            return
+        report = validate_cross_capture_signals(captures)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cross-capture signal validation")
+        dialog.resize(1100, 680)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            f"Status: {report['status']} | {report['analyzed_capture_count']} captures analyzed | "
+            f"{report['candidate_count']} repeatable candidates"
+        ))
+        layout.addWidget(QLabel(
+            f"Required captures: {report['minimum_captures']} | "
+            f"Required capture agreement: {report['minimum_capture_agreement']:.0%} | "
+            f"Maximum lag spread: {report['maximum_lag_spread_ms']:.1f} ms"
+        ))
+        capture_table = QTableWidget(len(report["captures"]), 4)
+        capture_table.setHorizontalHeaderLabels(
+            ["Capture", "Valid frames", "Within-capture candidates", "Status"]
+        )
+        capture_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        capture_table.setAlternatingRowColors(True)
+        for row, item in enumerate(report["captures"]):
+            values = [
+                item["name"], str(item["frame_count"]),
+                str(item["candidate_count"]), item["status"],
+            ]
+            for column, value in enumerate(values):
+                capture_table.setItem(row, column, QTableWidgetItem(str(value)))
+        layout.addWidget(capture_table)
+        columns = [
+            "Type", "CAN ID A", "Field A", "CAN ID B", "Field B",
+            "Relationship", "Captures", "Capture agreement", "Transitions",
+            "Median lag (ms)", "Lag spread (ms)",
+        ]
+        table = QTableWidget(len(report["candidates"]), len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.horizontalHeader().setStretchLastSection(True)
+        for row, item in enumerate(report["candidates"]):
+            field_a = f"byte {item['byte_a']}"
+            field_b = f"byte {item['byte_b']}"
+            if item["signal_type"] == "bit":
+                field_a += f" bit {item['bit_a']}"
+                field_b += f" bit {item['bit_b']}"
+            values = [
+                item["signal_type"],
+                f"0x{item['can_id_a']:X} / {item['channel_a']}",
+                field_a,
+                f"0x{item['can_id_b']:X} / {item['channel_b']}",
+                field_b,
+                item["match_type"],
+                str(item["capture_count"]),
+                f"{item['capture_agreement']:.1%}",
+                str(item["total_transitions"]),
+                f"{item['median_lag_seconds'] * 1000:+.1f}",
+                f"{item['lag_spread_seconds'] * 1000:.1f}",
+            ]
+            for column, value in enumerate(values):
+                table.setItem(row, column, QTableWidgetItem(str(value)))
+        layout.addWidget(table, 1)
+        notes = QPlainTextEdit()
+        notes.setReadOnly(True)
+        notes.setMaximumHeight(120)
+        notes.setPlainText(
+            "A repeatable candidate is not a verified signal definition, ECU identity, or causal relationship. "
+            "Each capture is analyzed on its own host-monotonic timeline; timestamps from different files are never compared. "
+            "Bus labels and CAN IDs must remain consistent across recordings.\n\n"
+            + "\n".join(f"- {item}" for item in report["limitations"])
+        )
+        layout.addWidget(notes)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Cross-capture validation: {report['candidate_count']} repeatable candidate(s); no automatic verification"
+        )
+
     def analyze_cross_bus_signals(self):
         """Compare repeated payload byte/bit transitions across candidate bus pairs."""
         self._flush_pending_frames()
@@ -3568,6 +3684,9 @@ class ResearchTab(QWidget):
             "",
             "## Cross-bus signal-level transition candidates",
             json.dumps(analyze_cross_bus_signal_correlation(self.frames), indent=2),
+            "",
+            "## Cross-capture signal validation",
+            json.dumps(validate_cross_capture_signals(self._signal_validation_capture_set()), indent=2),
             "",
             "## Passive CAN payload variability",
             json.dumps(analyze_payload_variability(self.frames), indent=2),
