@@ -59,7 +59,10 @@ class FakePduLibrary:
     def PDUGetModuleIds(self, output):
         self.calls.append(("get_modules",))
         if self.list_status == 0:
-            output[0] = self._item_pointer
+            output_pointer = ctypes.cast(
+                output, ctypes.POINTER(ctypes.POINTER(_PduModuleItem))
+            )
+            output_pointer[0] = self._item_pointer
         return self.list_status
 
     def PDUDestroyItem(self, item):
