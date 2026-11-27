@@ -94,6 +94,4 @@ SOCKETCAN_CAPABILITIES = AdapterCapabilities(
     raw_can_transmit=True,
     raw_can_transmit_implemented=True,
     obd2_passive_decode=True,
-    obd2_active_requests=True,
-    diagnostic_requests_implemented=True,
 )
