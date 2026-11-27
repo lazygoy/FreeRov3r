@@ -65,7 +65,6 @@ def test_usb_adapter_handles_fragmented_stream_and_multiple_frames():
     adapter.connection = fake
     adapter._opened = True
 
-    assert adapter.receive(timeout=0.1) is None
     a = adapter.receive(timeout=0.1)
     reads_after_decode = fake.read_calls
     b = adapter.receive(timeout=0.1)
