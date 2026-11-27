@@ -3,7 +3,7 @@
 import math
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QMargins
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDockWidget, QGridLayout, QHBoxLayout,
@@ -269,15 +269,18 @@ class _FloatingGraphWindow(QDialog):
         self.panel = panel
         self._restoring = False
         self.setWindowTitle(f"FreeRov3r | {panel.windowTitle()}")
-        self.resize(760, 460)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.setMinimumSize(900, 560)
+        self.resize(1100, 700)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
         panel.setParent(self)
         layout.addWidget(panel)
 
     def closeEvent(self, event):
         if not self._restoring:
             self.dock.restore_panel(self.panel, self)
-        event.ignore()
+        event.accept()
 
 
 class SensorGraphPanel(QWidget):
@@ -330,14 +333,22 @@ class SensorGraphPanel(QWidget):
 
         if HAS_CHARTS:
             self.chart = QChart()
+            self.chart.setTheme(QChart.ChartThemeDark)
             self.chart.legend().setVisible(True)
+            self.chart.legend().setLabelColor(QColor("#E5E7EB"))
+            self.chart.legend().setBrush(QColor("#111827"))
             self.chart.setAnimationOptions(QChart.NoAnimation)
             self.chart.setBackgroundBrush(QColor("#111827"))
             self.chart.setPlotAreaBackgroundBrush(QColor("#0B1220"))
             self.chart.setPlotAreaBackgroundVisible(True)
             self.chart.setTitleBrush(QColor("#E5E7EB"))
+            self.chart.setBackgroundRoundness(0)
+            self.chart.setMargins(QMargins(12, 8, 12, 8))
             self.chart_view = QChartView(self.chart)
             self.chart_view.setRenderHint(QPainter.Antialiasing)
+            self.chart_view.setBackgroundBrush(QColor("#0B1220"))
+            self.chart_view.setStyleSheet("QChartView { background: #0B1220; border: 0; }")
+            self.chart_view.viewport().setStyleSheet("background: #0B1220;")
             self.chart_view.setRubberBand(QChartView.RectangleRubberBand)
             self.axis_x = QValueAxis()
             self.axis_x.setTitleText("Elapsed time (seconds)")
@@ -465,7 +476,7 @@ class SensorGraphPanel(QWidget):
             series.setName(
                 f"{first.name} [{first.unit or 'unitless'}] · {low:.4g} to {high:.4g}"
             )
-            series.setPen(QPen(QColor(GRAPH_PALETTE[index % len(GRAPH_PALETTE)]), 2.8))
+            series.setPen(QPen(QColor(GRAPH_PALETTE[index % len(GRAPH_PALETTE)]), 3.4))
             for sample, value in zip(samples, values):
                 if multi_signal:
                     plotted = 50.0 if span == 0 else (value - low) * 100.0 / span
@@ -787,7 +798,7 @@ class SensorDashboardDock(QDockWidget):
         panel._floating_host = host
         panel.popout_button.setText("Dock back")
         panel.topmost.setEnabled(True)
-        host.show()
+        host.showNormal()
         host.raise_()
         host.activateWindow()
 
