@@ -554,6 +554,9 @@ def test_runtime_rejects_unsupported_com_param_type_and_frees_item(registration)
             )[0] = self.param_ptr
             return 0
 
+        def PDUSetComParam(self, *_args):
+            raise AssertionError("PDUSetComParam must not be called for unsupported types")
+
     library = ComParamLibrary()
     runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
     runtime.open()
