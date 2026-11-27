@@ -17,6 +17,7 @@ class AdapterCapabilities:
     obd2_active_requests: bool = False
     diagnostic_requests_implemented: bool = False
     uds_active_requests: bool = False
+    uds_diagnostic_requests_implemented: bool = False
     dual_channel: bool = False
     hardware_timestamp: bool = False
     device_clock_calibration: bool = False
@@ -26,14 +27,24 @@ class AdapterCapabilities:
 @dataclass(frozen=True)
 class TransmitPolicy:
     diagnostic_requests_enabled: bool = False
+    uds_requests_enabled: bool = False
     general_can_transmit_enabled: bool = False
     bench_mode: bool = False
 
     def allows_diagnostic_request(self, capabilities: AdapterCapabilities) -> bool:
+        """Authorize standard OBD-II requests only, not UDS."""
         return bool(
             capabilities.obd2_active_requests
             and capabilities.diagnostic_requests_implemented
             and self.diagnostic_requests_enabled
+        )
+
+    def allows_uds_request(self, capabilities: AdapterCapabilities) -> bool:
+        """Authorize UDS only when separately implemented and explicitly enabled."""
+        return bool(
+            capabilities.uds_active_requests
+            and capabilities.uds_diagnostic_requests_implemented
+            and self.uds_requests_enabled
         )
 
     def allows_general_can_transmit(self, capabilities: AdapterCapabilities) -> bool:
