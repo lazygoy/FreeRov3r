@@ -21,7 +21,7 @@ from .device_protocol import (
     encode_message,
     ProtocolMessage,
 )
-from .clock_sync import calculate_clock_sync_sample
+from .clock_sync import calculate_clock_sync_sample, estimate_clock_mapping
 from ..models import CanFrame
 
 
@@ -62,6 +62,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self._clock_sync_pending = {}
         self._clock_sync_results = {}
         self._next_clock_sync_id = 1
+        self.clock_calibration = None
 
     @property
     def connected(self):
@@ -130,6 +131,9 @@ class Esp32FramedStreamAdapter(CanAdapter):
             "connection_generation": self.connection_generation,
             "reconnect_attempts": self.reconnect_attempts,
             "connection_events": [dict(event) for event in self.connection_events],
+            "clock_calibration": (
+                dict(self.clock_calibration) if self.clock_calibration else None
+            ),
         }
 
     def open(self):
@@ -237,6 +241,24 @@ class Esp32FramedStreamAdapter(CanAdapter):
                 self._clock_sync_condition.wait(remaining)
             return self._clock_sync_results.pop(sync_id)
 
+    def calibrate_device_clock(self, *, sample_count=12, timeout=1.0):
+        """Collect timestamp exchanges and fit this ESP32 clock to host monotonic time.
+
+        Call while the normal capture receiver is running. The returned mapping
+        is suitable for comparing two devices with compare_clock_mappings().
+        """
+        if isinstance(sample_count, bool) or not isinstance(sample_count, int) or sample_count < 3:
+            raise ValueError("Clock calibration requires at least three samples")
+        samples = []
+        for index in range(sample_count):
+            samples.append(self.request_clock_sync(timeout=timeout))
+            if index + 1 < sample_count:
+                time.sleep(0.02)
+        result = estimate_clock_mapping(samples)
+        result["samples"] = samples
+        result["transport"] = self.transport_label
+        self.clock_calibration = result
+        return result
 
     def _handle_control_message(self, message):
         if message.version != 1:
