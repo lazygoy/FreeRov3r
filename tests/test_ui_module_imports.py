@@ -211,7 +211,7 @@ def test_capture_tab_constructs_with_callbacks():
         clear_capture_display=lambda: None,
         back_to_tasks=lambda: None,
     )
-    assert tab.backend.count() == 10
+    assert tab.backend.count() == 12
     assert tab.log.maximumBlockCount() == 1200
     assert tab.can_format_filter.count() == 3
 
