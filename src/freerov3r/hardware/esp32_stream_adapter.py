@@ -49,6 +49,11 @@ class Esp32FramedStreamAdapter(CanAdapter):
     def connected(self):
         return self._opened
 
+    def _record_connection_event(self, event):
+        self.connection_events.append(event)
+        if len(self.connection_events) > 1000:
+            del self.connection_events[:-1000]
+
     @property
     def description(self):
         return f"FreeRov3r ESP32 framed {self.transport_label} (receive-only)"
@@ -111,7 +116,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self._open_transport()
         self._opened = True
         self.connection_generation += 1
-        self.connection_events.append({
+        self._record_connection_event({
             "event": "connected",
             "wall_time": time.time(),
             "monotonic": time.monotonic(),
