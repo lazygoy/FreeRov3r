@@ -33,6 +33,12 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.last_sequence = None
         self.last_error = None
         self.last_frame_monotonic = None
+        self.device_info = {}
+        self.device_status = None
+        self.device_status_messages = 0
+        self.queue_drops = {}
+        self.wifi_host = None
+        self.wifi_port = None
         self._pending_frames = []
         self._opened = False
 
@@ -73,6 +79,12 @@ class Esp32FramedStreamAdapter(CanAdapter):
             "last_frame_age_seconds": age,
             "last_error": self.last_error,
             "mode": "receive-only",
+            "device_info": dict(self.device_info),
+            "device_status": self.device_status,
+            "device_status_messages": self.device_status_messages,
+            "queue_drops": dict(self.queue_drops),
+            "wifi_host": self.wifi_host,
+            "wifi_port": self.wifi_port,
         }
 
     def open(self):
@@ -85,6 +97,11 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.sequence_gaps = 0
         self.last_sequence = self.last_frame_monotonic = None
         self.last_error = None
+        self.device_info.clear()
+        self.device_status = None
+        self.device_status_messages = 0
+        self.queue_drops.clear()
+        self.wifi_host = self.wifi_port = None
         self._open_transport()
         self._opened = True
 
@@ -104,6 +121,46 @@ class Esp32FramedStreamAdapter(CanAdapter):
     def _read(self, timeout):
         raise NotImplementedError
 
+    def _handle_control_message(self, message):
+        if message.version != 1:
+            self.ignored_messages += 1
+            return
+        if message.message_type == MessageType.HELLO:
+            text = message.payload.decode("utf-8", errors="replace")
+            fields = {}
+            for part in text.split(";")[1:]:
+                if "=" in part:
+                    key, value = part.split("=", 1)
+                    fields[key.strip()] = value.strip()
+            self.device_info = fields
+            self.device_info["description"] = text.split(";", 1)[0]
+            return
+        if message.message_type != MessageType.DEVICE_STATUS:
+            self.ignored_messages += 1
+            return
+        text = message.payload.decode("utf-8", errors="replace").strip()
+        if not text:
+            self.ignored_messages += 1
+            return
+        self.device_status = text
+        self.device_status_messages += 1
+        parts = text.split(",")
+        if parts[0] == "WIFI_READY" and len(parts) >= 3:
+            host = parts[1].strip()
+            try:
+                port = int(parts[2])
+            except ValueError:
+                return
+            if host and 1 <= port <= 65535:
+                self.wifi_host, self.wifi_port = host, port
+        elif parts[0] == "STATS" and len(parts) >= 3:
+            try:
+                drops = int(parts[2])
+            except ValueError:
+                return
+            if drops >= 0:
+                self.queue_drops[parts[1].strip().lower()] = drops
+
     def _decode_messages(self, chunk):
         frames = []
         for message in self.decoder.feed(chunk):
@@ -116,6 +173,9 @@ class Esp32FramedStreamAdapter(CanAdapter):
                         self.sequence_gaps += distance
             self.last_sequence = message.sequence
 
+            if message.message_type in (MessageType.HELLO, MessageType.DEVICE_STATUS):
+                self._handle_control_message(message)
+                continue
             if message.version != 1 or message.message_type != MessageType.FRAME_RX:
                 self.ignored_messages += 1
                 continue
