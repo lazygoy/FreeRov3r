@@ -155,19 +155,31 @@ class WaterfallPlot(gl.GLViewWidget):
             x, y, z_grid, rgba, crest, rgb, label, lane_y = self._lane_geometry(index, lane)
             if len(x) >= 2:
                 surface = gl.GLSurfacePlotItem(
-                x=x,
-                y=y,
-                z=z_grid,
-                colors=rgba,
-                glOptions="translucent",
-                smooth=False,
-                computeNormals=False,
-                drawEdges=False,
-            )
+                    x=x,
+                    y=y,
+                    z=z_grid,
+                    colors=rgba,
+                    glOptions="translucent",
+                    smooth=False,
+                    computeNormals=False,
+                    drawEdges=False,
+                )
                 self.addItem(surface)
+                red, green, blue = rgb
+                contour = gl.GLLinePlotItem(
+                    pos=crest,
+                    color=(red, green, blue, min(1.0, self.opacity + 0.32)),
+                    width=2.0,
+                    antialias=True,
+                    mode="line_strip",
+                    glOptions="translucent",
+                )
+                self.addItem(contour)
             else:
                 surface = None
+                contour = None
             self._surface_items.append(surface)
+            self._contour_items.append(contour)
 
             text = gl.GLTextItem(
                 pos=(0.0, lane_y - 0.48, 0.04),
@@ -176,20 +188,6 @@ class WaterfallPlot(gl.GLViewWidget):
             )
             self.addItem(text)
             self._text_items.append(text)
-
-            red, green, blue = rgb
-            contour = gl.GLLinePlotItem(
-                pos=crest,
-                color=(red, green, blue, min(1.0, self.opacity + 0.32)),
-                width=2.0,
-                antialias=True,
-                mode="line_strip",
-                glOptions="translucent",
-            )
-                self.addItem(contour)
-            else:
-                contour = None
-            self._contour_items.append(contour)
 
         self._cursor_line = gl.GLLinePlotItem(
             pos=np.asarray([
