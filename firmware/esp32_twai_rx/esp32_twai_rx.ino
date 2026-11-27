@@ -74,23 +74,38 @@ static constexpr uint8_t PROTOCOL_VERSION = 1;
 static constexpr uint8_t MSG_HELLO = 0x01;
 static constexpr uint8_t MSG_DEVICE_STATUS = 0x12;
 static constexpr uint8_t MSG_FRAME_RX = 0x20;
+static constexpr uint8_t MSG_TIME_SYNC_REQ = 0x30;
+static constexpr uint8_t MSG_TIME_SYNC_RESP = 0x31;
 static uint32_t messageSequence = 0;
 
 static constexpr UBaseType_t OUTPUT_QUEUE_LENGTH = 256;
 static constexpr uint8_t OUTPUT_ITEM_FRAME = 1;
 static constexpr uint8_t OUTPUT_ITEM_STATUS = 2;
+static constexpr uint8_t OUTPUT_ITEM_CLOCK_SYNC = 3;
 struct OutputItem {
   uint8_t kind;
   twai_message_t frame;
   uint64_t timestampUs;
+  uint32_t syncId;
+  uint64_t hostSendTimeNs;
+  uint64_t deviceReceiveTimeUs;
   char status[64];
 };
+struct IncomingParser {
+  uint8_t bytes[96];
+  size_t used;
+};
+static IncomingParser usbCommandParser = {};
+#if FREEROV3R_WIFI_ENABLED
+static IncomingParser wifiCommandParser = {};
+#endif
 static QueueHandle_t outputQueue = nullptr;
 static volatile uint32_t outputQueueDrops = 0;
 static uint32_t reportedOutputQueueDrops = 0;
 #if FREEROV3R_WIFI_ENABLED
 static uint32_t wifiMessageSequence = 0;
 #endif
+static void processIncomingByte(IncomingParser &parser, uint8_t byte, bool wifi);
 
 static bool enqueueFrame(const twai_message_t &frame, uint64_t timestampUs) {
   OutputItem item = {};
@@ -136,6 +151,18 @@ static void writeU64(uint8_t *out, uint64_t value) {
   for (uint8_t i = 0; i < 8; ++i) {
     out[i] = (uint8_t)(value >> (56 - (i * 8)));
   }
+}
+static uint16_t readU16(const uint8_t *in) {
+  return ((uint16_t)in[0] << 8) | in[1];
+}
+static uint32_t readU32(const uint8_t *in) {
+  return ((uint32_t)in[0] << 24) | ((uint32_t)in[1] << 16) |
+         ((uint32_t)in[2] << 8) | in[3];
+}
+static uint64_t readU64(const uint8_t *in) {
+  uint64_t value = 0;
+  for (uint8_t i = 0; i < 8; ++i) value = (value << 8) | in[i];
+  return value;
 }
 static uint16_t crc16Ccitt(const uint8_t *data, size_t length) {
   uint16_t crc = 0xFFFF;
@@ -195,6 +222,15 @@ static bool wifiWriteMessage(WiFiClient &client, uint8_t type,
 }
 
 static bool wifiSendItem(WiFiClient &client, const OutputItem &item) {
+  if (item.kind == OUTPUT_ITEM_CLOCK_SYNC) {
+    uint8_t payload[28];
+    const uint64_t deviceSendUs = (uint64_t)esp_timer_get_time();
+    writeU32(&payload[0], item.syncId);
+    writeU64(&payload[4], item.hostSendTimeNs);
+    writeU64(&payload[12], item.deviceReceiveTimeUs);
+    writeU64(&payload[20], deviceSendUs);
+    return wifiWriteMessage(client, MSG_TIME_SYNC_RESP, payload, sizeof(payload));
+  }
   if (item.kind == OUTPUT_ITEM_STATUS) {
     return wifiWriteMessage(client, MSG_DEVICE_STATUS,
         (const uint8_t *)item.status, strlen(item.status));
@@ -238,6 +274,7 @@ static void wifiWriterTask(void *parameter) {
     if (!client || !client.connected()) {
       if (client) client.stop();
       wifiClientConnected = false;
+      wifiCommandParser.used = 0;
       WiFiClient incoming = wifiServer.available();
       if (incoming) {
         client = incoming;
@@ -254,6 +291,10 @@ static void wifiWriterTask(void *parameter) {
         wifiWriteMessage(client, MSG_DEVICE_STATUS,
                          (const uint8_t *)ready, sizeof(ready) - 1);
       }
+    }
+
+    while (client && client.connected() && client.available()) {
+      processIncomingByte(wifiCommandParser, (uint8_t)client.read(), true);
     }
 
     if (client && client.connected() &&
@@ -278,6 +319,73 @@ static void wifiWriterTask(void *parameter) {
 }
 #endif
 
+static void enqueueClockSync(uint32_t syncId, uint64_t hostSendNs,
+                              uint64_t deviceReceiveUs, bool wifi) {
+  OutputItem item = {};
+  item.kind = OUTPUT_ITEM_CLOCK_SYNC;
+  item.syncId = syncId;
+  item.hostSendTimeNs = hostSendNs;
+  item.deviceReceiveTimeUs = deviceReceiveUs;
+#if FREEROV3R_WIFI_ENABLED
+  if (wifi) {
+    if (wifiOutputQueue && wifiClientConnected &&
+        xQueueSend(wifiOutputQueue, &item, 0) != pdTRUE) ++wifiQueueDrops;
+    return;
+  }
+#else
+  (void)wifi;
+#endif
+  if (!outputQueue || xQueueSend(outputQueue, &item, 0) != pdTRUE)
+    ++outputQueueDrops;
+}
+
+static void processIncomingByte(IncomingParser &parser, uint8_t byte, bool wifi) {
+  if (parser.used >= sizeof(parser.bytes)) parser.used = 0;
+  parser.bytes[parser.used++] = byte;
+  for (;;) {
+    size_t start = 0;
+    while (start + 1 < parser.used &&
+           !(parser.bytes[start] == 'F' && parser.bytes[start + 1] == 'R')) ++start;
+    if (start) {
+      memmove(parser.bytes, parser.bytes + start, parser.used - start);
+      parser.used -= start;
+    }
+    if (parser.used < 11) return;
+    const uint16_t payloadLength = readU16(&parser.bytes[9]);
+    if (payloadLength > 64) {
+      memmove(parser.bytes, parser.bytes + 1, --parser.used);
+      continue;
+    }
+    const size_t frameLength = 11 + payloadLength + 2;
+    if (parser.used < frameLength) return;
+    const uint16_t expectedCrc = readU16(&parser.bytes[11 + payloadLength]);
+    const uint16_t actualCrc = crc16Ccitt(parser.bytes, 11 + payloadLength);
+    if (expectedCrc != actualCrc) {
+      memmove(parser.bytes, parser.bytes + 1, --parser.used);
+      continue;
+    }
+    if (parser.bytes[2] == PROTOCOL_VERSION &&
+        parser.bytes[3] == MSG_TIME_SYNC_REQ && payloadLength == 12) {
+      const uint32_t syncId = readU32(&parser.bytes[11]);
+      const uint64_t hostSendNs = readU64(&parser.bytes[15]);
+      const uint64_t deviceReceiveUs = (uint64_t)esp_timer_get_time();
+      enqueueClockSync(syncId, hostSendNs, deviceReceiveUs, wifi);
+    }
+    memmove(parser.bytes, parser.bytes + frameLength, parser.used - frameLength);
+    parser.used -= frameLength;
+  }
+}
+
+static void sendClockSyncResponse(const OutputItem &item) {
+  uint8_t payload[28];
+  const uint64_t deviceSendUs = (uint64_t)esp_timer_get_time();
+  writeU32(&payload[0], item.syncId);
+  writeU64(&payload[4], item.hostSendTimeNs);
+  writeU64(&payload[12], item.deviceReceiveTimeUs);
+  writeU64(&payload[20], deviceSendUs);
+  sendMessage(MSG_TIME_SYNC_RESP, payload, sizeof(payload));
+}
+
 static void sendCanFrame(const twai_message_t &msg, uint64_t timestampUs);
 
 static void serialWriterTask(void *parameter) {
@@ -289,6 +397,8 @@ static void serialWriterTask(void *parameter) {
         sendCanFrame(item.frame, item.timestampUs);
       } else if (item.kind == OUTPUT_ITEM_STATUS) {
         sendStatus(item.status);
+      } else if (item.kind == OUTPUT_ITEM_CLOCK_SYNC) {
+        sendClockSyncResponse(item);
       }
     }
 
@@ -396,6 +506,11 @@ void setup() {
 }
 
 void loop() {
+#if FREEROV3R_BINARY_PROTOCOL
+  while (Serial.available()) {
+    processIncomingByte(usbCommandParser, (uint8_t)Serial.read(), false);
+  }
+#endif
   twai_message_t msg;
   if (twai_receive(&msg, pdMS_TO_TICKS(20)) == ESP_OK) {
     // Device clock is local to this board and is not synchronized to the PC

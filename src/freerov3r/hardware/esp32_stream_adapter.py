@@ -1,22 +1,33 @@
-"""Receive-only PC transports for the versioned ESP32 device protocol.
+"""CAN receive-only PC transports with a restricted ESP32 clock-calibration path.
 
-USB serial and Wi-Fi TCP expose the same byte-stream contract. This adapter
-only consumes FRAME_RX messages; it intentionally has no command/write path.
+USB serial and Wi-Fi TCP expose the same byte-stream contract. The only
+host-to-device command implemented here is TIME_SYNC_REQ; CAN frames and
+vehicle diagnostic requests cannot be transmitted by this adapter.
 """
 from __future__ import annotations
 
 import socket
+import threading
 import time
 
 import serial
 
 from .base import CanAdapter
-from .device_protocol import MessageStreamDecoder, MessageType, decode_can_frame_payload
+from .device_protocol import (
+    MessageStreamDecoder,
+    MessageType,
+    decode_can_frame_payload,
+    decode_clock_sync_response,
+    encode_clock_sync_request,
+    encode_message,
+    ProtocolMessage,
+)
+from .clock_sync import calculate_clock_sync_sample, estimate_clock_mapping
 from ..models import CanFrame
 
 
 class Esp32FramedStreamAdapter(CanAdapter):
-    """Shared receive and decode logic for ESP32 byte-stream transports."""
+    """Shared CAN receive and clock-calibration logic for ESP32 transports."""
 
     def __init__(self, *, channel_names=None, read_size=4096, transport_label="stream"):
         if isinstance(read_size, bool) or not isinstance(read_size, int) or read_size < 1:
@@ -47,6 +58,12 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.bytes_received = 0
         self.capture_started_monotonic = None
         self.last_byte_monotonic = None
+        self._write_lock = threading.Lock()
+        self._clock_sync_condition = threading.Condition()
+        self._clock_sync_pending = {}
+        self._clock_sync_results = {}
+        self._next_clock_sync_id = 1
+        self.clock_calibration = None
 
     @property
     def connected(self):
@@ -59,7 +76,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
 
     @property
     def description(self):
-        return f"FreeRov3r ESP32 framed {self.transport_label} (receive-only)"
+        return f"FreeRov3r ESP32 framed {self.transport_label} (CAN receive-only)"
 
     @property
     def diagnostics(self):
@@ -115,6 +132,9 @@ class Esp32FramedStreamAdapter(CanAdapter):
             "connection_generation": self.connection_generation,
             "reconnect_attempts": self.reconnect_attempts,
             "connection_events": [dict(event) for event in self.connection_events],
+            "clock_calibration": (
+                dict(self.clock_calibration) if self.clock_calibration else None
+            ),
         }
 
     def open(self):
@@ -132,6 +152,10 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.device_status_messages = 0
         self.queue_drops.clear()
         self.wifi_host = self.wifi_port = None
+        self.clock_calibration = None
+        with self._clock_sync_condition:
+            self._clock_sync_pending.clear()
+            self._clock_sync_results.clear()
         self._open_transport()
         self._opened = True
         self.bytes_received = 0
@@ -163,6 +187,10 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self._close_transport()
         self._pending_frames.clear()
         self.decoder = MessageStreamDecoder()
+        with self._clock_sync_condition:
+            self._clock_sync_pending.clear()
+            self._clock_sync_results.clear()
+            self._clock_sync_condition.notify_all()
         self._opened = False
         self._open_transport()
         self._opened = True
@@ -179,6 +207,68 @@ class Esp32FramedStreamAdapter(CanAdapter):
     def _read(self, timeout):
         raise NotImplementedError
 
+    def _write(self, data):
+        raise NotImplementedError
+
+    def request_clock_sync(self, timeout=1.0):
+        """Exchange one timestamp probe while the normal receive loop is running.
+
+        This sends only TIME_SYNC_REQ. It cannot send CAN frames or diagnostic
+        requests. A background capture receiver must be calling receive().
+        """
+        if not self.connected:
+            raise RuntimeError("ESP32 adapter must be connected for clock sync")
+        timeout = float(timeout)
+        if timeout <= 0:
+            raise ValueError("Clock sync timeout must be positive")
+
+        with self._write_lock:
+            sync_id = self._next_clock_sync_id & 0xFFFFFFFF
+            self._next_clock_sync_id = (sync_id + 1) & 0xFFFFFFFF
+            with self._clock_sync_condition:
+                host_send_ns = time.monotonic_ns()
+                self._clock_sync_pending[sync_id] = host_send_ns
+            message = ProtocolMessage(
+                message_type=MessageType.TIME_SYNC_REQ,
+                sequence=sync_id,
+                payload=encode_clock_sync_request(sync_id, host_send_ns),
+            )
+            try:
+                self._write(encode_message(message))
+            except Exception:
+                with self._clock_sync_condition:
+                    self._clock_sync_pending.pop(sync_id, None)
+                raise
+
+        deadline = time.monotonic() + timeout
+        with self._clock_sync_condition:
+            while sync_id not in self._clock_sync_results:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._clock_sync_pending.pop(sync_id, None)
+                    raise TimeoutError("ESP32 clock synchronization response timed out")
+                self._clock_sync_condition.wait(remaining)
+            return self._clock_sync_results.pop(sync_id)
+
+    def calibrate_device_clock(self, *, sample_count=12, timeout=1.0):
+        """Collect timestamp exchanges and fit this ESP32 clock to host monotonic time.
+
+        Call while the normal capture receiver is running. The returned mapping
+        is suitable for comparing two devices with compare_clock_mappings().
+        """
+        if isinstance(sample_count, bool) or not isinstance(sample_count, int) or sample_count < 3:
+            raise ValueError("Clock calibration requires at least three samples")
+        samples = []
+        for index in range(sample_count):
+            samples.append(self.request_clock_sync(timeout=timeout))
+            if index + 1 < sample_count:
+                time.sleep(0.02)
+        result = estimate_clock_mapping(samples)
+        result["samples"] = samples
+        result["transport"] = self.transport_label
+        self.clock_calibration = result
+        return result
+
     def _handle_control_message(self, message):
         if message.version != 1:
             self.ignored_messages += 1
@@ -192,6 +282,28 @@ class Esp32FramedStreamAdapter(CanAdapter):
                     fields[key.strip()] = value.strip()
             self.device_info = fields
             self.device_info["description"] = text.split(";", 1)[0]
+            return
+        if message.message_type == MessageType.TIME_SYNC_RESP:
+            try:
+                response = decode_clock_sync_response(message.payload)
+            except ValueError:
+                self.ignored_messages += 1
+                return
+            host_receive_ns = time.monotonic_ns()
+            with self._clock_sync_condition:
+                expected_send_ns = self._clock_sync_pending.pop(response.sync_id, None)
+                if expected_send_ns is None or expected_send_ns != response.host_send_time_ns:
+                    self.ignored_messages += 1
+                    return
+                sample = calculate_clock_sync_sample(
+                    host_send_time_ns=expected_send_ns,
+                    device_receive_time_us=response.device_receive_time_us,
+                    device_send_time_us=response.device_send_time_us,
+                    host_receive_time_ns=host_receive_ns,
+                )
+                sample["sync_id"] = response.sync_id
+                self._clock_sync_results[response.sync_id] = sample
+                self._clock_sync_condition.notify_all()
             return
         if message.message_type != MessageType.DEVICE_STATUS:
             self.ignored_messages += 1
@@ -231,7 +343,11 @@ class Esp32FramedStreamAdapter(CanAdapter):
                         self.sequence_gaps += distance
             self.last_sequence = message.sequence
 
-            if message.message_type in (MessageType.HELLO, MessageType.DEVICE_STATUS):
+            if message.message_type in (
+                MessageType.HELLO,
+                MessageType.DEVICE_STATUS,
+                MessageType.TIME_SYNC_RESP,
+            ):
                 self._handle_control_message(message)
                 continue
             if message.version != 1 or message.message_type != MessageType.FRAME_RX:
@@ -328,6 +444,12 @@ class Esp32FramedSerialAdapter(Esp32FramedStreamAdapter):
         self.connection.timeout = min(self.timeout, timeout)
         return self.connection.read(self.read_size)
 
+    def _write(self, data):
+        if self.connection is None:
+            raise RuntimeError("ESP32 USB serial connection is not open")
+        self.connection.write(data)
+        self.connection.flush()
+
     def _close_transport(self):
         if self.connection is not None:
             self.connection.close()
@@ -378,6 +500,11 @@ class Esp32WifiAdapter(Esp32FramedStreamAdapter):
         if not chunk:
             raise ConnectionError("ESP32 Wi-Fi device closed the connection")
         return chunk
+
+    def _write(self, data):
+        if self.connection is None:
+            raise RuntimeError("ESP32 Wi-Fi connection is not open")
+        self.connection.sendall(data)
 
     def _close_transport(self):
         if self.connection is not None:
