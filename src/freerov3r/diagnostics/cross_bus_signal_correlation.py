@@ -87,8 +87,14 @@ def _series_events(frames, max_bytes):
 def _candidate_lags(events_a, events_b, max_lag, resolution, max_lags=6):
     histogram = Counter()
     # A bounded, evenly spaced sample keeps lag discovery practical on long captures.
-    sample_a = events_a[::max(1, len(events_a) // 100)][:100]
-    sample_b = events_b[::max(1, len(events_b) // 100)][:100]
+    def sample(events, limit=40):
+        if len(events) <= limit:
+            return events
+        last = len(events) - 1
+        return [events[round(index * last / (limit - 1))] for index in range(limit)]
+
+    sample_a = sample(events_a)
+    sample_b = sample(events_b)
     for time_a, _, _ in sample_a:
         for time_b, _, _ in sample_b:
             delta = time_b - time_a
@@ -172,9 +178,10 @@ def analyze_cross_bus_signal_correlation(
     if not 1 <= max_bytes <= 64 or max_results < 1:
         raise ValueError("Payload and result limits are out of range")
 
+    records = list(records or ())
     parsed = []
     excluded_clock = invalid = 0
-    for record in records or ():
+    for record in records:
         frame = _parse_frame(record)
         if frame == "clock":
             excluded_clock += 1
@@ -293,6 +300,10 @@ def analyze_cross_bus_signal_correlation(
                 })
         for (index_a, bit_a), events_a in data_a["bits"].items():
             for (index_b, bit_b), events_b in data_b["bits"].items():
+                # Compare like-numbered bit positions across byte offsets. This
+                # keeps the search bounded while still detecting relocated bits.
+                if bit_a != bit_b:
+                    continue
                 inspect_signal(events_a, events_b, {
                     "signal_type": "bit",
                     "channel_a": key_a[0], "can_id_a": key_a[1],
