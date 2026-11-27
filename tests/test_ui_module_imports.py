@@ -51,20 +51,26 @@ def test_sensor_graph_tab_remains_available_from_app_module():
 
     assert app_sensor_graph_tab is SensorGraphTab
 
+_QT_TEST_APP = None
+
+
 def test_sensor_graph_tab_constructs_with_empty_capture():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
     from PySide6.QtWidgets import QApplication
 
     from freerov3r.sensor_graph_tab import SensorGraphTab
     from freerov3r.sensors.capture import SensorCapture
 
-    app = QApplication.instance() or QApplication([])
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
     tab = SensorGraphTab(SensorCapture())
-    try:
-        assert tab.sensor_list.count() == 0
-        assert tab.stats_table.rowCount() == 0
-        assert tab.activity_timer.isActive()
-    finally:
-        tab.activity_timer.stop()
-        tab.close()
-        app.processEvents()
+    assert tab.sensor_list.count() == 0
+    assert tab.stats_table.rowCount() == 0
+    assert tab.activity_timer.isActive()
+
+    tab.activity_timer.stop()
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
 
