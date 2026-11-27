@@ -6,18 +6,18 @@ from .diagnostics.obd2 import decode_mode01_measurements
 from .sensors.capture import SensorSample
 
 
-def on_frames(window, frames):
+def process_frames(window, frames):
     """Process receiver batches with one visible log/counter update."""
     log_lines = []
     for frame in frames:
-        line = window.on_frame(frame, update_display=False)
+        line = process_frame(window, frame, update_display=False)
         if line:
             log_lines.append(line)
     window.frame_count_label.setText(f"Frames: {window.frame_counter}")
     if log_lines:
         window.log.appendPlainText("\n".join(log_lines))
 
-def on_frame(window, frame, update_display=True):
+def process_frame(window, frame, update_display=True):
     detected_vin = window.vin_decoder.feed(frame.arbitration_id, bytes(frame.data))
     if detected_vin:
         window._apply_detected_vin(detected_vin)
