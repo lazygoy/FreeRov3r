@@ -47,12 +47,14 @@ class SharedCrosshairStackedPlot(QWidget):
         self.plots = []
         self._vertical_lines = []
         self._horizontal_lines = []
+        self._value_labels = []
         self._proxies = []
         self._active_index = None
         self._cursor_time = None
         self._locked = False
         self._colors = {}
-        self._updating_x = False
+        self._sensor_ids = ()
+        self._curves = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
