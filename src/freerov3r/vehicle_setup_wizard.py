@@ -69,7 +69,7 @@ class VehicleSetupWizard(QDialog):
         root.addWidget(self.page_title)
         self.page_description = QLabel(
             "Detect USB serial and paired Bluetooth COM interfaces, or choose one manually. "
-            "Wi-Fi discovery is not implemented yet. Detection does not transmit to the vehicle."
+            "Wi-Fi discovery is not implemented yet. J2534 driver inventory is passive; detection does not load the driver or transmit to the vehicle."
         )
         self.page_description.setWordWrap(True)
         self.page_description.setObjectName("splashSubtitle")
