@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .vehicle_profiles.registry import VehicleProfileRegistry
+from .hardware.receiver import FrameBatcher, Receiver
 from .session import CaptureSession
 from .can_monitor import CanMonitor
 from .sensors.capture import SensorCapture
