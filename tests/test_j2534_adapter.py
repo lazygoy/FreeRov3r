@@ -41,6 +41,15 @@ class FakeJ2534Library:
         self.calls.append(("disconnect", channel_id))
         return 0
 
+    def PassThruStartMsgFilter(self, channel_id, filter_type, mask_ptr, pattern_ptr, flow_ptr, filter_id):
+        self.calls.append(("start_filter", channel_id, filter_type))
+        ctypes.cast(filter_id, ctypes.POINTER(ctypes.c_uint32))[0] = 99
+        return 0
+
+    def PassThruStopMsgFilter(self, channel_id, filter_id):
+        self.calls.append(("stop_filter", channel_id, filter_id))
+        return 0
+
     def PassThruReadMsgs(self, channel_id, message_ptr, count_ptr, timeout_ms):
         self.calls.append(("read", channel_id, timeout_ms))
         count = ctypes.cast(count_ptr, ctypes.POINTER(ctypes.c_uint32))
@@ -87,9 +96,11 @@ def test_adapter_opens_and_connects_classic_can(registration):
     assert adapter.is_open
     assert ("open", None) in library.calls
     assert ("connect", 42, J2534_PROTOCOL_CAN, 0, 500_000) in library.calls
+    assert ("start_filter", 7, 0x01) in library.calls
 
     adapter.close()
     assert not adapter.is_open
+    assert ("stop_filter", 7, 99) in library.calls
     assert ("disconnect", 7) in library.calls
     assert ("close", 42) in library.calls
 
