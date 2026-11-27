@@ -1250,9 +1250,33 @@ class ResearchTab(QWidget):
             "residuals are precision indicators, not hard error bounds; transport "
             "asymmetry and host scheduling latency remain unbounded."
         )
-        self.clock_calibration_report.setPlainText(json.dumps(result, indent=2))
+        lines = []
+        for label, key in (("Device A", "device_a"), ("Device B", "device_b")):
+            item = result.get(key) or {}
+            lines.append(
+                f"{label} ({item.get('transport', 'unknown')}): {item.get('status', 'no result')}"
+            )
+            lines.append(
+                f"  Drift {item.get('drift_ppm', float('nan')):.3f} ppm | "
+                f"min RTT {item.get('minimum_round_trip_delay_ns', 0) / 1_000_000:.3f} ms | "
+                f"p95 fit residual {item.get('fit_residual_p95_ns', 0) / 1_000_000:.3f} ms"
+            )
+            mapping = item.get("mapping") or {}
+            if mapping:
+                lines.append(
+                    f"  Mapping slope {mapping.get('slope', 0):.12f}; "
+                    f"intercept {mapping.get('intercept_ns', 0):.0f} ns"
+                )
+        comparison = result.get("comparison") or {}
+        lines.append(f"Pair comparison: {comparison.get('status', 'not available')}")
+        lines.append(
+            "Uncertainty: transport-path asymmetry and host scheduling latency are not bounded."
+        )
+        lines.append("Full calibration record:")
+        lines.append(json.dumps(result, indent=2))
+        self.clock_calibration_report.setPlainText("\\n".join(lines))
         self.clock_calibration_status.setText(
-            "Calibration complete. Review RTT, residuals and uncertainty before comparing events."
+            "Calibration complete. Results are software clock estimates, not hardware synchronization."
         )
 
     def _on_clock_calibration_failed(self, message):
