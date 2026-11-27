@@ -1,10 +1,9 @@
 """ISO 22900-2 D-PDU API runtime for passive MVCI module inventory.
 
-This runtime loads only an explicitly selected D-PDU API library. It calls
-PDUConstruct (which initializes the API and discovers modules without
-allocating vehicle communication resources), PDUGetModuleIds, and
-PDUDestroyItem. It never connects a module, creates a logical link, or sends
-vehicle traffic.
+This runtime loads only an explicitly selected D-PDU API library. All module,
+logical-link, parameter, and physical-connection operations are explicit.
+Physical connection is never initiated by open(), enumeration, or link
+creation. No ComPrimitive or diagnostic transmit path is exposed.
 """
 from __future__ import annotations
 
@@ -147,7 +146,12 @@ class DPduComLogicalLink:
     module_handle: int
     logical_link_handle: int
     resource_id: int
-    initial_state: str = "offline"
+    state: str = "offline"
+
+    @property
+    def initial_state(self) -> str:
+        """Compatibility alias for callers that display the creation state."""
+        return "offline"
 
 
 @dataclass(frozen=True)
@@ -226,6 +230,8 @@ class DPduApiRuntime:
         self._pdu_module_disconnect = None
         self._pdu_create_logical_link = None
         self._pdu_destroy_logical_link = None
+        self._pdu_connect = None
+        self._pdu_disconnect = None
         self._pdu_get_com_param = None
         self._pdu_set_com_param = None
         self._live_modules: list[DPduLiveModule] = []
@@ -347,6 +353,16 @@ class DPduApiRuntime:
                 self._pdu_destroy_logical_link,
                 [ctypes.c_uint32, ctypes.c_uint32],
                 ctypes.c_int32,
+            )
+        self._pdu_connect = getattr(self._library, "PDUConnect", None)
+        if self._pdu_connect is not None:
+            _set_signature(
+                self._pdu_connect, [ctypes.c_uint32, ctypes.c_uint32], ctypes.c_int32
+            )
+        self._pdu_disconnect = getattr(self._library, "PDUDisconnect", None)
+        if self._pdu_disconnect is not None:
+            _set_signature(
+                self._pdu_disconnect, [ctypes.c_uint32, ctypes.c_uint32], ctypes.c_int32
             )
         self._pdu_get_com_param = getattr(self._library, "PDUGetComParam", None)
         if self._pdu_get_com_param is not None:
@@ -681,6 +697,60 @@ class DPduApiRuntime:
         self._logical_links[key] = link
         return link
 
+    def connect_logical_link(
+        self, module_handle: int, logical_link_handle: int
+    ) -> DPduComLogicalLink:
+        """Physically connect an OFFLINE CLL to its vehicle interface.
+
+        This is an explicit hardware activation operation. It is never called
+        by open(), module enumeration, CLL creation, or parameter setup.
+        """
+        if not self._constructed:
+            raise RuntimeError("D-PDU API session is not open")
+        module = int(module_handle)
+        cll = int(logical_link_handle)
+        key = (module, cll)
+        link = self._logical_links.get(key)
+        if link is None:
+            raise ValueError("Unknown or already destroyed ComLogicalLink")
+        if module not in self._connected_modules:
+            raise RuntimeError("MVCI module must be explicitly initialized first")
+        if link.state != "offline":
+            raise RuntimeError(f"ComLogicalLink is {link.state}, not offline")
+        if self._pdu_connect is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUConnect")
+        status = int(self._pdu_connect(module, cll))
+        if status != PDU_STATUS_NOERROR:
+            raise DPduApiError(f"PDUConnect failed with status 0x{status:08X}")
+        connected = DPduComLogicalLink(module, cll, link.resource_id, "online")
+        self._logical_links[key] = connected
+        return connected
+
+    def disconnect_logical_link(
+        self, module_handle: int, logical_link_handle: int
+    ) -> DPduComLogicalLink:
+        """Physically disconnect an ONLINE CLL and return it to OFFLINE."""
+        if not self._constructed:
+            raise RuntimeError("D-PDU API session is not open")
+        module = int(module_handle)
+        cll = int(logical_link_handle)
+        key = (module, cll)
+        link = self._logical_links.get(key)
+        if link is None:
+            raise ValueError("Unknown or already destroyed ComLogicalLink")
+        if module not in self._connected_modules:
+            raise RuntimeError("MVCI module is not initialized")
+        if link.state != "online":
+            raise RuntimeError(f"ComLogicalLink is {link.state}, not online")
+        if self._pdu_disconnect is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUDisconnect")
+        status = int(self._pdu_disconnect(module, cll))
+        if status != PDU_STATUS_NOERROR:
+            raise DPduApiError(f"PDUDisconnect failed with status 0x{status:08X}")
+        disconnected = DPduComLogicalLink(module, cll, link.resource_id, "offline")
+        self._logical_links[key] = disconnected
+        return disconnected
+
     def destroy_logical_link(self, module_handle: int, logical_link_handle: int) -> None:
         """Destroy an OFFLINE ComLogicalLink and release its reserved resource."""
         if not self._constructed:
@@ -690,6 +760,8 @@ class DPduApiRuntime:
         key = (handle, cll_handle)
         if key not in self._logical_links:
             raise ValueError("Unknown or already destroyed ComLogicalLink")
+        if self._logical_links[key].state != "offline":
+            raise RuntimeError("Disconnect the ComLogicalLink before destroying it")
         if self._pdu_destroy_logical_link is None:
             raise DPduApiError(
                 "Selected D-PDU library does not export PDUDestroyComLogicalLink"
@@ -774,6 +846,24 @@ class DPduApiRuntime:
     def close(self) -> None:
         """Destroy the API session and release the selected library handle."""
         errors: list[str] = []
+        if self._constructed and self._pdu_disconnect is not None:
+            for (module_handle, cll_handle), link in tuple(self._logical_links.items()):
+                if link.state != "online":
+                    continue
+                try:
+                    status = int(self._pdu_disconnect(module_handle, cll_handle))
+                    if status != PDU_STATUS_NOERROR:
+                        errors.append(
+                            f"PDUDisconnect({module_handle}, {cll_handle}) status 0x{status:08X}"
+                        )
+                    else:
+                        self._logical_links[(module_handle, cll_handle)] = DPduComLogicalLink(
+                            module_handle, cll_handle, link.resource_id, "offline"
+                        )
+                except Exception as exc:
+                    errors.append(
+                        f"PDUDisconnect({module_handle}, {cll_handle}) raised {exc}"
+                    )
         if self._constructed and self._pdu_destroy_logical_link is not None:
             for module_handle, cll_handle in tuple(self._logical_links):
                 try:
@@ -823,6 +913,8 @@ class DPduApiRuntime:
         self._pdu_module_disconnect = None
         self._pdu_create_logical_link = None
         self._pdu_destroy_logical_link = None
+        self._pdu_connect = None
+        self._pdu_disconnect = None
         self._pdu_get_com_param = None
         self._pdu_set_com_param = None
         self._logical_links = {}
