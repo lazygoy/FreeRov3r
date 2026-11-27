@@ -15,7 +15,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QGroupBox,
@@ -30,6 +30,7 @@ from freerov3r.capture_storage import (
 from freerov3r.did_definitions import DIDDefinitionRegistry, decode_uds_did_transactions
 from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
+from freerov3r.hardware.clock_sync import calibrate_two_devices
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
@@ -859,6 +860,26 @@ def format_import_warnings(metadata, source_name):
     )
 
 
+class _ClockCalibrationWorker(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, adapters, parent=None):
+        super().__init__(parent)
+        self.adapters = tuple(adapters)
+
+    def run(self):
+        try:
+            result = calibrate_two_devices(
+                self.adapters[0], self.adapters[1],
+                sample_count=12, timeout=1.0, interval_seconds=0.02,
+            )
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        else:
+            self.completed.emit(result)
+
+
 class ResearchTab(QWidget):
     """Local-only protocol capture, annotation, comparison and REA handoff."""
 
@@ -937,6 +958,31 @@ class ResearchTab(QWidget):
         self.timestamp_health_label.setWordWrap(True)
         health_layout.addWidget(self.timestamp_health_label, 1, 0, 1, 5)
         root.addLayout(health_layout)
+
+        self._clock_sync_adapters = ()
+        self._clock_sync_worker = None
+        calibration_row = QHBoxLayout()
+        self.clock_calibration_button = QPushButton("Calibrate two ESP32 clocks")
+        self.clock_calibration_button.setEnabled(False)
+        self.clock_calibration_button.setToolTip(
+            "Runs 12 interleaved TIME_SYNC probes per ESP32 while dual capture is active. "
+            "Only clock-sync messages are sent; no CAN frames or diagnostic requests."
+        )
+        self.clock_calibration_button.clicked.connect(self.start_clock_calibration)
+        self.clock_calibration_status = QLabel(
+            "Clock calibration: requires two connected framed ESP32 USB receivers"
+        )
+        self.clock_calibration_status.setWordWrap(True)
+        calibration_row.addWidget(self.clock_calibration_button)
+        calibration_row.addWidget(self.clock_calibration_status, 1)
+        root.addLayout(calibration_row)
+        self.clock_calibration_report = QPlainTextEdit()
+        self.clock_calibration_report.setReadOnly(True)
+        self.clock_calibration_report.setMaximumHeight(105)
+        self.clock_calibration_report.setPlaceholderText(
+            "Calibration results will appear here. Device clocks remain independent until calibrated."
+        )
+        root.addWidget(self.clock_calibration_report)
 
         session_box = QGroupBox("SESSION")
         session_form = QGridLayout(session_box)
@@ -1147,6 +1193,95 @@ class ResearchTab(QWidget):
         self.count_label = QLabel("0 displayed · 0 recorded")
         footer.addWidget(self.count_label, 3, 0, 1, 4)
         root.addLayout(footer)
+
+    def set_clock_sync_adapters(self, adapters=()):
+        """Enable calibration only for two live framed ESP32 adapters."""
+        candidates = tuple(
+            item for item in (adapters or ())
+            if callable(getattr(item, "request_clock_sync", None))
+        )
+        self._clock_sync_adapters = candidates if len(candidates) == 2 else ()
+        ready = bool(
+            len(self._clock_sync_adapters) == 2
+            and all(bool(getattr(item, "connected", False)) for item in self._clock_sync_adapters)
+            and not (self._clock_sync_worker and self._clock_sync_worker.isRunning())
+        )
+        self.clock_calibration_button.setEnabled(ready)
+        if ready:
+            self.clock_calibration_status.setText(
+                "Two framed ESP32 receivers connected. Calibration is available."
+            )
+        elif self._clock_sync_worker and self._clock_sync_worker.isRunning():
+            self.clock_calibration_status.setText("Clock calibration running...")
+        else:
+            self.clock_calibration_status.setText(
+                "Clock calibration unavailable: connect two framed ESP32 USB receivers."
+            )
+
+    def start_clock_calibration(self):
+        adapters = self._clock_sync_adapters
+        if len(adapters) != 2 or not all(
+            bool(getattr(item, "connected", False)) for item in adapters
+        ):
+            self.set_clock_sync_adapters(adapters)
+            return
+        if self._clock_sync_worker and self._clock_sync_worker.isRunning():
+            return
+        self.clock_calibration_button.setEnabled(False)
+        self.clock_calibration_status.setText(
+            "Calibrating with 12 interleaved probes per device..."
+        )
+        self._clock_sync_worker = _ClockCalibrationWorker(adapters, self)
+        self._clock_sync_worker.completed.connect(self._on_clock_calibration_completed)
+        self._clock_sync_worker.failed.connect(self._on_clock_calibration_failed)
+        self._clock_sync_worker.finished.connect(
+            lambda: self.clock_calibration_button.setEnabled(
+                len(self._clock_sync_adapters) == 2
+                and all(bool(getattr(item, "connected", False))
+                        for item in self._clock_sync_adapters)
+            )
+        )
+        self._clock_sync_worker.start()
+
+    def _on_clock_calibration_completed(self, result):
+        self.metadata["clock_calibration"] = result
+        self.metadata["clock_calibration_note"] = (
+            "Software clock mapping to the PC monotonic clock. Minimum RTT and fit "
+            "residuals are precision indicators, not hard error bounds; transport "
+            "asymmetry and host scheduling latency remain unbounded."
+        )
+        lines = []
+        for label, key in (("Device A", "device_a"), ("Device B", "device_b")):
+            item = result.get(key) or {}
+            lines.append(
+                f"{label} ({item.get('transport', 'unknown')}): {item.get('status', 'no result')}"
+            )
+            lines.append(
+                f"  Drift {item.get('drift_ppm', float('nan')):.3f} ppm | "
+                f"min RTT {item.get('minimum_round_trip_delay_ns', 0) / 1_000_000:.3f} ms | "
+                f"p95 fit residual {item.get('fit_residual_p95_ns', 0) / 1_000_000:.3f} ms"
+            )
+            mapping = item.get("mapping") or {}
+            if mapping:
+                lines.append(
+                    f"  Mapping slope {mapping.get('slope', 0):.12f}; "
+                    f"intercept {mapping.get('intercept_ns', 0):.0f} ns"
+                )
+        comparison = result.get("comparison") or {}
+        lines.append(f"Pair comparison: {comparison.get('status', 'not available')}")
+        lines.append(
+            "Uncertainty: transport-path asymmetry and host scheduling latency are not bounded."
+        )
+        lines.append("Full calibration record:")
+        lines.append(json.dumps(result, indent=2))
+        self.clock_calibration_report.setPlainText("\n".join(lines))
+        self.clock_calibration_status.setText(
+            "Calibration complete. Results are software clock estimates, not hardware synchronization."
+        )
+
+    def _on_clock_calibration_failed(self, message):
+        self.clock_calibration_status.setText(f"Calibration failed: {message}")
+        self.clock_calibration_report.setPlainText("No calibration result was accepted.")
 
     def set_receiver_diagnostics(self, diagnostics=None):
         """Refresh the receiver-health strip from an adapter diagnostics snapshot."""
