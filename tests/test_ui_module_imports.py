@@ -156,3 +156,32 @@ def test_vehicle_setup_wizard_constructs():
     QCoreApplication.sendPostedEvents(dialog, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_settings_tab_remains_available_from_app_module():
+    from freerov3r.app import SettingsTab as app_settings_tab
+    from freerov3r.settings_tab import SettingsTab
+
+    assert app_settings_tab is SettingsTab
+
+
+def test_settings_tab_constructs_and_exposes_controls():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.settings_tab import SettingsTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = SettingsTab(
+        toggle_dark_mode=lambda _enabled: None,
+        show_about_dialog=lambda: None,
+        save_settings=lambda: None,
+    )
+    assert tab.settings_backend.count() == 10
+    assert tab.graph_refresh_spin.minimum() == 250
+    assert tab.graph_refresh_spin.maximum() == 5000
+
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
