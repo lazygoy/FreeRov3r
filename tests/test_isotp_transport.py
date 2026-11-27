@@ -160,3 +160,31 @@ def test_consecutive_frame_without_matching_first_frame_is_not_accepted():
     )
     with pytest.raises(IsoTpProtocolError, match="Single Frame or First Frame"):
         transport.receive_payload()
+
+
+def test_segmented_receive_uses_one_overall_timeout_deadline():
+    incoming = [
+        CanFrame(0x7E8, bytes.fromhex("10 0A 01 02 03 04 05 06")),
+    ]
+    requested_timeouts = []
+
+    def receive(timeout):
+        requested_timeouts.append(timeout)
+        if incoming:
+            return incoming.pop(0)
+        return None
+
+    transport = IsoTpTransport(
+        lambda frame: None,
+        receive,
+        lambda frame: True,
+        tx_id=0x7E0,
+        rx_id=0x7E8,
+        timeout=0.5,
+    )
+
+    with pytest.raises(IsoTpTimeout):
+        transport.receive_payload(timeout=0.02)
+
+    assert len(requested_timeouts) == 2
+    assert 0 < requested_timeouts[1] <= requested_timeouts[0] <= 0.02
