@@ -32,6 +32,7 @@ from freerov3r.dbc_support import DBCLibrary, DBCUnavailableError
 from freerov3r.timestamp_analysis import analyze_channel_timestamps
 from freerov3r.hardware.clock_sync import calibrate_two_devices
 from freerov3r.diagnostics.can_timing_analysis import analyze_message_periodicity
+from freerov3r.diagnostics.cross_bus_correlation import analyze_cross_bus_correlation
 from freerov3r.diagnostics.payload_variability import analyze_payload_variability
 from freerov3r.diagnostics.dbc_capture_audit import audit_dbc_capture
 from freerov3r.diagnostics.dbc_signal_behavior import (
@@ -1081,6 +1082,12 @@ class ResearchTab(QWidget):
         )
         self.dbc_signal_graph_button.clicked.connect(self.graph_dbc_signals)
         dbc_controls.addWidget(self.dbc_signal_graph_button)
+        self.cross_bus_button = QPushButton("Cross-bus correlation")
+        self.cross_bus_button.setToolTip(
+            "Find repeated CAN ID activity patterns across buses using only the shared host monotonic timeline."
+        )
+        self.cross_bus_button.clicked.connect(self.analyze_cross_bus_traffic)
+        dbc_controls.addWidget(self.cross_bus_button)
         dbc_controls.setContentsMargins(0, 0, 0, 0)
         dbc_controls.setSpacing(5)
         root.addLayout(dbc_controls)
@@ -2614,6 +2621,76 @@ class ResearchTab(QWidget):
             f"Compared {result['node_count']:,} passive CAN nodes across {result['capture_count']:,} captures"
         )
 
+
+    def analyze_cross_bus_traffic(self):
+        """Compare CAN ID activity patterns across channels on a shared host clock."""
+        self._flush_pending_frames()
+        dataset = self.frames if self.frames else self.live_preview
+        if not dataset:
+            QMessageBox.information(
+                self, "Cross-bus correlation", "Capture or import CAN frames first."
+            )
+            return
+
+        report = analyze_cross_bus_correlation(dataset)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cross-bus CAN activity correlation")
+        dialog.resize(1050, 650)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(
+            f"Status: {report['status']} | {report['valid_frame_count']:,} shared-clock frames | "
+            f"{report['channel_count']} channels | {report['candidate_count']} candidates"
+        ))
+        layout.addWidget(QLabel(
+            f"Excluded for unknown/independent clock: {report['excluded_non_shared_clock_count']:,} | "
+            f"Invalid records: {report['invalid_frame_count']:,} | "
+            f"Bin width: {report['bin_width_seconds'] * 1000:.1f} ms | "
+            f"Maximum lag: ±{report['maximum_lag_seconds'] * 1000:.0f} ms"
+        ))
+
+        columns = [
+            "Bus A", "CAN ID A", "Frames A", "Bus B", "CAN ID B",
+            "Frames B", "Correlation", "Lag (ms)", "Interpretation",
+        ]
+        table = QTableWidget(len(report["candidates"]), len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.horizontalHeader().setStretchLastSection(True)
+        for row, item in enumerate(report["candidates"]):
+            values = [
+                item["channel_a"],
+                f"0x{item['can_id_a']:X} ({item['format_a']})",
+                str(item["frames_a"]),
+                item["channel_b"],
+                f"0x{item['can_id_b']:X} ({item['format_b']})",
+                str(item["frames_b"]),
+                f"{item['correlation']:.3f}",
+                f"{item['lag_seconds'] * 1000:+.1f}",
+                item["lag_interpretation"],
+            ]
+            for column, value in enumerate(values):
+                table.setItem(row, column, QTableWidgetItem(str(value)))
+        layout.addWidget(table, 1)
+
+        notes = QPlainTextEdit()
+        notes.setReadOnly(True)
+        notes.setMaximumHeight(125)
+        notes.setPlainText(
+            "INTERPRETATION: Every row is a candidate temporal relationship, not a verified signal or ECU relationship. "
+            "Positive lag means Bus B follows Bus A; negative lag means Bus A follows Bus B. "
+            "Zero lag means activity peaks occupy the same time bins.\n\n"
+            + "\n".join(f"- {item}" for item in report["limitations"])
+        )
+        layout.addWidget(notes)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+        dialog.exec()
+        self.status_label.setText(
+            f"Cross-bus analysis: {report['candidate_count']} candidate relationship(s); correlation only"
+        )
 
     def analyze_can_timing(self):
         """Show passive inter-frame timing observations for the current capture."""
