@@ -8,7 +8,7 @@ from .hardware.interface_discovery import discover_interfaces
 def refresh_serial_ports(window, discover=discover_interfaces):
     """Inventory serial interfaces and select only a single clear candidate."""
     current = window.channel_edit.currentText().strip()
-    ports = discover_interfaces()
+    ports = discover()
     window.channel_edit.blockSignals(True)
     window.channel_edit.clear()
     for port in ports:
