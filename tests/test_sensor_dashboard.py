@@ -175,14 +175,20 @@ def test_graph_panel_popout_and_close_restore_widget_parent(qapp):
     dock = SensorDashboardDock(SimpleNamespace(samples=[]))
     panel = dock.panels[0]
 
-    panel.toggle_popout()
+    panel.popout_button.click()
+    qapp.processEvents()
     host = panel._floating_host
     assert host is not None
+    assert host.isWindow()
+    assert host.isVisible()
     assert panel.parent() is host
+    assert panel.isVisible()
 
     host.close()
     qapp.processEvents()
 
     assert panel._floating_host is None
+    assert not host.isVisible()
     assert panel.parent() is dock.grid_host
+    assert panel.isVisible()
     dock.close()
