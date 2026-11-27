@@ -19,6 +19,8 @@ class AdapterCapabilities:
     uds_active_requests: bool = False
     dual_channel: bool = False
     hardware_timestamp: bool = False
+    device_clock_calibration: bool = False
+    device_clock_calibration_implemented: bool = False
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,8 @@ ESP32_SINGLE_CAPABILITIES = AdapterCapabilities(
     obd2_passive_decode=True,
     obd2_active_requests=True,
     diagnostic_requests_implemented=False,
+    device_clock_calibration=True,
+    device_clock_calibration_implemented=True,
 )
 
 ESP32_DUAL_CAPABILITIES = AdapterCapabilities(
@@ -70,6 +74,8 @@ ESP32_DUAL_CAPABILITIES = AdapterCapabilities(
     diagnostic_requests_implemented=False,
     dual_channel=True,
     hardware_timestamp=True,
+    device_clock_calibration=True,
+    device_clock_calibration_implemented=True,
 )
 
 SOCKETCAN_CAPABILITIES = AdapterCapabilities(
