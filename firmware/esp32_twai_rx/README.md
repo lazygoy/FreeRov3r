@@ -33,6 +33,7 @@ The source supports these build-time settings:
 | `FREEROV3R_CAN_BITRATE` | `500000` | CAN bitrate: 125000, 250000, 500000, or 1000000 |
 | `FREEROV3R_CAN_CHANNEL` | `0` | Logical channel number sent in binary CAN frame records |
 | `FREEROV3R_BINARY_PROTOCOL` | `0` | Set to `1` for version 1 binary USB protocol; `0` retains legacy text output |
+| `FREEROV3R_WIFI_ENABLED` | `0` | Set to `1` to enable the optional Wi-Fi TCP transport |
 
 For simultaneous LR4 HS-CAN and MS-CAN capture, build and upload the firmware
 to two boards:
@@ -75,12 +76,16 @@ payload[payload_length]
 crc16:u16 (CRC-16/CCITT-FALSE, big endian)
 ```
 
-Implemented device-to-host message types:
+Implemented message types:
 
 - `HELLO (0x01)`: firmware identity, protocol version and listen-only mode.
 - `DEVICE_STATUS (0x12)`: startup, error and TWAI alert text.
 - `FRAME_RX (0x20)`: channel, frame flags, DLC, CAN ID, device timestamp and
   Classical-CAN data bytes.
+- `TIME_SYNC_REQ (0x30)`: the host sends a probe containing a request ID and
+  host monotonic send timestamp.
+- `TIME_SYNC_RESP (0x31)`: the ESP32 echoes the request ID and host timestamp,
+  plus device-local receive and send timestamps in microseconds.
 
 The CAN frame payload is big-endian for multi-byte fields:
 `channel:u8 | flags:u8 | DLC:u8 | CAN_ID:u32 | device_time_us:u64 | data`.
@@ -91,9 +96,24 @@ Sequence numbers increase for every emitted protocol message. The timestamp
 is microseconds since this ESP32 boot and is not synchronized with the PC or
 another ESP32. FreeRov3r records a separate host monotonic receive timestamp.
 
-This first firmware protocol implementation is deliberately transmit-free:
-it does not parse host commands, configure CAN dynamically, acknowledge
-requests, or send CAN frames. USB serial carries device-to-host data only.
+The firmware accepts exactly one host control operation: the timestamp probe
+`TIME_SYNC_REQ`. It does not accept CAN-frame transmit commands, OBD/UDS
+requests, bitrate changes, or arbitrary configuration. TWAI remains in
+`TWAI_MODE_LISTEN_ONLY` with its transmit queue disabled. The timestamp
+response is generated independently of the CAN controller.
+
+FreeRov3r's PC adapter exposes `request_clock_sync()` for one exchange and
+`calibrate_device_clock()` for a multi-sample fit. The normal capture receive
+loop must be running while calibration is requested. For two ESP32s, calibrate
+each adapter independently against the same PC monotonic clock, then compare
+the results with `compare_clock_mappings()`.
+
+The mapping uses four timestamps per exchange (host send/receive and device
+receive/send), selects low-round-trip samples, and fits device time to host
+monotonic time. Half the minimum round-trip delay is only a precision indicator
+under a symmetric-path assumption. Unknown USB/Wi-Fi path asymmetry and host
+scheduling delay are not bounded. This is software clock calibration, not
+hardware clock synchronization, and it does not guarantee a fixed error bound.
 
 ## Legacy text protocol
 
@@ -164,7 +184,8 @@ reconnect from silently replaying stale traffic.
 The TCP stream is unencrypted and has no client authentication in this
 firmware revision. Use only on a trusted, access-controlled local network.
 Do not expose port 3333 to the public internet. The device accepts one client
-at a time. The TCP listener does not parse commands and cannot transmit CAN.
+at a time. The TCP listener accepts only the timestamp probe described above;
+it cannot transmit CAN or issue vehicle diagnostic requests.
 
 FreeRov3r's PC-side Wi-Fi adapter connects to the ESP32 IP address and port
 3333. Find the assigned address in the router's DHCP client list. This
