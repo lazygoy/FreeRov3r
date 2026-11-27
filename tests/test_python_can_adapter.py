@@ -3,6 +3,7 @@ import time
 import pytest
 
 from freerov3r.hardware import python_can_adapter as adapter_module
+from freerov3r.hardware.capabilities import TransmitPolicy
 from freerov3r.models import CanFrame
 
 
@@ -136,5 +137,10 @@ def test_python_can_transmit_capability_is_declared_only_for_socketcan():
 
     assert socketcan.capabilities.raw_can_transmit
     assert socketcan.capabilities.raw_can_transmit_implemented
+    assert not socketcan.capabilities.obd2_active_requests
+    assert not socketcan.capabilities.diagnostic_requests_implemented
+    assert not TransmitPolicy(
+        diagnostic_requests_enabled=True
+    ).allows_diagnostic_request(socketcan.capabilities)
     assert not socketcan.capabilities.uds_active_requests
     assert not other.capabilities.raw_can_transmit
