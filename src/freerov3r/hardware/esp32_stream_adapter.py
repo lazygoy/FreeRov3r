@@ -312,7 +312,11 @@ class Esp32FramedStreamAdapter(CanAdapter):
                         self.sequence_gaps += distance
             self.last_sequence = message.sequence
 
-            if message.message_type in (MessageType.HELLO, MessageType.DEVICE_STATUS):
+            if message.message_type in (
+                MessageType.HELLO,
+                MessageType.DEVICE_STATUS,
+                MessageType.TIME_SYNC_RESP,
+            ):
                 self._handle_control_message(message)
                 continue
             if message.version != 1 or message.message_type != MessageType.FRAME_RX:
@@ -415,11 +419,6 @@ class Esp32FramedSerialAdapter(Esp32FramedStreamAdapter):
         self.connection.write(data)
         self.connection.flush()
 
-    def _write(self, data):
-        if self.connection is None:
-            raise RuntimeError("ESP32 Wi-Fi connection is not open")
-        self.connection.sendall(data)
-
     def _close_transport(self):
         if self.connection is not None:
             self.connection.close()
@@ -470,6 +469,11 @@ class Esp32WifiAdapter(Esp32FramedStreamAdapter):
         if not chunk:
             raise ConnectionError("ESP32 Wi-Fi device closed the connection")
         return chunk
+
+    def _write(self, data):
+        if self.connection is None:
+            raise RuntimeError("ESP32 Wi-Fi connection is not open")
+        self.connection.sendall(data)
 
     def _close_transport(self):
         if self.connection is not None:
