@@ -50,6 +50,7 @@ from .diagnostics.simulated_modules import SimulatedModuleNetwork
 from .diagnostics.service_routines import ServiceRoutine, ServiceRoutineManager
 from .diagnostics.l319_wiring import NETWORKS as L319_WIRING_NETWORKS, SOURCE_URL as L319_WIRING_SOURCE_URL, DEFAULT_ENGINE as L319_DEFAULT_ENGINE
 
+from .vehicle_history import VehicleHistoryStore
 from .vehicle_history_tab import VehicleHistoryTab
 from .solutions_tab import SolutionsTab
 from .special_functions_tab import SpecialFunctionsTab
