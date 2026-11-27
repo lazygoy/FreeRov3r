@@ -7,6 +7,7 @@ ECU identities, or proof of causality.
 from __future__ import annotations
 
 import math
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 
 
@@ -16,14 +17,21 @@ def _parse_frame(record):
     if record.get("timestamp_clock_domain", record.get("timestamp_clock")) != "host_monotonic":
         return "clock"
     try:
-        if record.get("rtr", record.get("remote", False)):
+        remote = record.get("rtr", record.get("remote", False))
+        if isinstance(remote, str):
+            remote = remote.strip().lower() in ("1", "true", "yes", "rtr", "remote")
+        if remote:
             return None
         timestamp = record.get("timestamp")
         if isinstance(timestamp, bool):
             return None
         timestamp = float(timestamp)
         can_id = int(record["arbitration_id"])
-        extended = bool(record.get("extended", False))
+        extended_value = record.get("extended", False)
+        extended = (
+            extended_value.strip().lower() in ("1", "true", "yes", "ext", "extended")
+            if isinstance(extended_value, str) else bool(extended_value)
+        )
         raw = record.get("data", "")
         payload = bytes(raw) if isinstance(raw, (bytes, bytearray)) else bytes.fromhex(str(raw).replace(" ", ""))
         if not math.isfinite(timestamp) or timestamp < 0 or can_id < 0 or can_id > 0x1FFFFFFF:
@@ -78,8 +86,11 @@ def _series_events(frames, max_bytes):
 
 def _candidate_lags(events_a, events_b, max_lag, resolution, max_lags=6):
     histogram = Counter()
-    for time_a, _, _ in events_a:
-        for time_b, _, _ in events_b:
+    # A bounded, evenly spaced sample keeps lag discovery practical on long captures.
+    sample_a = events_a[::max(1, len(events_a) // 100)][:100]
+    sample_b = events_b[::max(1, len(events_b) // 100)][:100]
+    for time_a, _, _ in sample_a:
+        for time_b, _, _ in sample_b:
             delta = time_b - time_a
             if abs(delta) <= max_lag:
                 histogram[round(delta / resolution)] += 1
@@ -92,16 +103,18 @@ def _candidate_lags(events_a, events_b, max_lag, resolution, max_lags=6):
 def _match_events(events_a, events_b, lag, tolerance):
     pairs = []
     used = set()
+    times_b = [event[0] for event in events_b]
     for event_a in events_a:
-        time_a = event_a[0]
+        expected = event_a[0] + lag
+        start = bisect_left(times_b, expected - tolerance)
+        end = bisect_right(times_b, expected + tolerance)
         best_index = None
         best_error = None
-        expected = time_a + lag
-        for index, event_b in enumerate(events_b):
+        for index in range(start, end):
             if index in used:
                 continue
-            error = abs(event_b[0] - expected)
-            if error <= tolerance and (best_error is None or error < best_error):
+            error = abs(times_b[index] - expected)
+            if best_error is None or error < best_error:
                 best_index, best_error = index, error
         if best_index is not None:
             used.add(best_index)
