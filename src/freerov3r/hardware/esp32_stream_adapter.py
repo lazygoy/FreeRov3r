@@ -41,6 +41,9 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.wifi_port = None
         self._pending_frames = []
         self._opened = False
+        self.connection_events = []
+        self.connection_generation = 0
+        self.reconnect_attempts = 0
 
     @property
     def connected(self):
@@ -85,6 +88,9 @@ class Esp32FramedStreamAdapter(CanAdapter):
             "queue_drops": dict(self.queue_drops),
             "wifi_host": self.wifi_host,
             "wifi_port": self.wifi_port,
+            "connection_generation": self.connection_generation,
+            "reconnect_attempts": self.reconnect_attempts,
+            "connection_events": [dict(event) for event in self.connection_events],
         }
 
     def open(self):
@@ -104,6 +110,13 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.wifi_host = self.wifi_port = None
         self._open_transport()
         self._opened = True
+        self.connection_generation += 1
+        self.connection_events.append({
+            "event": "connected",
+            "wall_time": time.time(),
+            "monotonic": time.monotonic(),
+            "generation": self.connection_generation,
+        })
 
     def _open_transport(self):
         raise NotImplementedError
@@ -117,6 +130,24 @@ class Esp32FramedStreamAdapter(CanAdapter):
         finally:
             self._opened = False
             self._pending_frames.clear()
+
+    def reconnect(self):
+        """Reconnect without resetting capture counters or session metadata."""
+        self._close_transport()
+        self._pending_frames.clear()
+        self.decoder = MessageStreamDecoder()
+        self._opened = False
+        self._open_transport()
+        self._opened = True
+        self.reconnect_attempts += 1
+        self.connection_generation += 1
+        self.connection_events.append({
+            "event": "reconnected",
+            "wall_time": time.time(),
+            "monotonic": time.monotonic(),
+            "generation": self.connection_generation,
+            "attempt": self.reconnect_attempts,
+        })
 
     def _read(self, timeout):
         raise NotImplementedError
@@ -221,6 +252,13 @@ class Esp32FramedStreamAdapter(CanAdapter):
                 chunk = self._read(remaining)
             except (OSError, serial.SerialException) as exc:
                 self.last_error = str(exc)[:240]
+                self.connection_events.append({
+                    "event": "disconnected",
+                    "wall_time": time.time(),
+                    "monotonic": time.monotonic(),
+                    "generation": self.connection_generation,
+                    "reason": self.last_error,
+                })
                 self._opened = False
                 raise
             if chunk:
