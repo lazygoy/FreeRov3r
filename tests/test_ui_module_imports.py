@@ -250,3 +250,37 @@ def test_sensors_tab_constructs_with_callbacks():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_navigation_workspace_remains_available_from_app_module():
+    from freerovr.app import NavigationWorkspace as app_navigation_workspace
+    from freerovr.navigation_workspace import NavigationWorkspace
+
+    assert app_navigation_workspace is NavigationWorkspace
+
+
+def test_navigation_workspace_constructs_with_tabs():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication, QTabWidget
+
+    from freerovr.navigation_workspace import NavigationWorkspace
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tabs = QTabWidget()
+    tabs.addTab(QWidget(), "Capture")
+    workspace = NavigationWorkspace(
+        tabs=tabs,
+        heading_font_family="Arial",
+        body_font_family="Arial",
+        toggle_quick_drawer=lambda: None,
+        on_tab_changed=lambda _index: None,
+    )
+    assert workspace.widget() is not None
+    assert workspace.workspace_title.text() == "Capture"
+    assert tabs.tabBar().isHidden()
+
+    workspace.deleteLater()
+    tabs.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
