@@ -409,3 +409,9 @@ def test_vehicle_management_helpers_are_available_from_app_module():
     assert app_add_vehicle is add_or_update_vehicle
     assert callable(add_or_update_vehicle)
 
+def test_setup_flow_helper_is_available_from_app_module():
+    from freerov3r.app import run_setup_wizard_flow as app_setup_flow
+    from freerov3r.setup_flow import run_setup_wizard
+
+    assert app_setup_flow is run_setup_wizard
+
