@@ -177,3 +177,38 @@ The D-PDU discovery implementation follows the ISO 22900-2 root-file discovery
 model and RDF entry structure. The standard defines the root file as the
 application entry point for installed MVCI protocol modules, with library,
 MDF, and CDF references. The 2022 edition is the current published edition.
+
+
+## D-PDU runtime slice: passive live-module inventory
+
+The branch now includes `hardware.dpdu_runtime.DPduApiRuntime`. It loads only
+the user-selected API library and binds the ISO 22900-2 exports
+`PDUConstruct`, `PDUGetModuleIds`, `PDUDestroyItem`, and `PDUDestruct`
+using the Windows `__stdcall` ABI (or the platform C ABI on Linux).
+
+The runtime performs the standard construction and module-list query. It
+returns module type IDs, API-assigned module handles, module status, and
+vendor-provided identity/connection strings. The API-owned module-list item
+is released with `PDUDestroyItem`, and the API session is closed with
+`PDUDestruct`, including error paths.
+
+This is deliberately a module-interface inventory, not a claim that every
+reported module is ready for diagnostics. A module must report an appropriate
+status and be explicitly connected in a later, separate step before resources
+or diagnostic links can be used. This slice does not call
+`PDUModuleConnect`, `PDUGetResourceIds`, `PDUCreateComLogicalLink`, or
+any communication primitive. No vehicle-bus communication or transmit path
+is exposed.
+
+The module enumeration ABI follows ISO 22900-2:2022 clauses 8.4.2, 8.4.3,
+8.4.20, 8.4.24, 8.7.2.2, and 10.1.4.2 / 10.1.4.6. The standard explicitly
+specifies that Windows D-PDU exports use `__stdcall`, and that
+`PDUConstruct` initializes the API and detects modules while remaining
+offline with no allocation of communication resources and no vehicle
+communication. Resource enumeration is a subsequent stage because it requires
+MDF-derived bus, protocol, and DLC-pin identifiers.
+
+Mocked tests cover export validation, ABI-shaped structures, successful and
+empty inventories, bounded module counts, API error handling, item destruction,
+and session cleanup. Real vendor DLL compatibility remains unverified until
+tested against an identified API implementation and VCI.
