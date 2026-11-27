@@ -28,3 +28,10 @@ def test_wiring_diagrams_tab_remains_available_from_app_module():
     from freerov3r.wiring_diagrams_tab import WiringDiagramsTab
 
     assert app_wiring_tab is WiringDiagramsTab
+
+
+def test_network_overview_tab_remains_available_from_app_module():
+    from freerov3r.app import NetworkOverviewTab as app_network_tab
+    from freerov3r.network_overview_tab import NetworkOverviewTab
+
+    assert app_network_tab is NetworkOverviewTab
