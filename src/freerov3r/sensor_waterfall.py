@@ -101,15 +101,18 @@ class WaterfallPlot(QWidget):
         super().__init__(parent)
         self.lanes = []
         self.duration = 1.0
+        self.lane_count = 1
         self.yaw = 0.0
         self.zoom = 1.0
         self.vertical_exaggeration = 1.0
         self._drag_pos = None
-        self.setMinimumSize(620, 360)
+        self.setMinimumSize(820, 420)
         self.setMouseTracking(True)
 
     def set_lanes(self, lanes):
         self.lanes = lanes
+        self.lane_count = max(1, len(lanes))
+        self.setMinimumHeight(max(420, 92 + self.lane_count * 64))
         self.duration = max(
             (point[0] for lane in lanes for point in lane["points"]),
             default=1.0,
@@ -117,69 +120,78 @@ class WaterfallPlot(QWidget):
         self.update()
 
     def _project(self, x, lane, z, rect):
-        left = rect.left() + rect.width() * 0.13
-        bottom = rect.top() + rect.height() * 0.82
-        x_span = rect.width() * 0.70 * self.zoom
-        depth_span = rect.width() * 0.36 * self.zoom
-        height_span = rect.height() * 0.48 * self.zoom * self.vertical_exaggeration
-        angle = math.radians(28 + self.yaw)
-        depth = lane
-        px = left + (x / self.duration) * x_span + depth * depth_span * math.cos(angle)
-        py = bottom - depth * depth_span * math.sin(angle) - z * height_span
+        left = rect.left() + 220
+        top = rect.top() + 54
+        plot_width = max(100.0, rect.width() - 250)
+        row_height = max(1.0, (rect.height() - 104) / self.lane_count)
+        lane_height = min(48.0, row_height * 0.62) * self.vertical_exaggeration
+        # Normalized waterfall values are stored as 0..100; native lanes as 0..1.
+        z_fraction = z / 100.0 if z > 1.0 else z
+        perspective = lane * min(12.0, plot_width * 0.012) * self.zoom
+        px = left + (x / self.duration) * plot_width * self.zoom + perspective
+        py = top + (lane + 0.5) * row_height - z_fraction * lane_height
         return px, py
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#171329"))
-        painter.setPen(QColor("#aaa5c7"))
-        painter.drawText(18, 24, "3D SENSOR WATERFALL")
+        painter.fillRect(self.rect(), QColor("#0B1220"))
+        painter.setPen(QColor("#E2E8F0"))
+        painter.drawText(18, 25, "SENSOR HISTORY · ONE ROW PER SIGNAL")
         if not self.lanes:
-            painter.setPen(QColor("#c7c1dd"))
+            painter.setPen(QColor("#94A3B8"))
             painter.drawText(self.rect(), Qt.AlignCenter, "Waiting for valid sensor samples")
             painter.end()
             return
 
-        count = len(self.lanes)
-        for index, lane in enumerate(reversed(self.lanes)):
-            lane_index = index / max(1, count - 1)
-            points = lane["points"]
-            if len(points) < 1:
-                continue
-            baseline = [self._project(x, lane_index, 0, self.rect()) for x, _ in points]
-            ridge = [self._project(x, lane_index, z, self.rect()) for x, z in points]
-            polygon = QPolygonF()
-            for point in ridge:
-                polygon.append(QPointF(*point))
-            for point in reversed(baseline):
-                polygon.append(QPointF(*point))
-            hue = (sum(lane["sensor_id"].encode("utf-8")) * 3) % 360
-            color = QColor.fromHsv(hue, 190, 245)
-            gradient = QLinearGradient(0, self.height() * 0.35, 0, self.height() * 0.84)
-            gradient.setColorAt(0, color.lighter(145))
-            gradient.setColorAt(1, color.darker(190))
-            painter.setPen(QPen(color.lighter(130), 1.1))
-            painter.setBrush(gradient)
-            painter.drawPolygon(polygon)
-            painter.setPen(QPen(color.lighter(155), 1.0))
-            path = QPainterPath()
-            for point_index, point in enumerate(ridge):
-                if point_index == 0:
-                    path.moveTo(*point)
-                else:
-                    path.lineTo(*point)
-            painter.setBrush(Qt.NoBrush)
-            painter.drawPath(path)
-            label_x, label_y = self._project(0, lane_index, 0, self.rect())
-            painter.setPen(QColor("#eeeaf8"))
-            label = (f'{lane["name"]} [{lane["unit"]}]  '
-                     f'{lane["minimum"]:.3g}..{lane["maximum"]:.3g}  '
-                     f'now {lane["current"]:.3g}')
-            painter.drawText(int(label_x - 105), int(label_y + 18), label)
+        top = 54
+        bottom = self.height() - 50
+        left = 220
+        right = self.width() - 24
+        plot_width = max(100, right - left)
+        row_height = max(1.0, (bottom - top) / self.lane_count)
+        palette = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80",
+                   "#A78BFA", "#FACC15", "#FB923C", "#60A5FA")
 
-        painter.setPen(QColor("#c7c1dd"))
-        painter.drawText(18, self.height() - 16, "TIME  →")
-        painter.drawText(18, self.height() - 34, f"Window: {self.duration:.1f} s")
+        painter.setPen(QPen(QColor("#334155"), 1, Qt.DashLine))
+        for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
+            x = left + plot_width * fraction
+            painter.drawLine(int(x), top, int(x), bottom)
+            painter.setPen(QColor("#94A3B8"))
+            painter.drawText(int(x - 12), self.height() - 22, f"{fraction:.0%}")
+            painter.setPen(QPen(QColor("#334155"), 1, Qt.DashLine))
+
+        for index, lane in enumerate(self.lanes):
+            row_top = top + index * row_height
+            baseline_y = row_top + row_height * 0.78
+            painter.setPen(QPen(QColor("#263449"), 1))
+            painter.drawLine(left, int(baseline_y), right, int(baseline_y))
+            painter.setPen(QColor("#E2E8F0"))
+            painter.drawText(14, int(row_top + row_height * 0.43),
+                             f'{lane["name"]} [{lane["unit"]}]')
+            painter.setPen(QColor("#94A3B8"))
+            detail = (f'min {lane["minimum"]:.4g}  max {lane["maximum"]:.4g}  '
+                      f'now {lane["current"]:.4g}')
+            painter.drawText(14, int(row_top + row_height * 0.72), detail)
+
+            points = lane["points"]
+            if not points:
+                continue
+            color = QColor(palette[index % len(palette)])
+            polyline = QPolygonF()
+            for x_value, z_value in points:
+                px, py = self._project(x_value, index, z_value, self.rect())
+                polyline.append(QPointF(px, py))
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(color, 2.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            if len(polyline) == 1:
+                painter.drawEllipse(polyline.at(0), 3.5, 3.5)
+            else:
+                painter.drawPolyline(polyline)
+
+        painter.setPen(QColor("#CBD5E1"))
+        painter.drawText(left, self.height() - 22,
+                         "Elapsed time across selected history window")
         painter.end()
 
     def wheelEvent(self, event):
@@ -239,7 +251,7 @@ class SensorWaterfallDialog(QDialog):
         controls.addStretch(1)
         layout.addLayout(controls)
         self.sensor_list = QListWidget()
-        self.sensor_list.setMaximumHeight(88)
+        self.sensor_list.setMaximumHeight(104)
         self.sensor_list.itemChanged.connect(self.refresh_plot)
         layout.addWidget(self.sensor_list)
         self.plot = WaterfallPlot(self)
