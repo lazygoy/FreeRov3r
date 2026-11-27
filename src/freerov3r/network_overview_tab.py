@@ -4,7 +4,7 @@ from PySide6.QtGui import QBrush, QColor
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit,
-    QScrollArea, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QScrollArea, QHeaderView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .diagnostics.l319_wiring import NETWORKS as L319_WIRING_NETWORKS
