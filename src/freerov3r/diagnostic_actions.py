@@ -1,6 +1,6 @@
 """Read-only OBD-II diagnostic request and result handling."""
 
-def est_dtc_scan(window):
+def request_dtc_scan(window):
     receiver = window.receiver
     if window.active_interface != "elm327_obd" or receiver is None:
         return False
@@ -8,7 +8,7 @@ def est_dtc_scan(window):
 
 
 
-def est_readiness_scan(window):
+def request_readiness_scan(window):
     receiver = window.receiver
     if window.active_interface != "elm327_obd" or receiver is None:
         return False
@@ -16,7 +16,7 @@ def est_readiness_scan(window):
 
 
 
-def est_vehicle_info_scan(window):
+def request_vehicle_info_scan(window):
     receiver = window.receiver
     if window.active_interface != "elm327_obd" or receiver is None:
         return False
@@ -24,7 +24,7 @@ def est_vehicle_info_scan(window):
 
 
 
-def est_monitor_tests_scan(window):
+def request_monitor_tests_scan(window):
     receiver = window.receiver
     if window.active_interface != "elm327_obd" or receiver is None:
         return False
@@ -32,7 +32,7 @@ def est_monitor_tests_scan(window):
 
 
 
-def monitor_tests_scan_completed(window, result):
+def _on_monitor_tests_scan_completed(window, result):
     window.obd_tab.show_monitor_test_results(result)
     responses = result.get("responses", [])
     count = sum(len(response.get("results", [])) for response in responses)
@@ -57,7 +57,7 @@ def monitor_tests_scan_completed(window, result):
 
 
 
-def monitor_tests_scan_failed(window, message):
+def _on_monitor_tests_scan_failed(window, message):
     window.obd_tab.set_monitor_tests_scan_error(message)
     window.record_vehicle_event(
         "monitor_tests_scan_failed",
@@ -69,7 +69,7 @@ def monitor_tests_scan_failed(window, message):
 
 
 
-def vehicle_info_scan_completed(window, results):
+def _on_vehicle_info_scan_completed(window, results):
     window.obd_tab.show_vehicle_info_results(results)
     detected_vins = {
         validate_vin(item.get("value"))
@@ -98,7 +98,7 @@ def vehicle_info_scan_completed(window, results):
 
 
 
-def vehicle_info_scan_failed(window, message):
+def _on_vehicle_info_scan_failed(window, message):
     window.obd_tab.set_vehicle_info_scan_error(message)
     window.record_vehicle_event(
         "vehicle_info_scan_failed",
@@ -110,7 +110,7 @@ def vehicle_info_scan_failed(window, message):
 
 
 
-def est_freeze_frame_scan(window, pids, frame_number=0):
+def request_freeze_frame_scan(window, pids, frame_number=0):
     receiver = window.receiver
     if window.active_interface != "elm327_obd" or receiver is None:
         return False
@@ -118,7 +118,7 @@ def est_freeze_frame_scan(window, pids, frame_number=0):
 
 
 
-def freeze_frame_scan_completed(window, results):
+def _on_freeze_frame_scan_completed(window, results):
     window.obd_tab.show_freeze_frame_results(results)
     window.record_vehicle_event(
         "freeze_frame_scan_completed",
@@ -140,7 +140,7 @@ def freeze_frame_scan_completed(window, results):
 
 
 
-def freeze_frame_scan_failed(window, message):
+def _on_freeze_frame_scan_failed(window, message):
     window.obd_tab.set_freeze_frame_scan_error(message)
     window.record_vehicle_event(
         "freeze_frame_scan_failed",
@@ -152,7 +152,7 @@ def freeze_frame_scan_failed(window, message):
 
 
 
-def readiness_scan_completed(window, results):
+def _on_readiness_scan_completed(window, results):
     window.obd_tab.show_readiness_results(results)
     window.record_vehicle_event(
         "readiness_scan_completed",
@@ -174,7 +174,7 @@ def readiness_scan_completed(window, results):
 
 
 
-def readiness_scan_failed(window, message):
+def _on_readiness_scan_failed(window, message):
     window.obd_tab.set_readiness_scan_error(message)
     window.record_vehicle_event(
         "readiness_scan_failed",
@@ -186,7 +186,7 @@ def readiness_scan_failed(window, message):
 
 
 
-def dtc_scan_completed(window, codes):
+def _on_dtc_scan_completed(window, codes):
     window.obd_tab.show_dtc_results(codes)
     window.record_vehicle_event(
         "dtc_scan_completed",
@@ -207,7 +207,7 @@ def dtc_scan_completed(window, codes):
 
 
 
-def dtc_scan_failed(window, message):
+def _on_dtc_scan_failed(window, message):
     window.obd_tab.set_dtc_scan_error(message)
     window.record_vehicle_event(
         "dtc_scan_failed",
