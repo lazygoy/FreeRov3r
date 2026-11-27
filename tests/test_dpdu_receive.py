@@ -137,15 +137,15 @@ def test_receive_primitive_is_explicitly_receive_only(runtime_pair):
     runtime, library = runtime_pair
 
     cop = runtime.start_receive_only(
-        17, 91, response_mask=b"\\xff\\x00",
-        response_pattern=b"\\x62\\x00", unique_response_ids=[0x123],
+        17, 91, response_mask=b"\xff\x00",
+        response_pattern=b"\x62\x00", unique_response_ids=[0x123],
     )
 
     call = next(call for call in library.calls if call[0] == "start_receive")
     assert cop == 700
     assert call == (
         "start_receive", 17, 91, PDU_COPT_SENDRECV, 0, False, 0, -1, 1,
-        b"\\xff\\x00", b"\\x62\\x00",
+        b"\xff\x00", b"\x62\x00",
     )
 
     runtime.cancel_receive_only(17, 91, cop)
@@ -156,13 +156,13 @@ def test_receive_primitive_requires_online_link_and_valid_filter(runtime_pair):
     runtime, library = runtime_pair
     with pytest.raises(ValueError, match="equal nonzero"):
         runtime.start_receive_only(
-            17, 91, response_mask=b"\\xff", response_pattern=b""
+            17, 91, response_mask=b"\xff", response_pattern=b""
         )
 
     runtime.disconnect_logical_link(17, 91)
     with pytest.raises(RuntimeError, match="must be online"):
         runtime.start_receive_only(
-            17, 91, response_mask=b"\\xff", response_pattern=b"\\x62"
+            17, 91, response_mask=b"\xff", response_pattern=b"\x62"
         )
 
     assert not any(call[0] == "start_receive" for call in library.calls)
@@ -172,7 +172,7 @@ def test_receive_primitive_requires_online_link_and_valid_filter(runtime_pair):
 def test_event_queue_copies_result_and_destroys_api_item(runtime_pair):
     runtime, library = runtime_pair
     runtime.start_receive_only(
-        17, 91, response_mask=b"\\xff", response_pattern=b"\\x62"
+        17, 91, response_mask=b"\xff", response_pattern=b"\x62"
     )
 
     library.payload = (ctypes.c_uint8 * 3)(0x62, 0xF1, 0x90)
@@ -198,7 +198,7 @@ def test_event_queue_copies_result_and_destroys_api_item(runtime_pair):
     assert event.item_type == PDU_IT_RESULT
     assert event.cop_handle == 700
     assert event.timestamp_us == 999
-    assert event.data == b"\\x62\\xf1\\x90"
+    assert event.data == b"\x62\xf1\x90"
     assert event.start_message_timestamp_us == 123
     assert event.transmit_done_timestamp_us == 456
     assert event.acceptance_id == 9
@@ -213,7 +213,7 @@ def test_event_queue_copies_result_and_destroys_api_item(runtime_pair):
 def test_close_cancels_receive_primitive_before_disconnect(runtime_pair):
     runtime, library = runtime_pair
     runtime.start_receive_only(
-        17, 91, response_mask=b"\\xff", response_pattern=b"\\x62"
+        17, 91, response_mask=b"\xff", response_pattern=b"\x62"
     )
 
     runtime.close()
