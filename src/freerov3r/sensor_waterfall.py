@@ -260,11 +260,7 @@ class SensorWaterfallDialog(QDialog):
             self.window_combo.addItem(label, seconds)
         self.window_combo.setCurrentIndex(2)
         controls.addWidget(self.window_combo)
-        controls.addWidget(QLabel("Vertical scale:"))
-        self.scale_combo = QComboBox()
-        self.scale_combo.addItem("Native units (independent per sensor)", "native")
-        self.scale_combo.addItem("Normalized (0–100%)", "normalized")
-        controls.addWidget(self.scale_combo)
+        controls.addWidget(QLabel("Scale: independent per sensor"))
         controls.addWidget(QLabel("Data source:"))
         self.source_combo = QComboBox()
         self.source_combo.addItem("Live sensor data", "live")
@@ -322,7 +318,6 @@ class SensorWaterfallDialog(QDialog):
         self.color_button.clicked.connect(self._choose_sensor_color)
         self.color_sensor_combo.currentIndexChanged.connect(self._sync_color_button)
         self.source_combo.currentIndexChanged.connect(self.refresh_sensor_choices)
-        self.scale_combo.currentIndexChanged.connect(self.refresh_plot)
         self.refresh_sensor_choices()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(750)
@@ -410,7 +405,7 @@ class SensorWaterfallDialog(QDialog):
             selected_ids=selected,
             window_seconds=int(self.window_combo.currentData()),
             max_points=int(self.detail_combo.currentData()),
-            scale_mode=self.scale_combo.currentData(),
+            scale_mode="native",
             vin=(None if self.source_combo.currentData() == "demo" else self.vin_provider()),
         )
         self.plot.set_lanes(lanes, self._sensor_colors)
