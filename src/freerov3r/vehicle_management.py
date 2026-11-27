@@ -96,6 +96,8 @@ def _apply_detected_vin(window, vin):
     window.settings["current_vin"] = vin
     if window.receiver and window.receiver.isRunning():
         window.capture_vin = vin
+        if window.capture_session_context is not None:
+            window.capture_session_context.vin = vin
     window._refresh_vehicle_list()
     window._update_vehicle_context()
     window.save_current_settings()
