@@ -24,6 +24,7 @@ class WaterfallPlot(gl.GLViewWidget):
         super().__init__(parent)
         self.lanes = []
         self.duration = 1.0
+        self.time_extent = 12.0
         self.opacity = 0.55
         self.height_scale = 1.4
         self._colors = {}
@@ -56,7 +57,7 @@ class WaterfallPlot(gl.GLViewWidget):
             "Front": (8, -90), "Side": (8, 0),
         }.get(name, (28, -48))
         self.setCameraPosition(
-            distance=max(10.0, self.duration * 1.35, len(self.lanes) * 2.2),
+            distance=max(14.0, len(self.lanes) * 2.2),
             elevation=elevation, azimuth=azimuth,
         )
 
@@ -72,20 +73,20 @@ class WaterfallPlot(gl.GLViewWidget):
         spacing = 1.65
         count = len(self.lanes)
         grid = gl.GLGridItem()
-        grid.setSize(x=max(self.duration, 1.0), y=max(1.0, count * spacing), z=0)
-        grid.setSpacing(x=max(self.duration / 10.0, 0.1), y=spacing)
+        grid.setSize(x=self.time_extent, y=max(1.0, count * spacing), z=0)
+        grid.setSpacing(x=self.time_extent / 10.0, y=spacing)
         grid.setColor((0.25, 0.34, 0.45, 0.38))
-        grid.translate(self.duration / 2.0, (count - 1) * spacing / 2.0, 0)
+        grid.translate(self.time_extent / 2.0, (count - 1) * spacing / 2.0, 0)
         self.addItem(grid)
         self.addItem(gl.GLAxisItem(size=QVector3D(
-            max(self.duration, 1.0), max(1.0, count * spacing), self.height_scale
+            self.time_extent, max(1.0, count * spacing), self.height_scale
         )))
 
         for index, lane in enumerate(self.lanes):
             points = lane.get("points", [])
             if len(points) < 2:
                 continue
-            x = np.asarray([float(p[0]) for p in points], dtype=np.float32)
+            x = np.asarray([float(p[0]) / self.duration * self.time_extent for p in points], dtype=np.float32)
             raw_z = np.asarray([float(p[1]) for p in points], dtype=np.float32)
             z = np.clip(np.where(raw_z > 1.0, raw_z / 100.0, raw_z), 0.0, 1.0)
             z *= self.height_scale
@@ -129,12 +130,12 @@ class WaterfallPlot(gl.GLViewWidget):
         )
         self.addItem(self._cursor_line)
         self.opts["center"] = pg.Vector(
-            self.duration / 2.0, (count - 1) * spacing / 2.0,
+            self.time_extent / 2.0, (count - 1) * spacing / 2.0,
             self.height_scale * 0.32,
         )
         if first_scene:
             self.setCameraPosition(
-                distance=max(10.0, self.duration * 1.35, count * 2.2),
+                distance=max(14.0, count * 2.2),
                 elevation=28, azimuth=-48,
             )
             self._camera_initialized = True
@@ -147,11 +148,13 @@ class WaterfallPlot(gl.GLViewWidget):
         self.update()
 
     def mouseMoveEvent(self, event):
-        elapsed = max(0.0, min(1.0, event.position().x() / max(1, self.width()))) * self.duration
+        fraction = max(0.0, min(1.0, event.position().x() / max(1, self.width())))
+        elapsed = fraction * self.duration
+        scene_x = fraction * self.time_extent
         if self.lanes and getattr(self, "_cursor_line", None) is not None:
             self._cursor_line.setData(pos=np.asarray([
-                [elapsed, -0.55, 0.025],
-                [elapsed, (len(self.lanes) - 1) * 1.65 + 0.55, 0.025],
+                [scene_x, -0.55, 0.025],
+                [scene_x, (len(self.lanes) - 1) * 1.65 + 0.55, 0.025],
             ], dtype=np.float32))
         self.cursorMoved.emit(elapsed)
         super().mouseMoveEvent(event)
