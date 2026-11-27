@@ -11,21 +11,16 @@ import time
 import serial
 
 from .base import CanAdapter
-from .device_protocol import (
-    MessageStreamDecoder,
-    MessageType,
-    decode_can_frame_payload,
-)
+from .device_protocol import MessageStreamDecoder, MessageType, decode_can_frame_payload
 from ..models import CanFrame
 
 
 class Esp32FramedStreamAdapter(CanAdapter):
-    """Decode versioned ESP32 messages from an already-created byte stream."""
+    """Shared receive and decode logic for ESP32 byte-stream transports."""
 
-    def __init__(self, transport, *, channel_names=None, read_size=4096, transport_label="stream"):
+    def __init__(self, *, channel_names=None, read_size=4096, transport_label="stream"):
         if isinstance(read_size, bool) or not isinstance(read_size, int) or read_size < 1:
             raise ValueError("read_size must be a positive integer")
-        self.transport = transport
         self.channel_names = dict(channel_names or {})
         self.read_size = read_size
         self.transport_label = str(transport_label)
@@ -38,13 +33,12 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self.last_sequence = None
         self.last_error = None
         self.last_frame_monotonic = None
+        self._pending_frames = []
         self._opened = False
 
     @property
     def connected(self):
-        if not self._opened:
-            return False
-        return bool(getattr(self.transport, "is_open", True))
+        return self._opened
 
     @property
     def description(self):
@@ -85,6 +79,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
         if self._opened:
             return
         self.decoder = MessageStreamDecoder()
+        self._pending_frames.clear()
         self.frames_received = self.messages_received = 0
         self.ignored_messages = self.invalid_can_payloads = 0
         self.sequence_gaps = 0
@@ -94,25 +89,28 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self._opened = True
 
     def _open_transport(self):
-        """Concrete transports open their connection here."""
+        raise NotImplementedError
+
+    def _close_transport(self):
+        raise NotImplementedError
 
     def close(self):
         try:
-            self.transport.close()
+            self._close_transport()
         finally:
             self._opened = False
+            self._pending_frames.clear()
 
     def _read(self, timeout):
-        """Concrete transports return bytes or b'' on read timeout."""
+        raise NotImplementedError
 
     def _decode_messages(self, chunk):
+        frames = []
         for message in self.decoder.feed(chunk):
             self.messages_received += 1
             if self.last_sequence is not None:
                 expected = (self.last_sequence + 1) & 0xFFFFFFFF
                 if message.sequence != expected:
-                    # Count forward gaps; an old/out-of-order packet is not a
-                    # meaningful number of lost messages.
                     distance = (message.sequence - expected) & 0xFFFFFFFF
                     if distance < 0x80000000:
                         self.sequence_gaps += distance + 1
@@ -129,6 +127,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
             if item.is_remote_frame:
                 self.ignored_messages += 1
                 continue
+
             channel = self.channel_names.get(item.channel, f"CAN{item.channel + 1}")
             frame = CanFrame(
                 arbitration_id=item.arbitration_id,
@@ -146,34 +145,30 @@ class Esp32FramedStreamAdapter(CanAdapter):
             self.frames_received += 1
             self.last_frame_monotonic = frame.timestamp
             self.last_error = None
-            yield frame
+            frames.append(frame)
+        return frames
 
     def receive(self, timeout=0.2):
         if not self._opened:
             raise RuntimeError("ESP32 framed adapter is not open")
+        if self._pending_frames:
+            return self._pending_frames.pop(0)
+
         deadline = time.monotonic() + max(0.0, float(timeout))
         while True:
+            remaining = max(0.0, deadline - time.monotonic())
             try:
-                chunk = self._read(max(0.0, deadline - time.monotonic()))
+                chunk = self._read(remaining)
             except (OSError, serial.SerialException) as exc:
                 self.last_error = str(exc)[:240]
                 self._opened = False
                 raise
             if chunk:
-                frames = self._decode_messages(chunk)
-                if frames:
-                    return next(frames)
-                # Preserve any additional frames decoded from the same chunk.
-                # They are held in a small pending queue by _decode_messages.
+                self._pending_frames.extend(self._decode_messages(chunk))
                 if self._pending_frames:
                     return self._pending_frames.pop(0)
             if time.monotonic() >= deadline:
                 return None
-
-    def _decode_messages(self, chunk):
-        frames = list(super()._decode_messages(chunk))
-        self._pending_frames.extend(frames[1:])
-        return frames[:1]
 
 
 class Esp32FramedSerialAdapter(Esp32FramedStreamAdapter):
@@ -185,11 +180,9 @@ class Esp32FramedSerialAdapter(Esp32FramedStreamAdapter):
         self.timeout = float(timeout)
         self.connection = None
         super().__init__(
-            self,
             channel_names=channel_names,
             transport_label=f"USB serial {self.port}",
         )
-        self._pending_frames = []
 
     @property
     def connected(self):
@@ -205,16 +198,13 @@ class Esp32FramedSerialAdapter(Esp32FramedStreamAdapter):
     def _read(self, timeout):
         if self.connection is None:
             raise RuntimeError("ESP32 USB serial connection is not open")
-        self.connection.timeout = max(self.timeout, timeout)
+        self.connection.timeout = min(self.timeout, timeout)
         return self.connection.read(self.read_size)
 
-    def close(self):
-        try:
-            if self.connection is not None:
-                self.connection.close()
-        finally:
-            self.connection = None
-            self._opened = False
+    def _close_transport(self):
+        if self.connection is not None:
+            self.connection.close()
+        self.connection = None
 
 
 class Esp32WifiAdapter(Esp32FramedStreamAdapter):
@@ -234,12 +224,10 @@ class Esp32WifiAdapter(Esp32FramedStreamAdapter):
         self.connect_timeout = float(connect_timeout)
         self.connection = None
         super().__init__(
-            self,
             channel_names=channel_names,
             read_size=read_size,
             transport_label=f"Wi-Fi TCP {self.host}:{self.port}",
         )
-        self._pending_frames = []
 
     @property
     def connected(self):
@@ -264,10 +252,7 @@ class Esp32WifiAdapter(Esp32FramedStreamAdapter):
             raise ConnectionError("ESP32 Wi-Fi device closed the connection")
         return chunk
 
-    def close(self):
-        try:
-            if self.connection is not None:
-                self.connection.close()
-        finally:
-            self.connection = None
-            self._opened = False
+    def _close_transport(self):
+        if self.connection is not None:
+            self.connection.close()
+        self.connection = None
