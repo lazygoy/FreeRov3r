@@ -3,6 +3,7 @@ import json
 import pytest
 
 from freerov3r.core.vehicle.knowledge import VehicleKnowledgeStore
+from freerov3r.diagnostics.signal_evidence import SignalEvidenceStore
 
 
 def _store(tmp_path):
@@ -160,3 +161,46 @@ def test_supported_is_not_auto_promoted_by_repeated_observations(tmp_path):
         source_capture_ids=["capture-002", "capture-003"],
     )
     assert first["status"] == second["status"] == "observed"
+
+
+
+def test_only_reviewed_signal_evidence_imports_into_vehicle_knowledge(tmp_path):
+    research = SignalEvidenceStore(tmp_path / "research.json")
+    candidate = {
+        "signal_type": "byte",
+        "channel_a": "HS-CAN",
+        "can_id_a": 0x120,
+        "format_a": "STD",
+        "byte_a": 1,
+        "channel_b": "MS-CAN",
+        "can_id_b": 0x321,
+        "format_b": "STD",
+        "byte_b": 2,
+        "match_type": "exact",
+        "xor_mask": 0,
+    }
+    observed = research.add_candidate(candidate, source_capture_ids=["capture-a"])
+    knowledge = _store(tmp_path)
+
+    with pytest.raises(ValueError, match="Only documented or verified"):
+        knowledge.import_signal_evidence(
+            research, observed["record_id"], applicability=_applicability()
+        )
+
+    research.update_review(
+        observed["record_id"], "verified",
+        source_reference="controlled L319 vehicle test #24",
+        vehicle_applicability="2010-2016 LR4 5.0L 508PN",
+        evidence_grade="A",
+        verification_notes="Repeated under controlled conditions and independently checked",
+    )
+    imported = knowledge.import_signal_evidence(
+        research, observed["record_id"], applicability=_applicability()
+    )
+    assert imported["status"] == "verified"
+    catalog = knowledge.diagnostic_catalog(
+        "land_rover_l319_lr4", model_year=2012, engine_id="508PN"
+    )
+    assert len(catalog["verified_knowledge"]) == 1
+    assert catalog["supported_capabilities"] == []
+    assert research.get_record(observed["record_id"])["status"] == "verified"
