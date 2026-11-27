@@ -97,7 +97,7 @@ def _windows_registry_records() -> list[dict[str, str]]:
                         "function_library": values["FunctionLibrary"],
                         "config_application": values["ConfigApplication"],
                         "api_version": api_version,
-                        "registry_key": root + r"\\" + subkey_name,
+                        "registry_key": root + chr(92) + subkey_name,
                     })
     return records
 
