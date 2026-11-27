@@ -100,12 +100,20 @@ class SensorCorrelationDialog(QDialog):
             self.chart = QChart()
             self.chart.legend().setVisible(True)
             self.chart.setAnimationOptions(QChart.NoAnimation)
+            self.chart.setBackgroundBrush(QColor("#111827"))
+            self.chart.setPlotAreaBackgroundBrush(QColor("#0B1220"))
+            self.chart.setPlotAreaBackgroundVisible(True)
+            self.chart.setTitleBrush(QColor("#E5E7EB"))
             self.chart_view = QChartView(self.chart)
             self.chart_view.setRenderHint(QPainter.Antialiasing)
             self.axis_x = QValueAxis()
             self.axis_x.setTitleText("Elapsed time (s)")
             self.axis_y = QValueAxis()
             self.axis_y.setTitleText("Normalized value (0-100%)")
+            for axis in (self.axis_x, self.axis_y):
+                axis.setLabelsColor(QColor("#D1D5DB"))
+                axis.setLinePenColor(QColor("#64748B"))
+                axis.setGridLineColor(QColor("#334155"))
             self.chart.addAxis(self.axis_x, Qt.AlignBottom)
             self.chart.addAxis(self.axis_y, Qt.AlignLeft)
             layout.addWidget(self.chart_view, 1)
@@ -195,7 +203,7 @@ class SensorCorrelationDialog(QDialog):
             return
         start = min(min(stamp for stamp, _ in points) for points in grouped.values())
         end = max(max(stamp for stamp, _ in points) for points in grouped.values())
-        for sensor_id, points in grouped.items():
+        for series_index, (sensor_id, points) in enumerate(sorted(grouped.items())):
             points.sort()
             low = min(value for _, value in points)
             high = max(value for _, value in points)
@@ -203,6 +211,7 @@ class SensorCorrelationDialog(QDialog):
             series = QLineSeries()
             first = next(sample for sample in samples if sample.sensor_id == sensor_id)
             series.setName(f"{first.name} [{first.unit or 'unitless'}] ({low:.4g} to {high:.4g})")
+            series.setPen(QPen(QColor(GRAPH_PALETTE[series_index % len(GRAPH_PALETTE)]), 2.8))
             for stamp, value in points[-5000:]:
                 normalized = 50.0 if span == 0 else (value - low) * 100.0 / span
                 series.append(stamp - start, normalized)
