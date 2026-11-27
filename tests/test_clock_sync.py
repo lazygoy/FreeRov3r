@@ -3,6 +3,7 @@ import pytest
 from freerov3r.hardware.clock_sync import (
     calculate_clock_sync_sample,
     estimate_clock_mapping,
+    compare_clock_mappings,
 )
 
 
@@ -82,3 +83,47 @@ def test_clock_mapping_reports_insufficient_samples_or_clock_span():
         },
     ]
     assert estimate_clock_mapping(samples)["status"] == "insufficient device clock span"
+
+
+
+def test_compare_clock_mappings_uses_only_shared_host_calibration_coverage():
+    mapping_a = {
+        "host_coverage_start_ns": 100,
+        "host_coverage_end_ns": 1_000_000_100,
+        "fit_residual_p95_ns": 100,
+        "symmetric_path_uncertainty_floor_ns": 500,
+        "mapping": {"intercept_ns": 0, "slope": 1.0},
+    }
+    mapping_b = {
+        "host_coverage_start_ns": 200,
+        "host_coverage_end_ns": 900_000_200,
+        "fit_residual_p95_ns": 200,
+        "symmetric_path_uncertainty_floor_ns": 700,
+        "mapping": {"intercept_ns": 1_000_000, "slope": 1.0},
+    }
+
+    result = compare_clock_mappings(mapping_a, mapping_b)
+
+    assert result["status"] == "calibrated apparent relationship; asymmetry unbounded"
+    assert result["host_overlap_start_ns"] == 200
+    assert result["host_overlap_end_ns"] == 900_000_200
+    assert result["apparent_device_offset_start_ns"] == pytest.approx(-1_000_000)
+    assert result["apparent_device_offset_end_ns"] == pytest.approx(-1_000_000)
+    assert result["combined_fit_residual_p95_ns"] == 300
+    assert result["combined_symmetric_path_uncertainty_floor_ns"] == 1200
+
+
+def test_compare_clock_mappings_rejects_missing_or_non_overlapping_calibration():
+    missing = {"mapping": None}
+    valid = {
+        "host_coverage_start_ns": 10,
+        "host_coverage_end_ns": 20,
+        "mapping": {"intercept_ns": 0, "slope": 1.0},
+    }
+    assert compare_clock_mappings(missing, valid)["comparison"] is None
+    later = {
+        "host_coverage_start_ns": 30,
+        "host_coverage_end_ns": 40,
+        "mapping": {"intercept_ns": 0, "slope": 1.0},
+    }
+    assert compare_clock_mappings(valid, later)["status"] == "no overlapping calibration coverage"
