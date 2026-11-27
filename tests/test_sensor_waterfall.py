@@ -106,3 +106,20 @@ def test_waterfall_renderer_is_a_real_opengl_3d_view():
     from freerov3r.sensor_waterfall_gl import WaterfallPlot
 
     assert issubclass(WaterfallPlot, GLViewWidget)
+
+
+
+def test_waterfall_cursor_data_keeps_full_resolution_when_surface_is_downsampled():
+    samples = [
+        sample("rpm", "Engine speed", value, timestamp)
+        for timestamp, value in enumerate([800, 850, 900, 950, 1000, 1050], start=1)
+    ]
+
+    lane = prepare_waterfall_lanes(samples, window_seconds=0, max_points=2)[0]
+
+    assert len(lane["points"]) <= 2
+    assert lane["raw_points"] == [
+        (float(index), float(value))
+        for index, value in enumerate([800, 850, 900, 950, 1000, 1050])
+    ]
+    assert lane["raw_times"] == [point[0] for point in lane["raw_points"]]
