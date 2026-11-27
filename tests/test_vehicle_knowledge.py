@@ -204,3 +204,65 @@ def test_only_reviewed_signal_evidence_imports_into_vehicle_knowledge(tmp_path):
     assert len(catalog["verified_knowledge"]) == 1
     assert catalog["supported_capabilities"] == []
     assert research.get_record(observed["record_id"])["status"] == "verified"
+
+
+
+def test_changed_payload_resets_prior_verification_and_support(tmp_path):
+    store = _store(tmp_path)
+    record = _record(store)
+    verified = store.review(
+        record["record_id"], "verified",
+        source_reference="controlled vehicle test #12",
+        vehicle_applicability="2010-2016 LR4 5.0L 508PN",
+        evidence_grade="A",
+        verification_notes="Measured and independently checked",
+    )
+    store.review(
+        verified["record_id"], "supported",
+        source_reference="controlled vehicle test #12",
+        vehicle_applicability="2010-2016 LR4 5.0L 508PN",
+        evidence_grade="A",
+        verification_notes="Measured and independently checked",
+        implementation_reference="src/freerov3r/signals/l319.py",
+        test_reference="tests/test_l319_signals.py",
+    )
+
+    updated = store.add_observation(
+        "signal_definition",
+        "engine_coolant_temperature",
+        {"scale": 0.5},
+        applicability=_applicability(),
+        source_capture_ids=["capture-002"],
+    )
+    assert updated["status"] == "observed"
+    assert updated["implementation_reference"] == ""
+    assert updated["history"][-1]["event"] == "data_changed_review_reset"
+
+
+def test_source_provenance_arguments_reject_bare_strings(tmp_path):
+    store = _store(tmp_path)
+    with pytest.raises(ValueError, match="source_references"):
+        store.add_observation(
+            "protocol", "uds",
+            {"service": 0x22},
+            applicability={"platform_independent": True},
+            source_references="ISO 14229",
+        )
+    with pytest.raises(ValueError, match="source_capture_ids"):
+        store.add_observation(
+            "protocol", "uds",
+            {"service": 0x22},
+            applicability={"platform_independent": True},
+            source_capture_ids="capture-001",
+        )
+
+
+def test_platform_independent_flag_must_be_boolean(tmp_path):
+    store = _store(tmp_path)
+    with pytest.raises(ValueError, match="must be a boolean"):
+        store.add_observation(
+            "protocol", "uds",
+            {"service": 0x22},
+            applicability={"platform_independent": "false"},
+            source_references=["ISO 14229"],
+        )
