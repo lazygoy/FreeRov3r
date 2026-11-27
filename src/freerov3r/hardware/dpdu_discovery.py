@@ -144,6 +144,23 @@ def parse_d_pdu_root_file(root_file: str) -> list[DPduModuleRegistration]:
             _child_uri(element, "CABLE_DESCRIPTION_FILE")
             or _child_uri(element, "CABLE_DESCRIPTION_PATH")
         )
+
+        def resolve_description_path(value: str) -> str:
+            if not value:
+                return ""
+            # Keep Windows drive paths and UNC paths intact when inspecting
+            # RDF files from another operating system.
+            if len(value) >= 3 and value[1] == ":" and value[2] in ("/", "\\\\"):
+                return value
+            if value.startswith("\\\\\\\\"):
+                return value
+            candidate_path = Path(value)
+            if not candidate_path.is_absolute():
+                candidate_path = path.parent / candidate_path
+            return str(candidate_path)
+
+        mdf_file = resolve_description_path(mdf_file)
+        cdf_file = resolve_description_path(cdf_file)
         # The required identifying and library fields must be present.
         if not short_name or not library_file:
             continue
