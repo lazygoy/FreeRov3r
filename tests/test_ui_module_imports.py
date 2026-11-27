@@ -42,3 +42,11 @@ def test_vehicle_history_store_remains_available_from_app_module():
     from freerov3r.vehicle_history import VehicleHistoryStore
 
     assert app_history_store is VehicleHistoryStore
+
+
+
+def test_sensor_graph_tab_remains_available_from_app_module():
+    from freerov3r.app import SensorGraphTab as app_sensor_graph_tab
+    from freerov3r.sensor_graph_tab import SensorGraphTab
+
+    assert app_sensor_graph_tab is SensorGraphTab
