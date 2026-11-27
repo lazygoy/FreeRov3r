@@ -75,6 +75,22 @@ class SharedCrosshairStackedPlot(QWidget):
     def set_lanes(self, lanes, colors=None):
         self.lanes = list(lanes or [])[:8]
         self._colors = dict(colors or {})
+        sensor_ids = tuple(lane["sensor_id"] for lane in self.lanes)
+        if sensor_ids and sensor_ids == self._sensor_ids and len(self._curves) == len(self.lanes):
+            for index, lane in enumerate(self.lanes):
+                points = lane.get("raw_points") or lane.get("points") or []
+                x_values = [float(point[0]) for point in points]
+                y_values = [float(point[1]) for point in points]
+                self._curves[index].setData(x_values, y_values)
+                low, high = (min(y_values), max(y_values)) if y_values else (0.0, 1.0)
+                padding = max((high - low) * 0.12, abs(high) * 0.01, 0.01)
+                self.plots[index].setYRange(low - padding, high + padding, padding=0)
+                self.plots[index].setLabel("left", f'{lane["name"]} ({lane["unit"]})', color=TEXT)
+                color = self._colors.get(lane["sensor_id"], PALETTE[index % len(PALETTE)])
+                self._curves[index].setPen(pg.mkPen(color, width=1.8))
+            self._sync_x_ranges()
+            return
+        self._sensor_ids = sensor_ids
         self._clear_plots()
         if not self.lanes:
             placeholder = QLabel("Select one or more captured sensors")\n            placeholder.setStyleSheet(f"color: {TEXT}; padding: 18px;")
@@ -111,7 +127,7 @@ class SharedCrosshairStackedPlot(QWidget):
                     x_values, y_values, pen=pg.mkPen(color, width=1.8),
                     connect="finite", antialias=True,
                 )
-                curve.setDownsampling(auto=True, method="peak")
+                curve.setDownsampling(auto=True, method="peak")\n                self._curves.append(curve)
                 low, high = min(y_values), max(y_values)
                 padding = max((high - low) * 0.12, abs(high) * 0.01, 0.01)
                 plot.setYRange(low - padding, high + padding, padding=0)
@@ -192,7 +208,7 @@ class SharedCrosshairStackedPlot(QWidget):
             return
         scene_pos = event[0]
         plot = self.plots[index]
-        if not plot.sceneBoundingRect().contains(scene_pos):
+        if not plot.getViewBox().sceneBoundingRect().contains(scene_pos):
             return
         point = plot.getViewBox().mapSceneToView(scene_pos)
         elapsed = float(point.x())
