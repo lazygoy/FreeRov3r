@@ -6,13 +6,13 @@ from freerov3r.core.vehicle.context import (
 
 def test_l319_vin_resolves_to_lr4_profile_without_ui_dependencies():
     settings = {
-        "current_vin": "SALAN2D4XAA123456",
+        "current_vin": "SALAN2D4EAA123456",
         "vehicles": {},
     }
 
     context = resolve_vehicle_context(settings)
 
-    assert context.vin == "SALAN2D4XAA123456"
+    assert context.vin == "SALAN2D4EAA123456"
     assert context.profile_id == "land_rover_l319_lr4"
     assert context.is_l319
     assert settings["vehicles"][context.vin]["identification_confidence"] == "probable"
@@ -20,9 +20,9 @@ def test_l319_vin_resolves_to_lr4_profile_without_ui_dependencies():
 
 def test_explicit_generic_profile_is_not_overridden():
     settings = {
-        "current_vin": "SALAN2D4XAA123456",
+        "current_vin": "SALAN2D4EAA123456",
         "vehicles": {
-            "SALAN2D4XAA123456": {
+            "SALAN2D4EAA123456": {
                 "make": "Land Rover",
                 "model": "Discovery 4",
                 "profile_id": "generic",
@@ -39,9 +39,9 @@ def test_explicit_generic_profile_is_not_overridden():
 
 def test_manual_l319_profile_is_preserved():
     settings = {
-        "current_vin": "SALAN2D4XAA123456",
+        "current_vin": "SALAN2D4EAA123456",
         "vehicles": {
-            "SALAN2D4XAA123456": {
+            "SALAN2D4EAA123456": {
                 "profile_id": "land_rover_l319",
                 "identification_confidence": "manual",
             }
