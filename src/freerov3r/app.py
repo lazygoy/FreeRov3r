@@ -17,6 +17,7 @@ from .vehicle_profiles.registry import VehicleProfileRegistry
 from .hardware.receiver import FrameBatcher, Receiver
 from .session import CaptureSession
 from .can_monitor import CanMonitor
+from .diagnostics.obd2 import Mode01ScalingContext
 from .sensors.capture import SensorCapture
 from .sensor_dashboard import SensorDashboardDock
 from .diagnostics.simulated_modules import SimulatedModuleNetwork
