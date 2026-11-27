@@ -175,3 +175,54 @@ def compare_clock_mappings(mapping_a: dict, mapping_b: dict) -> dict:
             "bounded; this is software clock calibration, not hardware sync."
         ),
     }
+
+
+
+def calibrate_two_devices(
+    adapter_a,
+    adapter_b,
+    *,
+    sample_count=12,
+    timeout=1.0,
+    interval_seconds=0.02,
+) -> dict:
+    """Interleave probes to calibrate two ESP32 clocks over shared host time.
+
+    Both adapters must already be connected and have active background receive
+    loops. Probes alternate order to reduce systematic ordering bias.
+    """
+    if adapter_a is adapter_b:
+        raise ValueError("Two distinct ESP32 adapters are required")
+    if isinstance(sample_count, bool) or not isinstance(sample_count, int) or sample_count < 3:
+        raise ValueError("Dual-device calibration requires at least three sample pairs")
+    if interval_seconds < 0 or not math.isfinite(interval_seconds):
+        raise ValueError("Calibration interval must be finite and non-negative")
+
+    samples_a = []
+    samples_b = []
+    for index in range(sample_count):
+        if index % 2 == 0:
+            samples_a.append(adapter_a.request_clock_sync(timeout=timeout))
+            samples_b.append(adapter_b.request_clock_sync(timeout=timeout))
+        else:
+            samples_b.append(adapter_b.request_clock_sync(timeout=timeout))
+            samples_a.append(adapter_a.request_clock_sync(timeout=timeout))
+        if index + 1 < sample_count and interval_seconds:
+            import time
+            time.sleep(interval_seconds)
+
+    mapping_a = estimate_clock_mapping(samples_a)
+    mapping_b = estimate_clock_mapping(samples_b)
+    mapping_a["samples"] = samples_a
+    mapping_b["samples"] = samples_b
+    mapping_a["transport"] = getattr(adapter_a, "transport_label", "adapter A")
+    mapping_b["transport"] = getattr(adapter_b, "transport_label", "adapter B")
+    adapter_a.clock_calibration = mapping_a
+    adapter_b.clock_calibration = mapping_b
+    return {
+        "device_a": mapping_a,
+        "device_b": mapping_b,
+        "comparison": compare_clock_mappings(mapping_a, mapping_b),
+        "sample_pair_count": sample_count,
+        "calibration_method": "interleaved four-timestamp host/device probes",
+    }
