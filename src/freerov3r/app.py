@@ -63,6 +63,7 @@ from .vehicle_setup_wizard import VehicleSetupWizard, VinDecodeWorker, VinQueryW
 from .settings_tab import SettingsTab
 from .capture_tab import CaptureTab
 from .sensors_tab import SensorsTab
+from .navigation_workspace import NavigationWorkspace
 from .responsive_banner import ResponsiveBanner
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -315,74 +316,26 @@ class MainWindow(QMainWindow):
         self.graph_tab.open_dashboard_callback = self.show_sensor_dashboard
 
     def _build_navigation_workspace(self):
-        """Build a readable icon-tile rail instead of rotated QTabWidget labels."""
-        self.tabs.tabBar().hide()
-        workspace = QWidget()
-        outer_layout = QVBoxLayout(workspace)
-        outer_layout.setContentsMargins(7, 6, 7, 7)
-        outer_layout.setSpacing(6)
-
-        # Persistent instrument header: the key context stays visible on every page.
-        header = QWidget()
-        header.setObjectName("workspaceHeader")
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(10, 6, 10, 6)
-        header_layout.setSpacing(10)
-
-        title_column = QVBoxLayout()
-        title_column.setSpacing(2)
-        self.workspace_title = QLabel("Capture")
-        self.workspace_title.setObjectName("workspaceTitle")
-        workspace_title_font = QFont(self.heading_font_family, 20, QFont.Bold)
-        workspace_title_font.setItalic(True)
-        self.workspace_title.setFont(workspace_title_font)
-        self.workspace_subtitle = QLabel("Passive vehicle diagnostics and CAN monitoring")
-        self.workspace_subtitle.setObjectName("workspaceSubtitle")
-        self.workspace_subtitle.setFont(QFont(self.body_font_family, 9, QFont.Medium))
-        title_column.addWidget(self.workspace_title)
-        title_column.addWidget(self.workspace_subtitle)
-        header_layout.addLayout(title_column, 1)
-
-        self.header_vehicle = QLabel("NO VEHICLE SELECTED")
-        self.header_vehicle.setObjectName("headerVehicle")
-        self.header_vehicle.setFont(QFont(self.body_font_family, 9, QFont.DemiBold))
-        self.header_vehicle.setToolTip("Select or identify a vehicle in the Sensors workspace.")
-        header_layout.addWidget(self.header_vehicle)
-
-        self.header_connection = QLabel("● OFFLINE")
-        self.header_connection.setObjectName("headerOffline")
-        self.header_connection.setFont(QFont(self.body_font_family, 9, QFont.Bold))
-        header_layout.addWidget(self.header_connection)
-
-        self.header_traffic = QLabel("0 frames  |  0.0 fps")
-        self.header_traffic.setObjectName("headerTraffic")
-        self.header_traffic.setFont(QFont(self.body_font_family, 10, QFont.DemiBold))
-        header_layout.addWidget(self.header_traffic)
-
-        self.drawer_button = QToolButton()
-        self.drawer_button.setObjectName("drawerToggle")
-        self.drawer_button.setText("☷  QUICK PANEL")
-        self.drawer_button.setToolTip("Open vehicle context and workspace shortcuts")
-        self.drawer_button.clicked.connect(self.toggle_quick_drawer)
-        header_layout.addWidget(self.drawer_button)
-
-        outer_layout.addWidget(header)
-
-        content_row = QHBoxLayout()
-        content_row.setSpacing(10)
-        content_row.addWidget(self.tabs, 1)
-        outer_layout.addLayout(content_row, 1)
-        # Keep all workspace controls reachable on short or narrow displays.
-        workspace.setMinimumSize(0, 0)
-        self.workspace_scroll = QScrollArea()
-        self.workspace_scroll.setWidgetResizable(True)
-        self.workspace_scroll.setFrameShape(QFrame.NoFrame)
-        self.workspace_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.workspace_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.workspace_scroll.setWidget(workspace)
-        self.stack.addWidget(self.workspace_scroll)
+        self.navigation_workspace = NavigationWorkspace(
+            tabs=self.tabs,
+            heading_font_family=self.heading_font_family,
+            body_font_family=self.body_font_family,
+            toggle_quick_drawer=self.toggle_quick_drawer,
+            on_tab_changed=self._sync_navigation_selection,
+            parent=self,
+        )
+        self.workspace_scroll = self.navigation_workspace
+        for name in (
+            "workspace_title",
+            "workspace_subtitle",
+            "header_vehicle",
+            "header_connection",
+            "header_traffic",
+            "drawer_button",
+        ):
+            setattr(self, name, getattr(self.navigation_workspace, name))
+        self.stack.addWidget(self.navigation_workspace)
         self.stack.setCurrentIndex(1)
-        self.tabs.currentChanged.connect(self._sync_navigation_selection)
         self._sync_navigation_selection(self.tabs.currentIndex())
 
     def _sync_navigation_selection(self, index):
