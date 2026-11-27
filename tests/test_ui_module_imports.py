@@ -211,7 +211,11 @@ def test_capture_tab_constructs_with_callbacks():
         clear_capture_display=lambda: None,
         back_to_tasks=lambda: None,
     )
-    assert tab.backend.count() == 13
+    assert tab.backend.count() == 14
+    assert any(
+        tab.backend.itemData(index)[0] == "j2534"
+        for index in range(tab.backend.count())
+    )
     assert tab.log.maximumBlockCount() == 1200
     assert tab.can_format_filter.count() == 3
 
