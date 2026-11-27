@@ -32,7 +32,9 @@ class CaptureTab(QWidget):
         self.backend.addItem("Dual-channel CAN simulator (offline)", ("dual_simulator", "offline"))
         self.backend.addItem("Capture replay (JSONL, offline)", ("capture_replay", ""))
         self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
-        self.backend.addItem("ESP32 serial adapter (single CAN)", ("esp32", "COM3"))
+        self.backend.addItem("ESP32 framed USB (binary, receive-only)", ("esp32_framed_usb", "COM3"))
+        self.backend.addItem("ESP32 framed Wi-Fi TCP (binary, receive-only)", ("esp32_framed_wifi", ""))
+        self.backend.addItem("ESP32 serial adapter (legacy text)", ("esp32", "COM3"))
         self.backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
         self.backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
         self.backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
@@ -44,11 +46,13 @@ class CaptureTab(QWidget):
         self.channel_edit = QComboBox()
         self.channel_edit.setEditable(True)
         self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
-        self.channel_edit.setPlaceholderText("COM port or CAN channel")
+        self.channel_edit.setPlaceholderText("COM port, Wi-Fi IP[:port], or CAN channel")
         self.channel_edit.setToolTip(
-            "Choose a detected serial port for ESP32/SLCAN, or type a CAN channel such as can0. "
+            "Binary ESP32 USB: select a COM port. Binary ESP32 Wi-Fi: enter the device IP "
+            "or IP:port (default TCP port 3333). Legacy serial/SLCAN: select a COM port. "
             "For dual ESP32 capture, enter two different COM ports separated by a comma; "
-            "first is HS-CAN, second is MS-CAN."
+            "first is HS-CAN, second is MS-CAN. Discovery only lists serial metadata; it "
+            "does not probe devices or transmit on CAN."
         )
         controls.addWidget(self.channel_edit)
 
