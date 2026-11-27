@@ -7,8 +7,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QVBoxLayout, QSlider, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QListWidgetItem, QVBoxLayout, QSlider, QPushButton, QTabWidget, QWidget,
 )
 
 from .sensors.scaling import sample_clock, sample_time
@@ -155,7 +154,6 @@ class SensorWaterfallDialog(QDialog):
         controls.addStretch(1)
         layout.addLayout(controls)
         render_controls = QHBoxLayout()
-        layout.addLayout(render_controls)
         self.sensor_list = QListWidget()
         self.sensor_list.setMaximumHeight(104)
         self.sensor_list.itemChanged.connect(self._on_sensor_item_changed)
@@ -182,7 +180,12 @@ class SensorWaterfallDialog(QDialog):
         self.cursor_readout = QLabel("Move across the plot to inspect sensor values")
         self.cursor_readout.setStyleSheet("color: #CBD5E1; padding: 4px;")
         layout.addWidget(self.cursor_readout)
-        self.plot.cursorMoved.connect(self._update_cursor_readout)\n        self.stacked_plot.cursorMoved.connect(\n            lambda elapsed: self.cursor_readout.setText(f"t = {elapsed:.3f} s · 2D signal scope")\n        )
+        self.plot.cursorMoved.connect(self._update_cursor_readout)
+        self.stacked_plot.cursorMoved.connect(
+            lambda elapsed: self.cursor_readout.setText(
+                f"t = {elapsed:.3f} s · 2D signal scope"
+            )
+        )
         self.window_combo.currentIndexChanged.connect(self.refresh_plot)
         self.camera_combo = QComboBox()
         self.camera_combo.addItems(["Perspective", "Top", "Front", "Side"])
@@ -307,8 +310,8 @@ class SensorWaterfallDialog(QDialog):
             scale_mode="native",
             vin=(None if self.source_combo.currentData() == "demo" else self.vin_provider()),
         )
+        self.stacked_plot.set_lanes(lanes, self._sensor_colors)
         self.plot.set_lanes(lanes, self._sensor_colors)
-        self._update_value_table(lanes)
         self.color_sensor_combo.blockSignals(True)
         current = self.color_sensor_combo.currentData()
         self.color_sensor_combo.clear()
