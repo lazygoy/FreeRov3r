@@ -1,7 +1,8 @@
-"""Adapter capability declarations and transmit policy for CAN interfaces.
+"""Adapter capability declarations and independent transmit policy.
 
-Capabilities describe what an adapter can do. They do not grant permission
-to perform a transmit operation; runtime policy is evaluated separately.
+Capability describes the intended interface contract. Implementation flags
+state what the current adapter/firmware can actually execute. Permission is
+evaluated separately and never follows merely from capability.
 """
 
 from dataclasses import dataclass
@@ -11,8 +12,10 @@ from dataclasses import dataclass
 class AdapterCapabilities:
     raw_can_receive: bool = False
     raw_can_transmit: bool = False
+    raw_can_transmit_implemented: bool = False
     obd2_passive_decode: bool = False
     obd2_active_requests: bool = False
+    diagnostic_requests_implemented: bool = False
     uds_active_requests: bool = False
     dual_channel: bool = False
     hardware_timestamp: bool = False
@@ -26,14 +29,15 @@ class TransmitPolicy:
 
     def allows_diagnostic_request(self, capabilities: AdapterCapabilities) -> bool:
         return bool(
-            capabilities.raw_can_transmit
-            and capabilities.obd2_active_requests
+            capabilities.obd2_active_requests
+            and capabilities.diagnostic_requests_implemented
             and self.diagnostic_requests_enabled
         )
 
     def allows_general_can_transmit(self, capabilities: AdapterCapabilities) -> bool:
         return bool(
             capabilities.raw_can_transmit
+            and capabilities.raw_can_transmit_implemented
             and self.general_can_transmit_enabled
             and self.bench_mode
         )
@@ -41,6 +45,7 @@ class TransmitPolicy:
 
 ELM327_OBD_CAPABILITIES = AdapterCapabilities(
     obd2_active_requests=True,
+    diagnostic_requests_implemented=True,
 )
 
 ELM327_RAW_CAPABILITIES = AdapterCapabilities(
@@ -50,15 +55,19 @@ ELM327_RAW_CAPABILITIES = AdapterCapabilities(
 ESP32_SINGLE_CAPABILITIES = AdapterCapabilities(
     raw_can_receive=True,
     raw_can_transmit=True,
+    raw_can_transmit_implemented=False,
     obd2_passive_decode=True,
     obd2_active_requests=True,
+    diagnostic_requests_implemented=False,
 )
 
 ESP32_DUAL_CAPABILITIES = AdapterCapabilities(
     raw_can_receive=True,
     raw_can_transmit=True,
+    raw_can_transmit_implemented=False,
     obd2_passive_decode=True,
     obd2_active_requests=True,
+    diagnostic_requests_implemented=False,
     dual_channel=True,
     hardware_timestamp=True,
 )
@@ -66,6 +75,8 @@ ESP32_DUAL_CAPABILITIES = AdapterCapabilities(
 SOCKETCAN_CAPABILITIES = AdapterCapabilities(
     raw_can_receive=True,
     raw_can_transmit=True,
+    raw_can_transmit_implemented=True,
     obd2_passive_decode=True,
     obd2_active_requests=True,
+    diagnostic_requests_implemented=True,
 )
