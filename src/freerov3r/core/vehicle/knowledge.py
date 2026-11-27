@@ -35,6 +35,8 @@ def _validate_applicability(value):
     if not isinstance(value, dict):
         raise ValueError("applicability must be a dictionary")
     result = _copy_json(value)
+    if "platform_independent" in result and not isinstance(result["platform_independent"], bool):
+        raise ValueError("applicability.platform_independent must be a boolean")
     profile_ids = result.get("profile_ids", [])
     if not isinstance(profile_ids, list) or any(
         not isinstance(item, str) or not item.strip() for item in profile_ids
@@ -143,6 +145,10 @@ class VehicleKnowledgeStore:
         if not isinstance(data, dict):
             raise ValueError("data must be a dictionary")
         applicable = _validate_applicability(applicability)
+        if isinstance(source_references, (str, bytes)):
+            raise ValueError("source_references must be an iterable, not a string")
+        if isinstance(source_capture_ids, (str, bytes)):
+            raise ValueError("source_capture_ids must be an iterable, not a string")
         references = list(dict.fromkeys(
             str(item).strip() for item in source_references if str(item).strip()
         ))
@@ -183,7 +189,27 @@ class VehicleKnowledgeStore:
             }
             document["records"].append(record)
         else:
-            record["data"].update(payload)
+            changed_data = any(record["data"].get(key) != value for key, value in payload.items())
+            if changed_data:
+                previous_status = record["status"]
+                record["data"].update(payload)
+                record.update({
+                    "status": "observed",
+                    "evidence_grade": "",
+                    "verification_notes": "",
+                    "implementation_reference": "",
+                    "test_reference": "",
+                    "source_reference": "",
+                    "vehicle_applicability_note": "",
+                })
+                record["history"].append({
+                    "at": now,
+                    "event": "data_changed_review_reset",
+                    "detail": {
+                        "previous_status": previous_status,
+                        "reason": "A knowledge payload changed and requires fresh review",
+                    },
+                })
         added_refs = [item for item in references if item not in record["source_references"]]
         added_captures = [item for item in capture_ids if item not in record["source_capture_ids"]]
         record["source_references"].extend(added_refs)
