@@ -298,3 +298,13 @@ and Discovery 4, prioritizing the naturally aspirated 5.0L petrol V8. No
 vehicle, ECU, API version, security method, or programming path is marked
 supported until it is validated against the exact hardware and software
 revision.
+
+
+### Implemented foundation status (2026-11-27)
+
+- J2534 04.04 / 05.00 registration discovery is implemented as a passive inventory operation.
+- A receive-only J2534 classic-CAN adapter is implemented with explicit open/close, pass-filter lifecycle, 11-bit / 29-bit frame decoding, and device timestamp preservation.
+- J2534 is exposed in the Capture workspace, vehicle setup wizard, and settings backend selection.
+- D-PDU API discovery reads the standard Windows `D-PDU API` registry `Root File` value and parses the RDF to inventory installed API libraries and their MDF/CDF references.
+- D-PDU discovery does not load libraries or claim that a physical VCI is connected.
+- J2534 transmit, D-PDU runtime calls, ISO15765 device mode, live VCI enumeration, and hardware validation remain future work.
