@@ -106,3 +106,35 @@ A feature is not considered hardware-verified because it passes mocked tests. Ha
 ## First implementation
 
 `hardware.j2534_discovery` performs registry-only inventory for the J2534 04.04 and 05.00 registration roots. It is intentionally not a J2534 communication adapter. No vendor DLL is loaded and no vehicle communication is attempted.
+
+
+## J2534 runtime slice: receive-only classic CAN
+
+The current branch now includes `hardware.j2534_adapter.J2534CanAdapter`.
+It binds the required J2534 exports using the Windows stdcall loader and
+fixed-width 32-bit DWORD fields, opens the selected registered driver, opens
+one classic-CAN channel, installs a receive pass filter, and reads one frame
+at a time.
+
+The runtime currently supports:
+
+- Classic CAN only, with a configurable protocol baud rate (default 500 kbit/s).
+- 11-bit and 29-bit CAN identifiers.
+- J2534 millisecond device timestamps preserved as microseconds in the
+  device-clock domain.
+- Bounded read timeouts and explicit driver status errors.
+- Filter, channel, and device cleanup on normal close and connection failure.
+- An injected DLL loader so the ABI and lifecycle can be tested without
+  hardware.
+
+It intentionally does not bind or call `PassThruWriteMsgs`. It does not yet
+support ISO15765 protocol channels, CAN FD, K-Line, multiple simultaneous
+channels, flow-control filters, or vendor-specific IOCTLs. These are separate
+follow-on capabilities and must be added only with tests and verified device
+support.
+
+The mocked driver tests validate the structure size, open/connect/filter/read/
+disconnect/close lifecycle, 11-bit and 29-bit frame decoding, timestamps,
+empty receive buffers, malformed identifiers, and driver errors. CI results
+are authoritative for software tests; physical hardware compatibility remains
+unverified until exercised with an identified VCI and driver version.
