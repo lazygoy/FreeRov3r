@@ -19,11 +19,9 @@
 #include <Arduino.h>
 #include "driver/twai.h"
 #include "esp_timer.h"
-#if FREEROV3R_BINARY_PROTOCOL
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#endif
 
 static constexpr gpio_num_t CAN_TX_PIN = GPIO_NUM_5;
 static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_4;
@@ -150,6 +148,8 @@ static void sendHello() {
       "FreeRov3r ESP32-S3;protocol=1;mode=listen-only;can=classical";
   sendMessage(MSG_HELLO, (const uint8_t *)hello, sizeof(hello) - 1);
 }
+static void sendCanFrame(const twai_message_t &msg, uint64_t timestampUs);
+
 static void serialWriterTask(void *parameter) {
   (void)parameter;
   OutputItem item;
