@@ -931,3 +931,41 @@ def test_load_streaming_capture_detects_modified_frame(tmp_path):
     assert len(frames) == 1
     assert frames[0]["data"] == "ffff"
     assert any("integrity check failed" in warning for warning in metadata["import_warnings"])
+
+
+
+def test_module_inventory_report_retention_preserves_vehicle_and_capture_provenance(tmp_path):
+    from freerov3r.core.vehicle.knowledge import VehicleKnowledgeStore
+
+    store = VehicleKnowledgeStore(tmp_path / "knowledge.json")
+    report = {
+        "method": "independent_passive_capture_comparison",
+        "transmission_performed": False,
+        "nodes": [{
+            "can_id": 0x7E8,
+            "extended": False,
+            "channel": "HS-CAN",
+            "observed_frame_count": 40,
+            "role": "candidate_uds_responder",
+            "evidence_level": "Probable",
+            "capture_names": ["scan-a", "scan-b"],
+            "capture_count": 2,
+            "probable_capture_count": 2,
+            "request_ids": [0x7E0],
+            "services": [0x22],
+        }],
+    }
+    records = store.import_module_discovery_report(
+        report,
+        applicability={
+            "profile_ids": ["land_rover_l319_lr4"],
+            "model_year_start": 2012,
+            "model_year_end": 2012,
+            "engine_ids": ["508PN"],
+        },
+        capture_ids={"scan-a": "session-a", "scan-b": "session-b"},
+    )
+    assert records[0]["status"] == "observed"
+    assert records[0]["applicability"]["profile_ids"] == ["land_rover_l319_lr4"]
+    assert records[0]["source_capture_ids"] == ["session-a", "session-b"]
+    assert records[0]["data"]["identity_confirmed"] is False
