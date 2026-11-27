@@ -54,6 +54,7 @@ from .vehicle_history_tab import VehicleHistoryTab
 from .solutions_tab import SolutionsTab
 from .special_functions_tab import SpecialFunctionsTab
 from .wiring_diagrams_tab import WiringDiagramsTab
+from .network_overview_tab import NetworkOverviewTab
 from .responsive_banner import ResponsiveBanner
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
@@ -2221,8 +2222,6 @@ class ModulesTab(QWidget):
         self.show_selected_module()
 
 
-
-from .network_overview_tab import NetworkOverviewTab
 
 
 
