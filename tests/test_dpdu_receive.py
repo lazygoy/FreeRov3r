@@ -154,16 +154,15 @@ def test_receive_primitive_is_explicitly_receive_only(runtime_pair):
 
 def test_receive_primitive_requires_online_link_and_valid_filter(runtime_pair):
     runtime, library = runtime_pair
-    runtime.disconnect_logical_link(17, 91)
-
-    with pytest.raises(RuntimeError, match="must be online"):
-        runtime.start_receive_only(
-            17, 91, response_mask=b"\\xff", response_pattern=b"\\x62"
-        )
-
     with pytest.raises(ValueError, match="equal nonzero"):
         runtime.start_receive_only(
             17, 91, response_mask=b"\\xff", response_pattern=b""
+        )
+
+    runtime.disconnect_logical_link(17, 91)
+    with pytest.raises(RuntimeError, match="must be online"):
+        runtime.start_receive_only(
+            17, 91, response_mask=b"\\xff", response_pattern=b"\\x62"
         )
 
     assert not any(call[0] == "start_receive" for call in library.calls)
