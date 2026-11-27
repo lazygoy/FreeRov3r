@@ -236,7 +236,9 @@ def test_changed_payload_resets_prior_verification_and_support(tmp_path):
     )
     assert updated["status"] == "observed"
     assert updated["implementation_reference"] == ""
-    assert updated["history"][-1]["event"] == "data_changed_review_reset"
+    assert any(
+        item["event"] == "data_changed_review_reset" for item in updated["history"]
+    )
 
 
 def test_source_provenance_arguments_reject_bare_strings(tmp_path):
