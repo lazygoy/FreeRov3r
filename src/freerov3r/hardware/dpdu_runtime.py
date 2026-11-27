@@ -866,6 +866,12 @@ class DPduApiRuntime:
                     )
         if self._constructed and self._pdu_destroy_logical_link is not None:
             for module_handle, cll_handle in tuple(self._logical_links):
+                current_link = self._logical_links[(module_handle, cll_handle)]
+                if current_link.state != "offline":
+                    errors.append(
+                        f"PDUDestroyComLogicalLink({module_handle}, {cll_handle}) skipped because disconnect failed"
+                    )
+                    continue
                 try:
                     status = int(self._pdu_destroy_logical_link(module_handle, cll_handle))
                     if status != PDU_STATUS_NOERROR:
