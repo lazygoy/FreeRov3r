@@ -60,7 +60,7 @@ class SharedCrosshairStackedPlot(QWidget):
         outer.setSpacing(0)
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QScrollArea.NoFrame)
+        self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setStyleSheet(
             f"QScrollArea {{ background: {BACKGROUND}; border: 0; }}"
         )
@@ -78,7 +78,7 @@ class SharedCrosshairStackedPlot(QWidget):
         self._colors = dict(colors or {})
         self._clear_plots()
         if not self.lanes:
-            placeholder = pg.LabelItem("Select one or more captured sensors")
+            placeholder = QLabel("Select one or more captured sensors")\n            placeholder.setStyleSheet(f"color: {TEXT}; padding: 18px;")
             self.plot_layout.addWidget(placeholder)
             return
 
@@ -210,8 +210,16 @@ class SharedCrosshairStackedPlot(QWidget):
             if current == index:
                 horizontal.setPos(float(point.y()))
                 horizontal.show()
+                value = self._nearest_value(self.lanes[current], elapsed)
+                label = self._value_labels[current]
+                label.setText(
+                    f"{elapsed:.2f} s  |  {value:.5g} {self.lanes[current]['unit']}"
+                )
+                label.setPos(elapsed, float(point.y()))
+                label.show()
             else:
                 horizontal.hide()
+                self._value_labels[current].hide()
         self.cursorMoved.emit(elapsed)
 
     def _mouse_clicked(self, event, index):
@@ -231,10 +239,31 @@ class SharedCrosshairStackedPlot(QWidget):
             line.setPos(elapsed)
             line.setPen(pen)
             line.show()
+        self._value_labels[index].setText(
+            f"{elapsed:.2f} s  |  {self._nearest_value(self.lanes[index], elapsed):.5g} {self.lanes[index]['unit']}"
+        )
+        self._value_labels[index].setPos(
+            elapsed, float(plot.getViewBox().mapSceneToView(scene_pos).y())
+        )
+        self._value_labels[index].show()
         if self._locked:
             self.cursorLocked.emit(elapsed)
         else:
             self.cursorMoved.emit(elapsed)
+
+    @staticmethod
+    def _nearest_value(lane, elapsed):
+        points = lane.get("raw_points") or lane.get("points") or []
+        if not points:
+            return float("nan")
+        times = lane.get("raw_times") or [float(point[0]) for point in points]
+        index = bisect_left(times, elapsed)
+        if index <= 0:
+            return float(points[0][1])
+        if index >= len(points):
+            return float(points[-1][1])
+        before, after = points[index - 1], points[index]
+        return float(min((before, after), key=lambda point: abs(point[0] - elapsed))[1])
 
     def clear_lock(self):
         self._locked = False
