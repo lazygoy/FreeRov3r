@@ -5,7 +5,7 @@ import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QVector3D
+from PySide6.QtGui import QVector3D, QFont
 
 
 PALETTE = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80",
@@ -34,6 +34,7 @@ class WaterfallPlot(gl.GLViewWidget):
         self._surface_items = []
         self._underside_items = []
         self._side_items = []
+        self._side_surface_items = []
         self._contour_items = []
         self._text_items = []
         self._cursor_line = None
@@ -128,10 +129,24 @@ class WaterfallPlot(gl.GLViewWidget):
             np.column_stack((x, np.full_like(x, lane_y - 0.48), z * 0.08)),
             np.column_stack((x, np.full_like(x, lane_y + 0.48), z * 0.08)),
         ]
+        side_y = np.asarray([lane_y - 0.48, lane_y + 0.48], dtype=np.float32)
+        side_z = [
+            np.column_stack((z * 0.34, z * 0.08)).astype(np.float32),
+            np.column_stack((z * 0.34, z * 0.08)).astype(np.float32),
+        ]
+        side_rgba = []
+        for _ in range(2):
+            wall = np.empty((len(x), 2, 4), dtype=np.float32)
+            wall[:, :, 0] = red
+            wall[:, :, 1] = green
+            wall[:, :, 2] = blue
+            wall[:, :, 3] = self.opacity * (0.16 + 0.12 * intensity[:, None])
+            side_rgba.append(wall.reshape(-1, 4))
         # Keep the name short and physically anchored at the near end of its lane.
         label = f'{lane["name"]}  [{lane["unit"]}]'
         return (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
-                lower_crest, side_top, side_bottom, (red, green, blue), label, lane_y)
+                lower_crest, side_top, side_bottom, side_y, side_z, side_rgba,
+                (red, green, blue), label, lane_y)
 
     def _build_scene(self):
         camera_elevation = self.opts.get("elevation", 28)
@@ -142,6 +157,7 @@ class WaterfallPlot(gl.GLViewWidget):
         self._surface_items = []
         self._underside_items = []
         self._side_items = []
+        self._side_surface_items = []
         self._contour_items = []
         self._text_items = []
         self._cursor_line = None
@@ -177,7 +193,8 @@ class WaterfallPlot(gl.GLViewWidget):
 
         for index, lane in enumerate(self.lanes):
             (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
-             lower_crest, side_top, side_bottom, rgb, label, lane_y) = self._lane_geometry(index, lane)
+             lower_crest, side_top, side_bottom, side_y, side_z, side_rgba,
+             rgb, label, lane_y) = self._lane_geometry(index, lane)
             if len(x) >= 2:
                 surface = gl.GLSurfacePlotItem(
                     x=x, y=y, z=z_top, colors=rgba,
@@ -185,13 +202,27 @@ class WaterfallPlot(gl.GLViewWidget):
                     computeNormals=False, drawEdges=True,
                     edgeColor=(0.82, 0.91, 1.0, min(0.82, self.opacity)),
                 )
+                # GLSurfacePlotItem's MeshData indexes colors by flattened
+                # vertex index. A (rows, columns, 4) array is not accepted.
+                surface.setData(colors=rgba.reshape(-1, 4))
                 underside = gl.GLSurfacePlotItem(
-                    x=x, y=y, z=z_bottom, colors=underside_rgba,
+                    x=x, y=y, z=z_bottom, colors=underside_rgba.reshape(-1, 4),
                     glOptions="translucent", smooth=False,
                     computeNormals=False, drawEdges=False,
                 )
                 self.addItem(surface)
                 self.addItem(underside)
+                side_surfaces = []
+                for side_index in range(2):
+                    wall = gl.GLSurfacePlotItem(
+                        x=x, y=side_y[side_index:side_index + 1].tolist() + [float(side_y[side_index]) + 0.001],
+                        z=np.column_stack((side_z[side_index][:, 0], side_z[side_index][:, 1])),
+                        colors=side_rgba[side_index],
+                        glOptions="translucent", smooth=False,
+                        computeNormals=False, drawEdges=False,
+                    )
+                    self.addItem(wall)
+                    side_surfaces.append(wall)
                 red, green, blue = rgb
                 contour = gl.GLLinePlotItem(
                     pos=crest,
@@ -223,15 +254,18 @@ class WaterfallPlot(gl.GLViewWidget):
             else:
                 surface = underside = contour = lower = None
                 sides = []
+                side_surfaces = []
             self._surface_items.append(surface)
             self._underside_items.append(underside)
             self._side_items.append(sides)
+            self._side_surface_items.append(side_surfaces)
             self._contour_items.append((contour, lower))
 
             text = gl.GLTextItem(
-                pos=(-0.18, lane_y - 0.70, 0.10),
+                pos=(0.28, lane_y - 0.76, 0.18),
                 text=label,
                 color=(rgb[0], rgb[1], rgb[2], 1.0),
+                font=QFont("Arial", 11, QFont.Bold),
             )
             self.addItem(text)
             self._text_items.append(text)
@@ -287,14 +321,22 @@ class WaterfallPlot(gl.GLViewWidget):
 
         for index, lane in enumerate(self.lanes):
             (x, y, z_top, z_bottom, rgba, underside_rgba, crest,
-             lower_crest, side_top, side_bottom, rgb, label, lane_y) = self._lane_geometry(index, lane)
+             lower_crest, side_top, side_bottom, side_y, side_z, side_rgba,
+             rgb, label, lane_y) = self._lane_geometry(index, lane)
             surface = self._surface_items[index]
             red, green, blue = rgb
             if surface is not None:
-                surface.setData(x=x, y=y, z=z_top, colors=rgba)
+                surface.setData(x=x, y=y, z=z_top, colors=rgba.reshape(-1, 4))
                 self._underside_items[index].setData(
-                    x=x, y=y, z=z_bottom, colors=underside_rgba
+                    x=x, y=y, z=z_bottom, colors=underside_rgba.reshape(-1, 4)
                 )
+                for side_index, wall in enumerate(self._side_surface_items[index]):
+                    wall.setData(
+                        x=x,
+                        y=np.asarray([side_y[side_index], side_y[side_index] + 0.001], dtype=np.float32),
+                        z=side_z[side_index],
+                        colors=side_rgba[side_index],
+                    )
                 contour, lower = self._contour_items[index]
                 contour.setData(
                     pos=crest,
@@ -312,9 +354,10 @@ class WaterfallPlot(gl.GLViewWidget):
                 ):
                     item.setData(pos=edge, color=(red, green, blue, alpha))
             self._text_items[index].setData(
-                pos=(-0.18, lane_y - 0.70, 0.10),
+                pos=(0.28, lane_y - 0.76, 0.18),
                 text=label,
                 color=(red, green, blue, 1.0),
+                font=QFont("Arial", 11, QFont.Bold),
             )
 
         if self._axis_item is not None:
