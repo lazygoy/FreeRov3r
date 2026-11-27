@@ -268,3 +268,87 @@ def test_platform_independent_flag_must_be_boolean(tmp_path):
             applicability={"platform_independent": "false"},
             source_references=["ISO 14229"],
         )
+
+
+
+def test_passive_module_discovery_is_retained_as_observation_not_ecu_identity(tmp_path):
+    store = _store(tmp_path)
+    report = {
+        "method": "passive_capture_analysis",
+        "transmission_performed": False,
+        "nodes": [{
+            "can_id": 0x7E8,
+            "extended": False,
+            "channel": "HS-CAN",
+            "frame_count": 18,
+            "role": "candidate_uds_responder",
+            "evidence_level": "Probable",
+            "uds_pair_count": 4,
+            "services": [0x22, 0x3E],
+            "request_ids": [0x7E0],
+            "interpretation": "Probable UDS response association; physical ECU unknown",
+        }],
+    }
+
+    records = store.import_module_discovery_report(
+        report,
+        applicability=_applicability(),
+        capture_id="capture-lr4-001",
+    )
+    assert len(records) == 1
+    assert records[0]["status"] == "observed"
+    assert records[0]["artifact_type"] == "observed_can_node"
+    assert records[0]["data"]["identity_confirmed"] is False
+    assert records[0]["data"]["role"] == "candidate_uds_responder"
+    assert records[0]["source_capture_ids"] == ["capture-lr4-001"]
+    assert store.diagnostic_catalog(
+        "land_rover_l319_lr4", model_year=2012, engine_id="508PN"
+    )["verified_knowledge"] == []
+
+
+def test_multi_capture_module_comparison_preserves_each_capture_id(tmp_path):
+    store = _store(tmp_path)
+    report = {
+        "method": "independent_passive_capture_comparison",
+        "transmission_performed": False,
+        "nodes": [{
+            "can_id": 0x7E8,
+            "extended": False,
+            "channel": "HS-CAN",
+            "observed_frame_count": 30,
+            "role": "candidate_uds_responder",
+            "evidence_level": "Probable",
+            "capture_names": ["ignition_on", "engine_running"],
+            "capture_count": 2,
+            "probable_capture_count": 2,
+        }],
+    }
+    records = store.import_module_discovery_report(
+        report,
+        applicability=_applicability(),
+        capture_ids={
+            "ignition_on": "session-001",
+            "engine_running": "session-002",
+        },
+    )
+    assert records[0]["source_capture_ids"] == ["session-001", "session-002"]
+    assert records[0]["status"] == "observed"
+
+
+def test_module_discovery_import_rejects_transmitting_or_untraceable_reports(tmp_path):
+    store = _store(tmp_path)
+    report = {
+        "method": "passive_capture_analysis",
+        "transmission_performed": True,
+        "nodes": [{"can_id": 0x123, "extended": False}],
+    }
+    with pytest.raises(ValueError, match="passive"):
+        store.import_module_discovery_report(
+            report, applicability=_applicability(), capture_id="capture"
+        )
+
+    report["transmission_performed"] = False
+    with pytest.raises(ValueError, match="traceable"):
+        store.import_module_discovery_report(
+            report, applicability=_applicability()
+        )
