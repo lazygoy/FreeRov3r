@@ -568,3 +568,133 @@ def test_runtime_rejects_unsupported_com_param_type_and_frees_item(registration)
 
     assert any(call[0] == "destroy_item" for call in library.calls)
     runtime.close()
+
+
+def test_runtime_explicitly_connects_and_disconnects_logical_link(registration):
+    class PhysicalLinkLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+
+        def PDUModuleConnect(self, handle):
+            self.calls.append(("module_connect", handle))
+            return 0
+
+        def PDUModuleDisconnect(self, handle):
+            self.calls.append(("module_disconnect", handle))
+            return 0
+
+        def PDUCreateComLogicalLink(self, _mod, _rsc, _rid, _tag, output, _flags):
+            ctypes.cast(output, ctypes.POINTER(ctypes.c_uint32))[0] = 91
+            return 0
+
+        def PDUDestroyComLogicalLink(self, module, cll):
+            self.calls.append(("destroy_cll", module, cll))
+            return 0
+
+        def PDUConnect(self, module, cll):
+            self.calls.append(("connect_cll", module, cll))
+            return 0
+
+        def PDUDisconnect(self, module, cll):
+            self.calls.append(("disconnect_cll", module, cll))
+            return 0
+
+    library = PhysicalLinkLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+
+    assert not any(call[0] == "connect_cll" for call in library.calls)
+    runtime.connect_module(17)
+    link = runtime.create_logical_link(17, 600)
+    assert link.state == "offline"
+    assert not any(call[0] == "connect_cll" for call in library.calls)
+
+    online = runtime.connect_logical_link(17, 91)
+    assert online.state == "online"
+    assert ("connect_cll", 17, 91) in library.calls
+
+    with pytest.raises(RuntimeError, match="not offline"):
+        runtime.connect_logical_link(17, 91)
+    with pytest.raises(RuntimeError, match="Disconnect"):
+        runtime.destroy_logical_link(17, 91)
+
+    offline = runtime.disconnect_logical_link(17, 91)
+    assert offline.state == "offline"
+    assert ("disconnect_cll", 17, 91) in library.calls
+
+    runtime.destroy_logical_link(17, 91)
+    runtime.disconnect_module(17)
+    runtime.close()
+
+
+def test_runtime_close_disconnects_online_links_before_destroying(registration):
+    class PhysicalLinkLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+
+        def PDUModuleConnect(self, _handle):
+            return 0
+
+        def PDUModuleDisconnect(self, handle):
+            self.calls.append(("module_disconnect", handle))
+            return 0
+
+        def PDUCreateComLogicalLink(self, _mod, _rsc, _rid, _tag, output, _flags):
+            ctypes.cast(output, ctypes.POINTER(ctypes.c_uint32))[0] = 92
+            return 0
+
+        def PDUConnect(self, module, cll):
+            self.calls.append(("connect_cll", module, cll))
+            return 0
+
+        def PDUDisconnect(self, module, cll):
+            self.calls.append(("disconnect_cll", module, cll))
+            return 0
+
+        def PDUDestroyComLogicalLink(self, module, cll):
+            self.calls.append(("destroy_cll", module, cll))
+            return 0
+
+    library = PhysicalLinkLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+    runtime.connect_module(17)
+    runtime.create_logical_link(17, 600)
+    runtime.connect_logical_link(17, 92)
+
+    runtime.close()
+
+    names = [call[0] for call in library.calls]
+    assert names.index("disconnect_cll") < names.index("destroy_cll")
+    assert names.index("destroy_cll") < names.index("module_disconnect")
+    assert names.index("module_disconnect") < names.index("destruct")
+
+
+def test_runtime_rejects_physical_connect_without_export(registration):
+    class ModuleAndLinkLibrary(FakePduLibrary):
+        def __init__(self):
+            super().__init__(modules=[{"type_id": 3, "handle": 17, "status": 1}])
+
+        def PDUModuleConnect(self, _handle):
+            return 0
+
+        def PDUModuleDisconnect(self, _handle):
+            return 0
+
+        def PDUCreateComLogicalLink(self, _mod, _rsc, _rid, _tag, output, _flags):
+            ctypes.cast(output, ctypes.POINTER(ctypes.c_uint32))[0] = 93
+            return 0
+
+        def PDUDestroyComLogicalLink(self, _module, _cll):
+            return 0
+
+    library = ModuleAndLinkLibrary()
+    runtime = DPduApiRuntime(registration, library_loader=lambda _path: library)
+    runtime.open()
+    runtime.connect_module(17)
+    runtime.create_logical_link(17, 600)
+
+    with pytest.raises(DPduApiError, match="does not export PDUConnect"):
+        runtime.connect_logical_link(17, 93)
+
+    runtime.close()
