@@ -258,38 +258,48 @@ the vehicle connector. PDUGetResourceIds accepts those identifiers and
 returns API-allocated resource-ID items that the application must destroy.
 
 
-## D-PDU resource status and conflict inventory
+## D-PDU resource status, conflicts, and offline logical links
 
-The runtime now supports two additional resource queries:
-
-- `DPduApiRuntime.enumerate_conflicts(resource_id)` calls
+The runtime supports:
+- `DPduApiRuntime.enumerate_conflicts(resource_id)`, which calls
   `PDUGetConflictingResources` using the current or explicitly supplied
-  module inventory. It returns conflicting module handles and resource IDs,
-  and releases the API-allocated conflict item with `PDUDestroyItem`.
-- `DPduApiRuntime.get_resource_status(module_handle, resource_ids)` calls
-  `PDUGetResourceStatus` with an application-owned
-  `PDU_RSC_STATUS_ITEM`, returning the raw status bitfield plus decoded
-  in-use and available flags.
+  module inventory, copies the conflicting module/resource pairs, and frees
+  the API-owned result with `PDUDestroyItem`.
+- `DPduApiRuntime.get_resource_status(module_handle, resource_ids)`, which
+  calls `PDUGetResourceStatus` with an application-owned
+  `PDU_RSC_STATUS_ITEM`. The returned status is preserved as a raw integer;
+  FreeRov3r does not invent a universal bit decoding.
 
-The ISO 22900-2:2022 rules matter here: `PDUGetConflictingResources` is
-permitted before `PDUModuleConnect`, but `PDUGetResourceStatus` requires the
-module to be connected. The runtime therefore exposes an explicit
-`connect_module()` / `disconnect_module()` pair. It does not connect modules
-automatically when opening the API or listing resources.
+Both resource inventory calls are API-level queries. In particular,
+`PDUGetResourceStatus` does not require `PDUModuleConnect`. The standard's
+function prototype and behavior describe an application-allocated status item
+filled by the API, without a module-connect precondition.
 
 `PDUModuleConnect` initializes the selected MVCI module and its system-level
-driver, and obtains its resource table while the D-PDU communication state
-remains offline. It does not create a ComLogicalLink, allocate a diagnostic
-resource, connect to the vehicle bus, or send vehicle messages. This is a
-separate hardware-initialization step and must be requested explicitly.
-Connected modules are disconnected during normal runtime cleanup before
+driver, transitioning the module to READY. It does not create a ComLogicalLink,
+connect a CLL to the vehicle bus, or send vehicle messages. This remains an
+explicit operation.
+
+The runtime now supports
+`create_logical_link(module_handle, resource_id)` and
+`destroy_logical_link(module_handle, logical_link_handle)`. Creation uses
+the ISO specific-resource-ID scheme: `pRscData=NULL`, the selected resource
+ID, and a caller-provided CLL handle output. The new ComLogicalLink is
+recorded as OFFLINE. Creation reserves the selected resource in the D-PDU
+resource table, but does not call `PDUConnect`; it therefore does not
+physically connect the logical link to the vehicle interface or begin ECU
+communication. The module must be explicitly initialized first. A module
+cannot be disconnected while one of its CLLs remains registered. Runtime
+cleanup destroys CLLs before disconnecting modules and then calls
 `PDUDestruct`.
 
-Resource status is a bitfield, not a single enum: bit 0 reports in-use and
-bit 1 reports not-available. FreeRov3r preserves the raw value and exposes
-those two flags separately so unknown or vendor-defined bits are not lost.
+The next separate stage is physical `PDUConnect` / `PDUDisconnect`
+lifecycle. That will be treated as vehicle-interface activation and will not
+be triggered by CLL creation. No ComPrimitive, receive operation, or transmit
+operation is exposed by this slice.
 
-Tests cover the explicit module-connect prerequisite, status bit decoding,
-module-disconnect cleanup, conflict-list decoding, module inventory structure
-construction, and API-owned conflict-item destruction. All runtime tests use
-mocked D-PDU libraries; real VCI compatibility is not established by CI.
+Tests cover resource status without module connection, explicit module
+initialization, offline CLL creation and destruction, cleanup ordering,
+conflict-list decoding, module inventory structure construction, and
+API-owned conflict-item destruction. All runtime tests use mocked D-PDU
+libraries; real VCI compatibility is not established by CI.
