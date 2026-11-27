@@ -17,6 +17,11 @@ from .dpdu_discovery import DPduModuleRegistration
 
 
 PDU_STATUS_NOERROR = 0
+PDU_IT_RSC_STATUS = 0x1100
+PDU_IT_RSC_CONFLICT = 0x1500
+PDU_IT_MODULE_ID = 0x1600
+PDU_RSC_USAGE_IN_USE = 1 << 0
+PDU_RSC_AVAIL_NOT_AVAILABLE = 1 << 1
 MAX_MODULES = 256
 MAX_RESOURCE_GROUPS = 256
 MAX_RESOURCE_IDS = 4096
@@ -75,6 +80,52 @@ class _PduResourceIdItem(ctypes.Structure):
         ("num_modules", ctypes.c_uint32),
         ("resource_id_data", ctypes.POINTER(_PduResourceIdItemData)),
     ]
+
+
+class _PduResourceStatusData(ctypes.Structure):
+    _fields_ = [
+        ("module_handle", ctypes.c_uint32),
+        ("resource_id", ctypes.c_uint32),
+        ("resource_status", ctypes.c_uint32),
+    ]
+
+
+class _PduResourceStatusItem(ctypes.Structure):
+    _fields_ = [
+        ("item_type", ctypes.c_int32),
+        ("num_entries", ctypes.c_uint32),
+        ("resource_status_data", ctypes.POINTER(_PduResourceStatusData)),
+    ]
+
+
+class _PduResourceConflictData(ctypes.Structure):
+    _fields_ = [
+        ("module_handle", ctypes.c_uint32),
+        ("resource_id", ctypes.c_uint32),
+    ]
+
+
+class _PduResourceConflictItem(ctypes.Structure):
+    _fields_ = [
+        ("item_type", ctypes.c_int32),
+        ("num_entries", ctypes.c_uint32),
+        ("resource_conflict_data", ctypes.POINTER(_PduResourceConflictData)),
+    ]
+
+
+@dataclass(frozen=True)
+class DPduResourceStatus:
+    module_handle: int
+    resource_id: int
+    raw_status: int
+    in_use: bool
+    available: bool
+
+
+@dataclass(frozen=True)
+class DPduResourceConflict:
+    module_handle: int
+    resource_id: int
 
 
 @dataclass(frozen=True)
@@ -147,6 +198,12 @@ class DPduApiRuntime:
         self._pdu_get_module_ids = None
         self._pdu_destroy_item = None
         self._pdu_get_resource_ids = None
+        self._pdu_get_resource_status = None
+        self._pdu_get_conflicting_resources = None
+        self._pdu_module_connect = None
+        self._pdu_module_disconnect = None
+        self._live_modules: list[DPduLiveModule] = []
+        self._connected_modules: set[int] = set()
 
     @property
     def is_open(self) -> bool:
@@ -211,6 +268,34 @@ class DPduApiRuntime:
                 ],
                 ctypes.c_int32,
             )
+        self._pdu_get_resource_status = getattr(
+            self._library, "PDUGetResourceStatus", None
+        )
+        if self._pdu_get_resource_status is not None:
+            _set_signature(
+                self._pdu_get_resource_status,
+                [ctypes.POINTER(_PduResourceStatusItem)],
+                ctypes.c_int32,
+            )
+        self._pdu_get_conflicting_resources = getattr(
+            self._library, "PDUGetConflictingResources", None
+        )
+        if self._pdu_get_conflicting_resources is not None:
+            _set_signature(
+                self._pdu_get_conflicting_resources,
+                [
+                    ctypes.c_uint32,
+                    ctypes.POINTER(_PduModuleItem),
+                    ctypes.POINTER(ctypes.POINTER(_PduResourceConflictItem)),
+                ],
+                ctypes.c_int32,
+            )
+        self._pdu_module_connect = getattr(self._library, "PDUModuleConnect", None)
+        if self._pdu_module_connect is not None:
+            _set_signature(self._pdu_module_connect, [ctypes.c_uint32], ctypes.c_int32)
+        self._pdu_module_disconnect = getattr(self._library, "PDUModuleDisconnect", None)
+        if self._pdu_module_disconnect is not None:
+            _set_signature(self._pdu_module_disconnect, [ctypes.c_uint32], ctypes.c_int32)
 
     def enumerate_modules(self) -> list[DPduLiveModule]:
         if not self._constructed:
@@ -251,6 +336,7 @@ class DPduApiRuntime:
                         record.vendor_additional_info
                     ),
                 ))
+            self._live_modules = modules
             return modules
         finally:
             destroy_status = int(self._pdu_destroy_item(
@@ -273,8 +359,6 @@ class DPduApiRuntime:
         """Query matching resources using MDF/CDF IDs, without connecting a module."""
         if not self._constructed:
             raise RuntimeError("D-PDU API session is not open")
-        if self._pdu_get_resource_ids is None:
-            raise DPduApiError("Selected D-PDU library does not export PDUGetResourceIds")
         for value, name in (
             (module_handle, "module_handle"),
             (bus_type_id, "bus_type_id"),
@@ -284,6 +368,8 @@ class DPduApiRuntime:
                 raise ValueError(f"{name} must be an unsigned 32-bit value")
         if not dlc_pins or len(dlc_pins) > 64:
             raise ValueError("dlc_pins must contain between 1 and 64 entries")
+        if self._pdu_get_resource_ids is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUGetResourceIds")
 
         pin_array = (_PduPinData * len(dlc_pins))()
         for index, (pin_number, pin_type_id) in enumerate(dlc_pins):
@@ -335,9 +421,162 @@ class DPduApiRuntime:
                     f"PDUDestroyItem failed after resource query with status 0x{destroy_status:08X}"
                 )
 
+    def connect_module(self, module_handle: int) -> None:
+        """Explicitly initialize one MVCI module; this remains offline from the vehicle."""
+        if not self._constructed:
+            raise RuntimeError("D-PDU API session is not open")
+        if self._pdu_module_connect is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUModuleConnect")
+        handle = int(module_handle)
+        if handle not in {module.module_handle for module in self._live_modules}:
+            raise ValueError(f"Unknown MVCI module handle: {handle}")
+        if handle in self._connected_modules:
+            return
+        status = int(self._pdu_module_connect(handle))
+        if status != PDU_STATUS_NOERROR:
+            raise DPduApiError(f"PDUModuleConnect failed with status 0x{status:08X}")
+        self._connected_modules.add(handle)
+
+    def disconnect_module(self, module_handle: int) -> None:
+        """Disconnect an explicitly initialized MVCI module without vehicle-bus I/O."""
+        if not self._constructed:
+            raise RuntimeError("D-PDU API session is not open")
+        handle = int(module_handle)
+        if handle not in self._connected_modules:
+            return
+        if self._pdu_module_disconnect is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUModuleDisconnect")
+        status = int(self._pdu_module_disconnect(handle))
+        if status != PDU_STATUS_NOERROR:
+            raise DPduApiError(f"PDUModuleDisconnect failed with status 0x{status:08X}")
+        self._connected_modules.discard(handle)
+
+    def get_resource_status(
+        self,
+        module_handle: int,
+        resource_ids: tuple[int, ...] | list[int],
+    ) -> list[DPduResourceStatus]:
+        """Read resource status; the module must first be explicitly connected.
+
+        PDUModuleConnect initializes the VCI/module and obtains its resource
+        table while remaining offline: it does not allocate a ComLogicalLink
+        or communicate over the vehicle interface.
+        """
+        if not self._constructed:
+            raise RuntimeError("D-PDU API session is not open")
+        handle = int(module_handle)
+        if handle not in self._connected_modules:
+            raise RuntimeError("MVCI module must be explicitly connected before resource status query")
+        if self._pdu_get_resource_status is None:
+            raise DPduApiError("Selected D-PDU library does not export PDUGetResourceStatus")
+        if not resource_ids or len(resource_ids) > MAX_RESOURCE_IDS:
+            raise ValueError(f"resource_ids must contain between 1 and {MAX_RESOURCE_IDS} entries")
+        records = (_PduResourceStatusData * len(resource_ids))()
+        for index, resource_id in enumerate(resource_ids):
+            value = int(resource_id)
+            if not 0 <= value <= 0xFFFFFFFF:
+                raise ValueError("resource IDs must be unsigned 32-bit values")
+            records[index] = _PduResourceStatusData(handle, value, 0)
+        item = _PduResourceStatusItem(
+            PDU_IT_RSC_STATUS,
+            len(resource_ids),
+            ctypes.cast(records, ctypes.POINTER(_PduResourceStatusData)),
+        )
+        status = int(self._pdu_get_resource_status(ctypes.byref(item)))
+        if status != PDU_STATUS_NOERROR:
+            raise DPduApiError(f"PDUGetResourceStatus failed with status 0x{status:08X}")
+        return [
+            DPduResourceStatus(
+                module_handle=int(record.module_handle),
+                resource_id=int(record.resource_id),
+                raw_status=int(record.resource_status),
+                in_use=bool(int(record.resource_status) & PDU_RSC_USAGE_IN_USE),
+                available=not bool(
+                    int(record.resource_status) & PDU_RSC_AVAIL_NOT_AVAILABLE
+                ),
+            )
+            for record in records
+        ]
+
+    def enumerate_conflicts(
+        self,
+        resource_id: int,
+        modules: tuple[DPduLiveModule, ...] | list[DPduLiveModule] | None = None,
+    ) -> list[DPduResourceConflict]:
+        """Query resource conflicts across the supplied/current module inventory."""
+        if not self._constructed:
+            raise RuntimeError("D-PDU API session is not open")
+        if self._pdu_get_conflicting_resources is None:
+            raise DPduApiError(
+                "Selected D-PDU library does not export PDUGetConflictingResources"
+            )
+        value = int(resource_id)
+        if not 0 <= value <= 0xFFFFFFFF:
+            raise ValueError("resource_id must be an unsigned 32-bit value")
+        selected = list(self._live_modules if modules is None else modules)
+        if not selected or len(selected) > MAX_MODULES:
+            raise ValueError(f"modules must contain between 1 and {MAX_MODULES} entries")
+        module_records = (_PduModuleData * len(selected))()
+        for index, module in enumerate(selected):
+            module_records[index] = _PduModuleData(
+                int(module.module_type_id),
+                int(module.module_handle),
+                None,
+                None,
+                int(module.module_status),
+            )
+        module_item = _PduModuleItem(
+            PDU_IT_MODULE_ID,
+            len(selected),
+            ctypes.cast(module_records, ctypes.POINTER(_PduModuleData)),
+        )
+        output_ptr = ctypes.POINTER(_PduResourceConflictItem)()
+        status = int(self._pdu_get_conflicting_resources(
+            value, ctypes.byref(module_item), ctypes.byref(output_ptr)
+        ))
+        if status != PDU_STATUS_NOERROR:
+            raise DPduApiError(
+                f"PDUGetConflictingResources failed with status 0x{status:08X}"
+            )
+        if not output_ptr:
+            return []
+        try:
+            result = output_ptr.contents
+            count = int(result.num_entries)
+            if count > MAX_RESOURCE_IDS:
+                raise DPduApiError(f"Invalid conflict count: {count}")
+            if count and not result.resource_conflict_data:
+                raise DPduApiError("Conflict result has a null data array")
+            return [
+                DPduResourceConflict(
+                    module_handle=int(result.resource_conflict_data[i].module_handle),
+                    resource_id=int(result.resource_conflict_data[i].resource_id),
+                )
+                for i in range(count)
+            ]
+        finally:
+            destroy_status = int(self._pdu_destroy_item(
+                ctypes.cast(output_ptr, ctypes.POINTER(_PduItem))
+            ))
+            if destroy_status != PDU_STATUS_NOERROR:
+                raise DPduApiError(
+                    f"PDUDestroyItem failed after conflict query with status 0x{destroy_status:08X}"
+                )
+
     def close(self) -> None:
         """Destroy the API session and release the selected library handle."""
         errors: list[str] = []
+        if self._constructed and self._pdu_module_disconnect is not None:
+            for handle in tuple(self._connected_modules):
+                try:
+                    status = int(self._pdu_module_disconnect(handle))
+                    if status != PDU_STATUS_NOERROR:
+                        errors.append(
+                            f"PDUModuleDisconnect({handle}) status 0x{status:08X}"
+                        )
+                except Exception as exc:
+                    errors.append(f"PDUModuleDisconnect({handle}) raised {exc}")
+        self._connected_modules.clear()
         if self._constructed and self._pdu_destruct is not None:
             try:
                 status = int(self._pdu_destruct())
@@ -351,6 +590,11 @@ class DPduApiRuntime:
         self._pdu_get_module_ids = None
         self._pdu_destroy_item = None
         self._pdu_get_resource_ids = None
+        self._pdu_get_resource_status = None
+        self._pdu_get_conflicting_resources = None
+        self._pdu_module_connect = None
+        self._pdu_module_disconnect = None
+        self._live_modules = []
         self._library = None
         if errors:
             raise DPduApiError("; ".join(errors))
