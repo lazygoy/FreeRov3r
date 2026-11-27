@@ -143,7 +143,7 @@ class QuickDrawer(QDockWidget):
             )
             matches = not query or query in button.text().casefold()
             button.setVisible(belongs and matches)
-        visible_count = sum(button.isVisible() for button in self.nav_buttons.values())
+        visible_count = sum(not button.isHidden() for button in self.nav_buttons.values())
         self.nav_empty_label.setVisible(visible_count == 0)
 
     def _filter_navigation(self, text):
