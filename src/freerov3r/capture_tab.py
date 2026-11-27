@@ -33,6 +33,7 @@ class CaptureTab(QWidget):
         self.backend.addItem("Capture replay (JSONL, offline)", ("capture_replay", ""))
         self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
         self.backend.addItem("ESP32 framed USB (binary, receive-only)", ("esp32_framed_usb", "COM3"))
+        self.backend.addItem("Dual ESP32 framed USB (clock calibration)", ("esp32_framed_dual_usb", "COM3,COM4"))
         self.backend.addItem("ESP32 framed Wi-Fi TCP (binary, receive-only)", ("esp32_framed_wifi", ""))
         self.backend.addItem("ESP32 serial adapter (legacy text)", ("esp32", "COM3"))
         self.backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
