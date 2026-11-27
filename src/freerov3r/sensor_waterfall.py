@@ -163,37 +163,26 @@ class SensorWaterfallDialog(QDialog):
         self.selection_status = QLabel(f"Select up to {MAX_WATERFALL_SENSORS} sensors")
         self.selection_status.setStyleSheet("color: #94A3B8;")
         layout.addWidget(self.selection_status)
+        from .sensor_waterfall_2d import SharedCrosshairStackedPlot
         from .sensor_waterfall_gl import WaterfallPlot
-        self.plot = WaterfallPlot(self)
-        layout.addWidget(QLabel("Signal identity and live values"))
-        self.value_table = QTableWidget(0, 5, self)
-        self.value_table.setHorizontalHeaderLabels(
-            ["Sensor", "Minimum", "Maximum", "Current", "Unit"]
-        )
-        self.value_table.verticalHeader().setVisible(False)
-        self.value_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.value_table.setSelectionMode(QAbstractItemView.NoSelection)
-        self.value_table.setAlternatingRowColors(True)
-        self.value_table.setMaximumHeight(190)
-        self.value_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.Stretch
-        )
-        for column in range(1, 5):
-            self.value_table.horizontalHeader().setSectionResizeMode(
-                column, QHeaderView.ResizeToContents
-            )
-        self.value_table.setStyleSheet(
-            "QTableWidget { background: #101B2B; color: #E2E8F0; "
-            "gridline-color: #334155; alternate-background-color: #172438; } "
-            "QHeaderView::section { background: #1E293B; color: #CBD5E1; "
-            "padding: 5px; border: 0; }"
-        )
-        layout.addWidget(self.value_table)
-        layout.addWidget(self.plot, 1)
+
+        self.view_tabs = QTabWidget(self)
+        self.stacked_plot = SharedCrosshairStackedPlot(self.view_tabs)
+        self.view_tabs.addTab(self.stacked_plot, "2D Signal Scope")
+
+        waterfall_page = QWidget(self.view_tabs)
+        waterfall_layout = QVBoxLayout(waterfall_page)
+        waterfall_layout.setContentsMargins(4, 4, 4, 4)
+        waterfall_layout.addLayout(render_controls)
+        self.plot = WaterfallPlot(waterfall_page)
+        waterfall_layout.addWidget(self.plot, 1)
+        self.view_tabs.addTab(waterfall_page, "3D Waterfall")
+        layout.addWidget(self.view_tabs, 1)
+
         self.cursor_readout = QLabel("Move across the plot to inspect sensor values")
         self.cursor_readout.setStyleSheet("color: #CBD5E1; padding: 4px;")
         layout.addWidget(self.cursor_readout)
-        self.plot.cursorMoved.connect(self._update_cursor_readout)
+        self.plot.cursorMoved.connect(self._update_cursor_readout)\n        self.stacked_plot.cursorMoved.connect(\n            lambda elapsed: self.cursor_readout.setText(f"t = {elapsed:.3f} s · 2D signal scope")\n        )
         self.window_combo.currentIndexChanged.connect(self.refresh_plot)
         self.camera_combo = QComboBox()
         self.camera_combo.addItems(["Perspective", "Top", "Front", "Side"])
