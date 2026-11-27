@@ -231,6 +231,12 @@ class WaterfallPlot(gl.GLViewWidget):
         if len(self._surface_items) != len(self.lanes):
             self._build_scene()
             return
+        if any(
+            (self._surface_items[index] is None) != (len(lane.get("points", [])) < 2)
+            for index, lane in enumerate(self.lanes)
+        ):
+            self._build_scene()
+            return
 
         for index, lane in enumerate(self.lanes):
             x, y, z_grid, rgba, crest, rgb, label, lane_y = self._lane_geometry(index, lane)
