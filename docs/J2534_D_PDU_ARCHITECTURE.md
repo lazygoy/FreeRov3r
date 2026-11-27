@@ -138,3 +138,16 @@ disconnect/close lifecycle, 11-bit and 29-bit frame decoding, timestamps,
 empty receive buffers, malformed identifiers, and driver errors. CI results
 are authoritative for software tests; physical hardware compatibility remains
 unverified until exercised with an identified VCI and driver version.
+
+
+## Capture workspace integration
+
+J2534 registrations are now included in the unified passive interface inventory
+used by the Capture workspace, serial-port selector, vehicle setup wizard, and
+settings backend selector. A discovered J2534 entry displays its registered
+FunctionLibrary path as the selectable device value.
+
+Selecting J2534 routes capture startup through `J2534CanAdapter` using the
+selected bitrate. The existing Receiver owns the adapter lifecycle on its
+worker thread. The initial J2534 selection is receive-only; it does not enable
+OBD polling, UDS requests, or CAN transmission.
