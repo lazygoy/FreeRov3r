@@ -69,23 +69,22 @@ from .capture_control import toggle_capture as toggle_capture_impl
 from .frame_processing import process_frame, process_frames
 from .startup_splash import show_startup_splash
 from .diagnostic_actions import (
-    est_dtc_scan as est_dtc_scan_action,
-    est_readiness_scan as est_readiness_scan_action,
-    est_vehicle_info_scan as est_vehicle_info_scan_action,
-    est_monitor_tests_scan as est_monitor_tests_scan_action,
-    monitor_tests_scan_completed as monitor_tests_scan_completed_action,
-    monitor_tests_scan_failed as monitor_tests_scan_failed_action,
-    vehicle_info_scan_completed as vehicle_info_scan_completed_action,
-    vehicle_info_scan_failed as vehicle_info_scan_failed_action,
-    est_freeze_frame_scan as est_freeze_frame_scan_action,
-    freeze_frame_scan_completed as freeze_frame_scan_completed_action,
-    freeze_frame_scan_failed as freeze_frame_scan_failed_action,
-    readiness_scan_completed as readiness_scan_completed_action,
-    readiness_scan_failed as readiness_scan_failed_action,
-    dtc_scan_completed as dtc_scan_completed_action,
-    dtc_scan_failed as dtc_scan_failed_action,
-)
-from .responsive_banner import ResponsiveBanner
+    request_dtc_scan as request_dtc_scan_action,
+    request_readiness_scan as request_readiness_scan_action,
+    request_vehicle_info_scan as request_vehicle_info_scan_action,
+    request_monitor_tests_scan as request_monitor_tests_scan_action,
+    _on_monitor_tests_scan_completed as _on_monitor_tests_scan_completed_action,
+    _on_monitor_tests_scan_failed as _on_monitor_tests_scan_failed_action,
+    _on_vehicle_info_scan_completed as _on_vehicle_info_scan_completed_action,
+    _on_vehicle_info_scan_failed as _on_vehicle_info_scan_failed_action,
+    request_freeze_frame_scan as request_freeze_frame_scan_action,
+    _on_freeze_frame_scan_completed as _on_freeze_frame_scan_completed_action,
+    _on_freeze_frame_scan_failed as _on_freeze_frame_scan_failed_action,
+    _on_readiness_scan_completed as _on_readiness_scan_completed_action,
+    _on_readiness_scan_failed as _on_readiness_scan_failed_action,
+    _on_dtc_scan_completed as _on_dtc_scan_completed_action,
+    _on_dtc_scan_failed as _on_dtc_scan_failed_action,
+)from .responsive_banner import ResponsiveBanner
 from .diagnostics.vin_decoder import VinFrameDecoder
 from .ui_feedback import QuickDrawer, ToastManager
 from .asset_loader import ASSET_DIR, load_asset_pixmap
@@ -912,50 +911,50 @@ class MainWindow(QMainWindow):
 
     def toggle_capture(self):
         toggle_capture_impl(self)
-    def est_dtc_scan(self):
-        return est_dtc_scan_action(self)
+    def request_dtc_scan(self):
+        return request_dtc_scan_action(self)
 
-    def est_readiness_scan(self):
-        return est_readiness_scan_action(self)
+    def request_readiness_scan(self):
+        return request_readiness_scan_action(self)
 
-    def est_vehicle_info_scan(self):
-        return est_vehicle_info_scan_action(self)
+    def request_vehicle_info_scan(self):
+        return request_vehicle_info_scan_action(self)
 
-    def est_monitor_tests_scan(self):
-        return est_monitor_tests_scan_action(self)
+    def request_monitor_tests_scan(self):
+        return request_monitor_tests_scan_action(self)
 
-    def monitor_tests_scan_completed(self, result):
-        return monitor_tests_scan_completed_action(self, result)
+    def _on_monitor_tests_scan_completed(self, result):
+        return _on_monitor_tests_scan_completed_action(self, result)
 
-    def monitor_tests_scan_failed(self, message):
-        return monitor_tests_scan_failed_action(self, message)
+    def _on_monitor_tests_scan_failed(self, message):
+        return _on_monitor_tests_scan_failed_action(self, message)
 
-    def vehicle_info_scan_completed(self, results):
-        return vehicle_info_scan_completed_action(self, results)
+    def _on_vehicle_info_scan_completed(self, results):
+        return _on_vehicle_info_scan_completed_action(self, results)
 
-    def vehicle_info_scan_failed(self, message):
-        return vehicle_info_scan_failed_action(self, message)
+    def _on_vehicle_info_scan_failed(self, message):
+        return _on_vehicle_info_scan_failed_action(self, message)
 
-    def est_freeze_frame_scan(self, pids, frame_number=0):
-        return est_freeze_frame_scan_action(self, pids, frame_number)
+    def request_freeze_frame_scan(self, pids, frame_number=0):
+        return request_freeze_frame_scan_action(self, pids, frame_number)
 
-    def freeze_frame_scan_completed(self, results):
-        return freeze_frame_scan_completed_action(self, results)
+    def _on_freeze_frame_scan_completed(self, results):
+        return _on_freeze_frame_scan_completed_action(self, results)
 
-    def freeze_frame_scan_failed(self, message):
-        return freeze_frame_scan_failed_action(self, message)
+    def _on_freeze_frame_scan_failed(self, message):
+        return _on_freeze_frame_scan_failed_action(self, message)
 
-    def readiness_scan_completed(self, results):
-        return readiness_scan_completed_action(self, results)
+    def _on_readiness_scan_completed(self, results):
+        return _on_readiness_scan_completed_action(self, results)
 
-    def readiness_scan_failed(self, message):
-        return readiness_scan_failed_action(self, message)
+    def _on_readiness_scan_failed(self, message):
+        return _on_readiness_scan_failed_action(self, message)
 
-    def dtc_scan_completed(self, codes):
-        return dtc_scan_completed_action(self, codes)
+    def _on_dtc_scan_completed(self, codes):
+        return _on_dtc_scan_completed_action(self, codes)
 
-    def dtc_scan_failed(self, message):
-        return dtc_scan_failed_action(self, message)
+    def _on_dtc_scan_failed(self, message):
+        return _on_dtc_scan_failed_action(self, message)
 
     def on_frames(self, frames):
         process_frames(self, frames)
