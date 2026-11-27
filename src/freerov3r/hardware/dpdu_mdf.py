@@ -232,8 +232,10 @@ def parse_d_pdu_mdf(path: str | Path) -> DPduModuleDescription:
         if not eid or eid in resource_eids:
             raise DPduDescriptionError(f"Missing or duplicate RESOURCE EID: {eid!r}")
         resource_eids.add(eid)
-        bus_ref = (_child(element, "BUSTYPE") or ET.Element("missing")).attrib.get("IDREF", "")
-        protocol_ref = (_child(element, "PROTOCOL") or ET.Element("missing")).attrib.get("IDREF", "")
+        bus_element = _child(element, "BUSTYPE")
+        protocol_element = _child(element, "PROTOCOL")
+        bus_ref = bus_element.attrib.get("IDREF", "") if bus_element is not None else ""
+        protocol_ref = protocol_element.attrib.get("IDREF", "") if protocol_element is not None else ""
         if bus_ref not in bus_by_eid:
             raise DPduDescriptionError(f"RESOURCE {name} references unknown BUSTYPE {bus_ref!r}")
         if protocol_ref not in protocol_by_eid:
@@ -241,7 +243,11 @@ def parse_d_pdu_mdf(path: str | Path) -> DPduModuleDescription:
         pins: list[DPduResourcePin] = []
         for pin in _children(element, "PIN_ON_MODULE"):
             pin_number = _integer(_text(pin, "PIN_ON_MODULE"), field=f"{name}.PIN_ON_MODULE")
-            pin_ref = (_child(pin, "PINTYPE") or ET.Element("missing")).attrib.get("IDREF", "")
+            pin_type_element = _child(pin, "PINTYPE")
+            pin_ref = (
+                pin_type_element.attrib.get("IDREF", "")
+                if pin_type_element is not None else ""
+            )
             pin_type = pin_by_eid.get(pin_ref)
             if pin_type is None:
                 raise DPduDescriptionError(f"RESOURCE {name} references unknown PINTYPE {pin_ref!r}")
