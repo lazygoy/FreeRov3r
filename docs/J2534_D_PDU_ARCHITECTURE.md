@@ -305,3 +305,32 @@ initialization, offline CLL creation and destruction, cleanup ordering,
 conflict-list decoding, module inventory structure construction, and
 API-owned conflict-item destruction. All runtime tests use mocked D-PDU
 libraries; real VCI compatibility is not established by CI.
+
+
+## D-PDU typed ComParam working-buffer updates
+
+The runtime now exposes `set_com_param_uint32(module_handle, cll_handle,
+param_id, value)` for the standard `PDU_PT_UNUM32` ComParam type.
+
+The method uses the ISO-defined sequence:
+1. `PDUGetComParam` retrieves the API-owned parameter item for the MDF
+   ComParam ID.
+2. FreeRov3r verifies the returned ID and data type, then changes only the
+   32-bit value in the returned data buffer. The API-provided class and
+   structure are retained.
+3. `PDUSetComParam` copies the new value into the CLL working buffer.
+4. `PDUDestroyItem` releases the API-owned parameter item.
+
+This method only accepts an existing tracked OFFLINE ComLogicalLink and a
+module that has been explicitly initialized. The numeric ComParam ID must
+come from the selected module's MDF. The caller is responsible for selecting
+a parameter appropriate to the CLL's protocol and checking MDF-defined
+minimum/maximum constraints; this first setter validates the unsigned
+32-bit representation but does not yet parse every MDF ComParam constraint.
+Unsupported types (UNUM8/16, signed, bytefield, structfield, longfield) are
+rejected rather than guessed.
+
+Per ISO 22900-2, PDUSetComParam changes the working buffer. Those changes
+become active on a later PDUConnect or an explicit UPDATEPARAM ComPrimitive.
+This stage deliberately does not call PDUConnect or start a ComPrimitive, so
+setting parameters does not initiate vehicle communication.
