@@ -125,3 +125,21 @@ def test_byte_candidate_does_not_require_bit_offset_fields(tmp_path):
     record = store.add_candidate(candidate, source_capture_ids=["capture-a", "capture-b"])
     assert record["signature"]["bit_a"] is None
     assert record["signature"]["bit_b"] is None
+
+
+
+def test_evidence_status_advances_only_after_second_independent_capture(tmp_path):
+    store = SignalEvidenceStore(tmp_path / "ledger.json")
+    first = store.add_candidate(_candidate(), source_capture_ids=["capture-a"])
+    assert first["status"] == "observed"
+
+    second = store.add_candidate(_candidate(), source_capture_ids=["capture-b"])
+    assert second["status"] == "probable"
+    assert second["source_capture_ids"] == ["capture-a", "capture-b"]
+    assert second["history"][-1]["event"] == "evidence_level_advanced"
+
+
+def test_capture_ids_must_be_an_iterable_not_a_string(tmp_path):
+    store = SignalEvidenceStore(tmp_path / "ledger.json")
+    with pytest.raises(ValueError, match="not a string"):
+        store.add_candidate(_candidate(), source_capture_ids="capture-a")
