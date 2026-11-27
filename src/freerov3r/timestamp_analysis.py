@@ -50,6 +50,8 @@ def _linear_fit(points):
         "drift_ppm": drift_ppm,
         "residual_p95_ms": _percentile(residuals_ms, 0.95),
         "residual_max_ms": max(residuals_ms),
+        "host_start_seconds": min(ys),
+        "host_end_seconds": max(ys),
     }
 
 
@@ -196,7 +198,7 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
             ),
         })
 
-    return {
+    result = {
         "frame_count": total,
         "channel_count": len(channels),
         "frames_without_channel": missing_channel,
@@ -208,3 +210,77 @@ def analyze_channel_timestamps(records, *, suspicious_gap_seconds=1.0):
             "over the captured interval, not absolute transport latency."
         ),
     }
+    result["pairwise_clock_comparisons"] = compare_channel_clocks(result["channels"])
+    return result
+
+
+
+def compare_channel_clocks(channels):
+    """Compare fitted device clocks through their overlapping host-time ranges.
+
+    The resulting offsets are apparent receive-timeline relationships. They
+    include transport and host scheduling effects and are not synchronization
+    measurements or absolute one-way latency.
+    """
+    channels = list(channels or [])
+    comparisons = []
+    for index, first in enumerate(channels):
+        first_fit = first.get("clock_fit") or {}
+        if not first_fit or first_fit.get("host_start_seconds") is None:
+            continue
+        for second in channels[index + 1:]:
+            second_fit = second.get("clock_fit") or {}
+            if not second_fit or second_fit.get("host_start_seconds") is None:
+                continue
+
+            overlap_start = max(
+                first_fit["host_start_seconds"],
+                second_fit["host_start_seconds"],
+            )
+            overlap_end = min(
+                first_fit["host_end_seconds"],
+                second_fit["host_end_seconds"],
+            )
+            overlap = overlap_end - overlap_start
+            if overlap <= 0:
+                comparisons.append({
+                    "channel_a": first.get("channel"),
+                    "channel_b": second.get("channel"),
+                    "status": "no overlapping host-time coverage",
+                    "overlap_duration_seconds": 0.0,
+                })
+                continue
+
+            def device_time(fit, host_time):
+                return (host_time - fit["intercept"]) / fit["slope"]
+
+            offset_start = (
+                device_time(second_fit, overlap_start)
+                - device_time(first_fit, overlap_start)
+            ) * 1000.0
+            offset_end = (
+                device_time(second_fit, overlap_end)
+                - device_time(first_fit, overlap_end)
+            ) * 1000.0
+            relative_drift_ppm = (
+                (offset_end - offset_start) / (overlap * 1000.0)
+            ) * 1_000_000.0
+            uncertainty = (
+                (first_fit.get("residual_p95_ms") or 0.0)
+                + (second_fit.get("residual_p95_ms") or 0.0)
+            )
+            comparisons.append({
+                "channel_a": first.get("channel"),
+                "channel_b": second.get("channel"),
+                "status": "apparent relationship; not synchronized",
+                "overlap_duration_seconds": overlap,
+                "apparent_offset_start_ms": offset_start,
+                "apparent_offset_end_ms": offset_end,
+                "apparent_relative_drift_ppm": relative_drift_ppm,
+                "combined_host_fit_residual_p95_ms": uncertainty,
+                "uncertainty_note": (
+                    "Combined fit residual only. It does not bound unknown "
+                    "transport asymmetry or host scheduling latency."
+                ),
+            })
+    return comparisons
