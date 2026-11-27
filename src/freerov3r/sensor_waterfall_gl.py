@@ -86,23 +86,30 @@ class WaterfallPlot(gl.GLViewWidget):
         z = np.clip(np.where(raw_z > 1.0, raw_z / 100.0, raw_z), 0.0, 1.0)
         z *= self.height_scale
         lane_y = index * LANE_SPACING
-        y = np.asarray([lane_y - 0.42, lane_y + 0.42], dtype=np.float32)
-        z_grid = np.column_stack((z, z)).astype(np.float32)
+        # Four-point cross-section creates a raised, beveled ribbon, not a paper-thin sheet.
+        y = np.asarray([lane_y - 0.48, lane_y - 0.23, lane_y + 0.23, lane_y + 0.48], dtype=np.float32)
+        floor = np.zeros_like(z)
+        z_grid = np.column_stack((floor, z, z, floor)).astype(np.float32)
 
         color = pg.mkColor(self._colors.get(
             lane["sensor_id"], PALETTE[index % len(PALETTE)]
         ))
         red, green, blue, _ = color.getRgbF()
         intensity = np.clip(z / max(self.height_scale, 1e-6), 0.0, 1.0)
-        rgba = np.empty((len(x), 2, 4), dtype=np.float32)
-        brightness = 0.62 + 0.38 * intensity[:, None]
+        rgba = np.empty((len(x), 4, 4), dtype=np.float32)
+        brightness = 0.58 + 0.42 * intensity[:, None]
         rgba[:, :, 0] = red * brightness
         rgba[:, :, 1] = green * brightness
         rgba[:, :, 2] = blue * brightness
-        rgba[:, :, 3] = (self.opacity * (0.28 + 0.58 * intensity))[:, None]
+        side_alpha = self.opacity * (0.18 + 0.30 * intensity)
+        crest_alpha = self.opacity * (0.42 + 0.48 * intensity)
+        rgba[:, 0, 3] = side_alpha
+        rgba[:, 1, 3] = crest_alpha
+        rgba[:, 2, 3] = crest_alpha
+        rgba[:, 3, 3] = side_alpha
 
         crest = np.column_stack((
-            x, np.full_like(x, lane_y), z + 0.012,
+            x, np.full_like(x, lane_y), z + 0.018,
         )).astype(np.float32)
         label = (
             f'{lane["name"]} [{lane["unit"]}]  '
@@ -162,14 +169,16 @@ class WaterfallPlot(gl.GLViewWidget):
                     glOptions="translucent",
                     smooth=False,
                     computeNormals=False,
-                    drawEdges=False,
+                    drawEdges=True,
+                edgeColor=(0.78, 0.88, 1.0, min(0.72, self.opacity * 0.9)),
                 )
                 self.addItem(surface)
                 red, green, blue = rgb
                 contour = gl.GLLinePlotItem(
                     pos=crest,
-                    color=(red, green, blue, min(1.0, self.opacity + 0.32)),
-                    width=2.0,
+                    color=(red, green, blue, min(1.0, self.opacity + 0.25)),
+                    width=3.0,
+                    width=3.0,
                     antialias=True,
                     mode="line_strip",
                     glOptions="translucent",
