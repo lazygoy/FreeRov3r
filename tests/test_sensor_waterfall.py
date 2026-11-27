@@ -123,3 +123,27 @@ def test_waterfall_cursor_data_keeps_full_resolution_when_surface_is_downsampled
         for index, value in enumerate([800, 850, 900, 950, 1000, 1050])
     ]
     assert lane["raw_times"] == [point[0] for point in lane["raw_points"]]
+
+
+
+def test_2d_scope_exposes_synchronized_cursor_signals():
+    from PySide6.QtWidgets import QWidget
+
+    from freerov3r.sensor_waterfall_2d import SharedCrosshairStackedPlot
+
+    assert issubclass(SharedCrosshairStackedPlot, QWidget)
+    assert hasattr(SharedCrosshairStackedPlot, "cursorMoved")
+    assert hasattr(SharedCrosshairStackedPlot, "cursorLocked")
+
+
+def test_2d_scope_cursor_uses_raw_engineering_values():
+    from freerov3r.sensor_waterfall_2d import SharedCrosshairStackedPlot
+
+    lane = {
+        "raw_points": [(0.0, 800.0), (1.0, 1000.0), (2.0, 1200.0)],
+        "raw_times": [0.0, 1.0, 2.0],
+    }
+
+    assert SharedCrosshairStackedPlot._nearest_value(lane, 0.2) == 800.0
+    assert SharedCrosshairStackedPlot._nearest_value(lane, 1.7) == 1200.0
+    assert SharedCrosshairStackedPlot._nearest_value(lane, 8.0) == 1200.0
