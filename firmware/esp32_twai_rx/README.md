@@ -133,3 +133,39 @@ authorization.
 
 The software listen-only setting does not replace checking wiring, power and
 the actual hardware. This firmware supports Classical CAN only, not CAN FD.
+
+## Wi-Fi TCP transport
+
+Wi-Fi streaming is optional and is compiled only when binary protocol is
+enabled, `FREEROV3R_WIFI_ENABLED=1`, and the build supplies an SSID and
+password. There is no default SSID, password, or open access point.
+
+Example build defines for a user-configured WPA2 network:
+
+```text
+-DFREEROV3R_BINARY_PROTOCOL=1
+-DFREEROV3R_WIFI_ENABLED=1
+-DFREEROV3R_WIFI_SSID=\\\"YOUR_WIFI_NAME\\\"
+-DFREEROV3R_WIFI_PASSWORD=\\\"YOUR_WIFI_PASSWORD\\\"
+-DFREEROV3R_WIFI_PORT=3333
+-DFREEROV3R_CAN_BITRATE=500000
+-DFREEROV3R_CAN_CHANNEL=0
+```
+
+Keep real credentials out of source control and shared build logs. The device
+joins the configured Wi-Fi network in station mode and listens for one TCP
+client on port 3333. TCP uses the same binary v1 envelope as USB. USB and TCP
+have independent bounded output queues and sequence counters. A slow or
+disconnected TCP client cannot block the CAN receive loop or USB writer.
+TCP queue overflow is reported as `STATS,WIFI_QUEUE_DROPS,<count>`. Old
+queued frames are discarded when a new TCP client connects, preventing a
+reconnect from silently replaying stale traffic.
+
+The TCP stream is unencrypted and has no client authentication in this
+firmware revision. Use only on a trusted, access-controlled local network.
+Do not expose port 3333 to the public internet. The device accepts one client
+at a time. The TCP listener does not parse commands and cannot transmit CAN.
+
+FreeRov3r's PC-side Wi-Fi adapter connects to the ESP32 IP address and port
+3333. Find the assigned address in the router's DHCP client list. This
+firmware does not yet provide automatic device discovery.
