@@ -8,7 +8,7 @@ from freerov3r.models import CanFrame
 
 class FakeMessage:
     arbitration_id = 0x123
-    data = b"\\x01\\x02"
+    data = bytes.fromhex("01 02")
     is_extended_id = False
     is_remote_frame = False
     is_error_frame = False
@@ -112,9 +112,9 @@ def test_python_can_send_transmits_only_after_authorization(monkeypatch):
     [
         CanFrame(0x7E0, b""),
         CanFrame(0x7E0, bytes(9)),
-        CanFrame(0x800, b"\\x01"),
-        CanFrame(0x7E0, b"\\x01", is_remote_frame=True),
-        CanFrame(0x7E0, b"\\x01", is_error_frame=True),
+        CanFrame(0x800, bytes.fromhex("01")),
+        CanFrame(0x7E0, bytes.fromhex("01"), is_remote_frame=True),
+        CanFrame(0x7E0, bytes.fromhex("01"), is_error_frame=True),
     ],
 )
 def test_python_can_send_rejects_invalid_classic_can_frames(monkeypatch, frame):
