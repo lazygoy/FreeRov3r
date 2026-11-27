@@ -42,9 +42,13 @@ def add_or_update_vehicle(window):
     window.settings["vehicles"][vin] = vehicle
     window.settings["current_vin"] = vin
     window.settings["active_vehicle"] = vehicle.copy()
-    window.research_tab.set_context(vin, window.active_interface)
+    window.research_tab.set_context(vin, window.active_interface, vehicle)
     window._refresh_vehicle_list()
     window._update_vehicle_context()
+    window.research_tab.set_context(
+        vin, window.active_interface,
+        window.settings.get("active_vehicle", {}),
+    )
     window.save_current_settings()
     window.vin_edit.clear()
     window.nickname_edit.clear()
