@@ -35,7 +35,11 @@ def refresh_serial_ports(window, discover=discover_interfaces):
         candidate = recognized[0]
         for index in range(window.backend.count()):
             data = window.backend.itemData(index)
-            if data and data[0] == candidate["kind"]:
+            target_kind = (
+                "esp32_framed_usb" if candidate["kind"] == "esp32"
+                else candidate["kind"]
+            )
+            if data and data[0] == target_kind:
                 window.backend.setCurrentIndex(index)
                 window.channel_edit.setCurrentText(candidate["device"])
                 break
