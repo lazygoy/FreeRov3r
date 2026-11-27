@@ -132,7 +132,7 @@ class SensorWaterfallDialog(QDialog):
         self._sensor_colors = {}
         self.demo_samples = generate_lr4_demo_samples()
         self.vin_provider = vin_provider or (lambda: None)
-        self.setWindowTitle("FreeRov3r | 3D Sensor Waterfall")
+        self.setWindowTitle("FreeRov3r | Sensor Signal Scope")
         self.resize(1200, 860)
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -321,23 +321,6 @@ class SensorWaterfallDialog(QDialog):
         self.color_sensor_combo.blockSignals(False)
         self._sync_color_button()
 
-
-    def _update_value_table(self, lanes):
-        self.value_table.setRowCount(len(lanes))
-        for row, lane in enumerate(lanes):
-            color = self._sensor_colors.get(lane["sensor_id"], "#E2E8F0")
-            values = (
-                lane["name"],
-                f'{lane["minimum"]:.5g}',
-                f'{lane["maximum"]:.5g}',
-                f'{lane["current"]:.5g}',
-                lane["unit"],
-            )
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
-                if column == 0:
-                    item.setForeground(QColor(color))
-                self.value_table.setItem(row, column, item)
 
     def _sync_color_button(self):
         sensor_id = self.color_sensor_combo.currentData()
