@@ -27,6 +27,8 @@ J2534_PROTOCOL_CAN = 0x05
 J2534_CAN_29BIT_ID = 0x00000100
 J2534_MAX_DATA = 4128
 J2534_CAN_ID_BYTES = 4
+J2534_CAN_MAX_PAYLOAD = 8
+J2534_FILTER_PASS = 0x01
 
 
 class PassThruError(RuntimeError):
@@ -126,6 +128,8 @@ class J2534CanAdapter(CanAdapter):
         self._channel_id = c_uint32(0)
         self._opened = False
         self._connected = False
+        self._filter_id = c_uint32(0)
+        self._filter_active = False
         self._functions = {}
 
     @property
@@ -178,6 +182,14 @@ class J2534CanAdapter(CanAdapter):
                 library, "PassThruReadMsgs",
                 [c_uint32, POINTER(PassThruMessage), POINTER(c_uint32), c_uint32],
             ),
+            "PassThruStartMsgFilter": _bind_function(
+                library, "PassThruStartMsgFilter",
+                [c_uint32, c_uint32, POINTER(PassThruMessage),
+                 POINTER(PassThruMessage), POINTER(PassThruMessage), POINTER(c_uint32)],
+            ),
+            "PassThruStopMsgFilter": _bind_function(
+                library, "PassThruStopMsgFilter", [c_uint32, c_uint32]
+            ),
         }
         optional_error = getattr(library, "PassThruGetLastError", None)
         if optional_error is not None:
@@ -202,9 +214,33 @@ class J2534CanAdapter(CanAdapter):
             )
             self._status("PassThruConnect", status)
             self._connected = True
+            self._install_pass_all_filter()
         except Exception:
-            self.close()
+            try:
+                self.close()
+            except Exception:
+                pass
             raise
+
+    def _install_pass_all_filter(self) -> None:
+        """Install a receive-only CAN pass filter matching every CAN ID."""
+        mask = PassThruMessage()
+        pattern = PassThruMessage()
+        mask.ProtocolID = J2534_PROTOCOL_CAN
+        pattern.ProtocolID = J2534_PROTOCOL_CAN
+        mask.DataSize = J2534_CAN_ID_BYTES
+        pattern.DataSize = J2534_CAN_ID_BYTES
+        # A zero mask means no CAN identifier bits are constrained.
+        status = self._functions["PassThruStartMsgFilter"](
+            self._channel_id.value,
+            J2534_FILTER_PASS,
+            byref(mask),
+            byref(pattern),
+            None,
+            byref(self._filter_id),
+        )
+        self._status("PassThruStartMsgFilter", status)
+        self._filter_active = True
 
     def receive(self, timeout: float = 0.2) -> CanFrame | None:
         if not self.is_open:
@@ -231,7 +267,7 @@ class J2534CanAdapter(CanAdapter):
                 J2534_STATUS_NOERROR,
                 f"driver returned unexpected message count {count.value}",
             )
-        if message.DataSize < J2534_CAN_ID_BYTES or message.DataSize > J2534_MAX_DATA:
+        if message.DataSize < J2534_CAN_ID_BYTES or message.DataSize > J2534_CAN_ID_BYTES + J2534_CAN_MAX_PAYLOAD:
             raise PassThruError(
                 "PassThruReadMsgs",
                 J2534_STATUS_NOERROR,
@@ -267,6 +303,18 @@ class J2534CanAdapter(CanAdapter):
 
     def close(self) -> None:
         errors = []
+        if self._filter_active:
+            try:
+                status = self._functions["PassThruStopMsgFilter"](
+                    self._channel_id.value, self._filter_id.value
+                )
+                if int(status) != J2534_STATUS_NOERROR:
+                    errors.append(PassThruError("PassThruStopMsgFilter", status))
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                self._filter_active = False
+
         if self._connected:
             try:
                 status = self._functions["PassThruDisconnect"](
