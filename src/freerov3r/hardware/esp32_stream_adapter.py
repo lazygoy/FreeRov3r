@@ -146,7 +146,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
         self._opened = True
         self.reconnect_attempts += 1
         self.connection_generation += 1
-        self.connection_events.append({
+        self._record_connection_event({
             "event": "reconnected",
             "wall_time": time.time(),
             "monotonic": time.monotonic(),
@@ -257,7 +257,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
                 chunk = self._read(remaining)
             except (OSError, serial.SerialException) as exc:
                 self.last_error = str(exc)[:240]
-                self.connection_events.append({
+                self._record_connection_event({
                     "event": "disconnected",
                     "wall_time": time.time(),
                     "monotonic": time.monotonic(),
