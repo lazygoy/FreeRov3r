@@ -48,6 +48,7 @@ def toggle_capture(window):
                 "started_at": context.started_at if context else window.capture_started_at,
                 "duration_seconds": round(elapsed, 2),
                 "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
+                "adapter_diagnostics": diagnostics if isinstance(diagnostics, dict) else {},
                 "frames": [
                     {"timestamp": frame.timestamp, "arbitration_id": frame.arbitration_id,
                      "extended": frame.is_extended_id, "data": frame.data.hex(),
