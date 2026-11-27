@@ -362,3 +362,42 @@ communication. The selected protocol and physical ComParams must be valid
 before invoking it. ISO 22900-2 warns that improper physical ComParams can
 cause significant bus errors. No `PDUStartComPrimitive`, diagnostic request,
 receive operation, or transmit operation has been added in this stage.
+
+
+## D-PDU receive-only ComPrimitive and event queue
+
+The new `hardware.dpdu_receive.DPduReceiveRuntime` extends the D-PDU runtime
+with explicit receive-only protocol primitives and event retrieval.
+
+`start_receive_only(module, cll, response_mask, response_pattern, ...)`
+starts `PDU_COPT_SENDRECV` with:
+- no PDU data buffer and a data length of zero;
+- `NumSendCycles = 0`;
+- `NumReceiveCycles = -1` (continuous receive);
+- one caller-supplied expected-response mask/pattern;
+- optional unique response identifiers and an application acceptance ID.
+
+This is protocol-level response reception, not unrestricted raw CAN capture.
+The expected-response structure is required because D-PDU ComPrimitives operate
+on protocol data and matching rules. It does not provide a generic passive
+monitor of every CAN arbitration ID on a bus. Raw CAN capture remains a
+separate adapter capability (currently provided by the J2534 classic-CAN
+receive path where the driver supports it).
+
+The runtime binds `PDUStartComPrimitive`, `PDUCancelComPrimitive`, and
+`PDUGetEventItem`. Event items are copied into immutable Python records
+before their API-owned memory is released with `PDUDestroyItem`. Result
+events include copied payload bytes, the ComPrimitive handle, acceptance and
+unique-response identifiers, and timestamps. Error and information event
+codes are retained as raw numeric values; no undocumented decoding is
+invented. Empty event queues return `None`.
+
+Only receive ComPrimitives started through this wrapper are tracked. Shutdown
+cancels those primitives before disconnecting or destroying their logical
+links. If cancellation fails, shutdown stops and reports the failure rather
+than tearing down a link underneath a still-running receive operation.
+
+All D-PDU event tests use mocked libraries. They validate the ABI-shaped
+structures, zero-send/infinite-receive control values, result payload copying,
+API-owned event destruction, empty-queue handling, and cancellation-before-
+disconnect cleanup. This does not establish compatibility with a physical VCI.
