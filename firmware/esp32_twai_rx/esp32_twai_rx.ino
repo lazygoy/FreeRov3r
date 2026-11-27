@@ -19,6 +19,11 @@
 #include <Arduino.h>
 #include "driver/twai.h"
 #include "esp_timer.h"
+#if FREEROV3R_BINARY_PROTOCOL
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#endif
 
 static constexpr gpio_num_t CAN_TX_PIN = GPIO_NUM_5;
 static constexpr gpio_num_t CAN_RX_PIN = GPIO_NUM_4;
@@ -51,6 +56,42 @@ static constexpr uint8_t MSG_HELLO = 0x01;
 static constexpr uint8_t MSG_DEVICE_STATUS = 0x12;
 static constexpr uint8_t MSG_FRAME_RX = 0x20;
 static uint32_t messageSequence = 0;
+
+static constexpr UBaseType_t OUTPUT_QUEUE_LENGTH = 256;
+static constexpr uint8_t OUTPUT_ITEM_FRAME = 1;
+static constexpr uint8_t OUTPUT_ITEM_STATUS = 2;
+struct OutputItem {
+  uint8_t kind;
+  twai_message_t frame;
+  uint64_t timestampUs;
+  char status[64];
+};
+static QueueHandle_t outputQueue = nullptr;
+static volatile uint32_t outputQueueDrops = 0;
+static uint32_t reportedOutputQueueDrops = 0;
+
+static bool enqueueFrame(const twai_message_t &frame, uint64_t timestampUs) {
+  if (!outputQueue) {
+    ++outputQueueDrops;
+    return false;
+  }
+  OutputItem item = {};
+  item.kind = OUTPUT_ITEM_FRAME;
+  item.frame = frame;
+  item.timestampUs = timestampUs;
+  if (xQueueSend(outputQueue, &item, 0) != pdTRUE) {
+    ++outputQueueDrops;
+    return false;
+  }
+  return true;
+}
+static bool enqueueStatus(const char *status) {
+  if (!outputQueue) return false;
+  OutputItem item = {};
+  item.kind = OUTPUT_ITEM_STATUS;
+  strncpy(item.status, status, sizeof(item.status) - 1);
+  return xQueueSend(outputQueue, &item, 0) == pdTRUE;
+}
 
 static void writeU16(uint8_t *out, uint16_t value) {
   out[0] = (uint8_t)(value >> 8);
@@ -109,6 +150,29 @@ static void sendHello() {
       "FreeRov3r ESP32-S3;protocol=1;mode=listen-only;can=classical";
   sendMessage(MSG_HELLO, (const uint8_t *)hello, sizeof(hello) - 1);
 }
+static void serialWriterTask(void *parameter) {
+  (void)parameter;
+  OutputItem item;
+  for (;;) {
+    if (xQueueReceive(outputQueue, &item, pdMS_TO_TICKS(100)) == pdTRUE) {
+      if (item.kind == OUTPUT_ITEM_FRAME) {
+        sendCanFrame(item.frame, item.timestampUs);
+      } else if (item.kind == OUTPUT_ITEM_STATUS) {
+        sendStatus(item.status);
+      }
+    }
+
+    const uint32_t dropped = outputQueueDrops;
+    if (dropped != reportedOutputQueueDrops) {
+      char status[64];
+      snprintf(status, sizeof(status), "STATS,OUTPUT_QUEUE_DROPS,%lu",
+               (unsigned long)dropped);
+      sendStatus(status);
+      reportedOutputQueueDrops = dropped;
+    }
+  }
+}
+
 static void sendCanFrame(const twai_message_t &msg, uint64_t timestampUs) {
   // FRAME_RX payload: channel:u8, flags:u8, DLC:u8, CAN ID:u32, timestamp:u64, data.
   uint8_t payload[23] = {0};
@@ -166,6 +230,17 @@ void setup() {
   }
 
 #if FREEROV3R_BINARY_PROTOCOL
+  outputQueue = xQueueCreate(OUTPUT_QUEUE_LENGTH, sizeof(OutputItem));
+  if (!outputQueue) {
+    sendStatus("ERROR,OUTPUT_QUEUE_CREATE");
+    while (true) delay(1000);
+  }
+  BaseType_t taskResult = xTaskCreatePinnedToCore(
+      serialWriterTask, "fr_usb_writer", 4096, nullptr, 2, nullptr, 0);
+  if (taskResult != pdPASS) {
+    sendStatus("ERROR,OUTPUT_TASK_CREATE");
+    while (true) delay(1000);
+  }
   sendHello();
   sendStatus("READY,LISTEN_ONLY");
 #else
@@ -185,7 +260,7 @@ void loop() {
     const uint64_t deviceTimestampUs = (uint64_t)esp_timer_get_time();
     if (!msg.rtr) {
 #if FREEROV3R_BINARY_PROTOCOL
-      sendCanFrame(msg, deviceTimestampUs);
+      enqueueFrame(msg, deviceTimestampUs);
 #else
       printFrame(msg, (int64_t)deviceTimestampUs);
 #endif
@@ -196,21 +271,21 @@ void loop() {
   if (twai_read_alerts(&alerts, 0) == ESP_OK) {
     if (alerts & TWAI_ALERT_RX_QUEUE_FULL) {
 #if FREEROV3R_BINARY_PROTOCOL
-      sendStatus("ALERT,RX_QUEUE_FULL");
+      enqueueStatus("ALERT,RX_QUEUE_FULL");
 #else
       Serial.println("#ALERT,RX_QUEUE_FULL");
 #endif
     }
     if (alerts & TWAI_ALERT_BUS_OFF) {
 #if FREEROV3R_BINARY_PROTOCOL
-      sendStatus("ALERT,BUS_OFF");
+      enqueueStatus("ALERT,BUS_OFF");
 #else
       Serial.println("#ALERT,BUS_OFF");
 #endif
     }
     if (alerts & TWAI_ALERT_BUS_ERROR) {
 #if FREEROV3R_BINARY_PROTOCOL
-      sendStatus("ALERT,BUS_ERROR");
+      enqueueStatus("ALERT,BUS_ERROR");
 #else
       Serial.println("#ALERT,BUS_ERROR");
 #endif
