@@ -113,7 +113,7 @@ class Esp32FramedStreamAdapter(CanAdapter):
                 if message.sequence != expected:
                     distance = (message.sequence - expected) & 0xFFFFFFFF
                     if distance < 0x80000000:
-                        self.sequence_gaps += distance + 1
+                        self.sequence_gaps += distance
             self.last_sequence = message.sequence
 
             if message.version != 1 or message.message_type != MessageType.FRAME_RX:
