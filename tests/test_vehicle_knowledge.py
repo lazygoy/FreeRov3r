@@ -1,0 +1,162 @@
+import json
+
+import pytest
+
+from freerov3r.core.vehicle.knowledge import VehicleKnowledgeStore
+
+
+def _store(tmp_path):
+    return VehicleKnowledgeStore(tmp_path / "knowledge" / "catalog.json")
+
+
+def _applicability(**overrides):
+    value = {
+        "profile_ids": ["land_rover_l319_lr4"],
+        "model_year_start": 2010,
+        "model_year_end": 2016,
+        "engine_ids": ["508PN"],
+    }
+    value.update(overrides)
+    return value
+
+
+def _record(store):
+    return store.add_observation(
+        "signal_definition",
+        "engine_coolant_temperature",
+        {"can_id": 0x123, "byte_offset": 2, "unit": "degC"},
+        applicability=_applicability(),
+        source_capture_ids=["capture-001"],
+    )
+
+
+def test_observation_is_research_only_until_explicitly_supported(tmp_path):
+    store = _store(tmp_path)
+    record = _record(store)
+    assert record["status"] == "observed"
+
+    catalog = store.diagnostic_catalog(
+        "land_rover_l319_lr4", model_year=2012, engine_id="508PN"
+    )
+    assert catalog["verified_knowledge"] == []
+    assert catalog["supported_capabilities"] == []
+    assert len(store.for_vehicle(
+        "land_rover_l319_lr4", model_year=2012, engine_id="508PN"
+    )) == 1
+
+
+def test_supported_requires_verified_evidence_and_implementation_tests(tmp_path):
+    store = _store(tmp_path)
+    record = _record(store)
+    with pytest.raises(ValueError, match="verified first"):
+        store.review(
+            record["record_id"], "supported",
+            source_reference="capture review",
+            vehicle_applicability="2010-2016 LR4 5.0L",
+            evidence_grade="A",
+            verification_notes="Repeated on vehicle",
+            implementation_reference="src/freerov3r/signals/l319.py",
+            test_reference="tests/test_l319_signals.py",
+        )
+
+    verified = store.review(
+        record["record_id"], "verified",
+        source_reference="controlled vehicle test #12",
+        vehicle_applicability="2010-2016 LR4 5.0L 508PN",
+        evidence_grade="A",
+        verification_notes="Measured on vehicle and independently checked",
+    )
+    assert verified["status"] == "verified"
+
+    with pytest.raises(ValueError, match="implementation_reference"):
+        store.review(
+            record["record_id"], "supported",
+            source_reference="controlled vehicle test #12",
+            vehicle_applicability="2010-2016 LR4 5.0L 508PN",
+            evidence_grade="A",
+            verification_notes="Measured on vehicle and independently checked",
+        )
+
+    supported = store.review(
+        record["record_id"], "supported",
+        source_reference="controlled vehicle test #12",
+        vehicle_applicability="2010-2016 LR4 5.0L 508PN",
+        evidence_grade="A",
+        verification_notes="Measured on vehicle and independently checked",
+        implementation_reference="src/freerov3r/signals/l319.py",
+        test_reference="tests/test_l319_signals.py",
+    )
+    catalog = store.diagnostic_catalog(
+        "land_rover_l319_lr4", model_year=2012, engine_id="508PN"
+    )
+    assert supported["status"] == "supported"
+    assert len(catalog["verified_knowledge"]) == 0
+    assert catalog["supported_capabilities"][0]["record_id"] == record["record_id"]
+
+
+def test_vehicle_applicability_filters_profile_year_and_engine(tmp_path):
+    store = _store(tmp_path)
+    _record(store)
+    assert store.for_vehicle("generic", model_year=2012, engine_id="508PN") == []
+    assert store.for_vehicle(
+        "land_rover_l319_lr4", model_year=2009, engine_id="508PN"
+    ) == []
+    assert store.for_vehicle(
+        "land_rover_l319_lr4", model_year=2012, engine_id="306DT"
+    ) == []
+
+
+def test_platform_independent_knowledge_can_be_reused(tmp_path):
+    store = _store(tmp_path)
+    record = store.add_observation(
+        "protocol_definition", "uds_service_0x22",
+        {"service_id": 0x22, "name": "ReadDataByIdentifier"},
+        applicability={"platform_independent": True},
+        source_references=["ISO 14229-1"],
+    )
+    assert record["status"] == "observed"
+    assert len(store.for_vehicle("land_rover_l319_lr4")) == 1
+    assert len(store.for_vehicle("another_manufacturer_profile")) == 1
+
+
+def test_rejects_missing_provenance_and_invalid_applicability(tmp_path):
+    store = _store(tmp_path)
+    with pytest.raises(ValueError, match="source reference"):
+        store.add_observation(
+            "module", "module_x", {}, applicability=_applicability()
+        )
+    with pytest.raises(ValueError, match="profile_ids"):
+        store.add_observation(
+            "module", "module_x", {}, applicability={"profile_ids": "lr4"},
+            source_capture_ids=["capture"],
+        )
+
+
+def test_store_persists_and_deduplicates_by_identity(tmp_path):
+    store = _store(tmp_path)
+    first = _record(store)
+    second = store.add_observation(
+        "signal_definition",
+        "engine_coolant_temperature",
+        {"scale": 0.1},
+        applicability=_applicability(),
+        source_capture_ids=["capture-002"],
+    )
+    assert first["record_id"] == second["record_id"]
+    assert second["data"]["scale"] == 0.1
+    assert second["source_capture_ids"] == ["capture-001", "capture-002"]
+    assert len(store.list_records()) == 1
+    assert json.loads(store.path.read_text(encoding="utf-8"))["schema_version"] == 1
+
+
+def test_supported_is_not_auto_promoted_by_repeated_observations(tmp_path):
+    store = _store(tmp_path)
+    first = _record(store)
+    second = store.add_observation(
+        "signal_definition",
+        "engine_coolant_temperature",
+        {"can_id": 0x123},
+        applicability=_applicability(),
+        source_capture_ids=["capture-002", "capture-003"],
+    )
+    assert first["status"] == second["status"] == "observed"
