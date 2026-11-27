@@ -167,9 +167,41 @@ class Receiver(QThread):
                     finally:
                         self._readiness_request_pending = False
                     continue
-                frame = self.adapter.receive(
-                    self.FRAME_BATCH_INTERVAL if batcher.frames else 0.15
-                )
+                try:
+                    frame = self.adapter.receive(
+                        self.FRAME_BATCH_INTERVAL if batcher.frames else 0.15
+                    )
+                except Exception as exc:
+                    reconnect = getattr(self.adapter, "reconnect", None)
+                    if not callable(reconnect):
+                        raise
+                    reason = str(exc)
+                    self.status.emit(f"ESP32 disconnected: {reason}. Reconnecting...")
+                    attempt = 0
+                    while self.running:
+                        attempt += 1
+                        delay = min(15.0, 0.5 * (2 ** min(attempt - 1, 5)))
+                        # Sleep in short slices so Stop remains responsive.
+                        deadline = time.monotonic() + delay
+                        while self.running and time.monotonic() < deadline:
+                            time.sleep(min(0.1, deadline - time.monotonic()))
+                        if not self.running:
+                            break
+                        try:
+                            reconnect()
+                            self.status.emit(
+                                f"Reconnected: {self.adapter.description} "
+                                f"(attempt {attempt}); capture continued with a gap"
+                            )
+                            break
+                        except Exception as reconnect_error:
+                            if hasattr(self.adapter, "last_error"):
+                                self.adapter.last_error = str(reconnect_error)
+                            self.status.emit(
+                                f"ESP32 reconnect attempt {attempt} failed: "
+                                f"{reconnect_error}"
+                            )
+                    continue
                 if frame is not None:
                     self.frame_received.emit(frame)  # Preserve the per-frame adapter signal.
                     batcher.add(frame)
