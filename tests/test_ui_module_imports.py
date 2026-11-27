@@ -22,3 +22,9 @@ def test_special_functions_tab_remains_available_from_app_module():
     from freerov3r.special_functions_tab import SpecialFunctionsTab
 
     assert app_special_functions_tab is SpecialFunctionsTab
+
+def test_wiring_diagrams_tab_remains_available_from_app_module():
+    from freerov3r.app import WiringDiagramsTab as app_wiring_tab
+    from freerov3r.wiring_diagrams_tab import WiringDiagramsTab
+
+    assert app_wiring_tab is WiringDiagramsTab
