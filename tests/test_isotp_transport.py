@@ -11,9 +11,11 @@ from freerov3r.isotp_transport import (
 from freerov3r.models import CanFrame
 
 
-def endpoint(tx_queue, rx_queue, *, tx_id, rx_id, **kwargs):
+def endpoint(tx_queue, rx_queue, *, tx_id, rx_id, sent=None, **kwargs):
     def send(frame):
         tx_queue.put(frame)
+        if sent is not None:
+            sent.append(frame)
 
     def receive(timeout):
         try:
@@ -34,14 +36,14 @@ def endpoint(tx_queue, rx_queue, *, tx_id, rx_id, **kwargs):
 
 def test_single_frame_round_trip():
     a_to_b, b_to_a = queue.Queue(), queue.Queue()
-    sender = endpoint(a_to_b, b_to_a, tx_id=0x7E0, rx_id=0x7E8)
+    sent = []
+    sender = endpoint(a_to_b, b_to_a, tx_id=0x7E0, rx_id=0x7E8, sent=sent)
     receiver = endpoint(b_to_a, a_to_b, tx_id=0x7E8, rx_id=0x7E0)
     payload = bytes.fromhex("22 F1 90")
 
     sender.send_payload(payload)
     assert receiver.receive_payload() == payload
-    sent = a_to_b.get_nowait()
-    assert sent.data == bytes.fromhex("03 22 F1 90")
+    assert sent[0].data == bytes.fromhex("03 22 F1 90")
 
 
 def test_multi_frame_round_trip_with_flow_control():
@@ -71,8 +73,10 @@ def test_multi_frame_round_trip_with_flow_control():
 def test_multi_frame_obeys_receiver_block_size():
     a_to_b, b_to_a = queue.Queue(), queue.Queue()
     sender = endpoint(a_to_b, b_to_a, tx_id=0x7E0, rx_id=0x7E8)
+    flow_controls_sent = []
     receiver = endpoint(
-        b_to_a, a_to_b, tx_id=0x7E8, rx_id=0x7E0, block_size=1
+        b_to_a, a_to_b, tx_id=0x7E8, rx_id=0x7E0, block_size=1,
+        sent=flow_controls_sent,
     )
     payload = bytes(range(1, 22))
     received = {}
@@ -84,7 +88,7 @@ def test_multi_frame_obeys_receiver_block_size():
     assert not worker.is_alive()
     assert received["payload"] == payload
     flow_controls = [
-        frame for frame in b_to_a.queue
+        frame for frame in flow_controls_sent
         if frame.data and frame.data[0] >> 4 == 3
     ]
     assert len(flow_controls) >= 2
