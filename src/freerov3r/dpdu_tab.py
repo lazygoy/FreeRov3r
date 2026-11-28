@@ -221,7 +221,7 @@ class DPduTab(QWidget):
         self.mask_edit.setPlaceholderText("Protocol response mask, e.g. FF")
         self.pattern_edit = QLineEdit()
         self.pattern_edit.setPlaceholderText("Protocol response pattern, e.g. 62")
-        self.acceptance_id_edit = QLineEdit("1")
+        self.acceptance_id_edit = QLineEdit()
         self.acceptance_id_edit.setPlaceholderText("Acceptance ID (decimal or 0x...)")
         config_layout.addRow("Response mask (hex):", self.mask_edit)
         config_layout.addRow("Response pattern (hex):", self.pattern_edit)
