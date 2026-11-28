@@ -61,7 +61,13 @@ class Esp32DualFramedSerialAdapter:
 
     @staticmethod
     def _adapter_key(adapter):
-        return str(getattr(adapter, "host", None) or getattr(adapter, "port", adapter.description))
+        host = getattr(adapter, "host", None)
+        port = getattr(adapter, "port", None)
+        if host:
+            return f"{host}:{port or 3333}"
+        if port is not None:
+            return str(port)
+        return str(getattr(adapter, "description", "ESP32 receiver"))
 
     def open(self):
         if self._opened:
