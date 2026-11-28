@@ -34,6 +34,10 @@ TIME_WINDOWS = (
     ("All samples", 0),
 )
 
+# Standard OBD-II PIDs used as the first-run live graph defaults.
+# PID support is vehicle/ECU-dependent and must be confirmed by the adapter.
+DEFAULT_GRAPH_SENSOR_IDS = ("obd_0C", "obd_05", "obd_0A", "obd_5C")
+
 
 def panel_grid_dimensions(count):
     """Return a compact two-column dashboard grid for 1–8 panels."""
@@ -534,6 +538,16 @@ class SensorDashboardDock(QWidget):
         self._visible_count = 4
         outer.addWidget(self.view_stack, 1)
         self._restore_saved_layout()
+        # Respect any saved user layout. Only a genuinely first-run workspace
+        # receives the four useful engine-data defaults, one signal per panel.
+        if not isinstance(self.settings.get("sensor_dashboard_layout"), dict):
+            self._loading_config = True
+            try:
+                for panel, sensor_id in zip(self.panels, DEFAULT_GRAPH_SENSOR_IDS):
+                    panel.refresh_sensor_choices({sensor_id})
+                self.panel_count.setCurrentIndex(PANEL_COUNTS.index(4))
+            finally:
+                self._loading_config = False
         self.refresh()
         if self.initial_sensor_ids and not self.panels[0].selected_sensor_ids():
             self.panels[0].refresh_sensor_choices(self.initial_sensor_ids)

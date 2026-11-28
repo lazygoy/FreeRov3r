@@ -67,10 +67,8 @@ def test_sensor_graph_tab_constructs_with_empty_capture():
     tab = SensorGraphTab(SensorCapture())
     assert tab.sensor_list.count() == 0
     assert not hasattr(tab, "stats_table")
-    assert tab.activity_timer.isActive()
     assert tab.dashboard_widget is None
 
-    tab.activity_timer.stop()
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
@@ -92,13 +90,59 @@ def test_obd_tab_constructs_with_default_settings():
 
     _QT_TEST_APP = QApplication.instance() or QApplication([])
     tab = OBDTab(settings={}, settings_save_callback=lambda _settings: None)
-    assert tab.table.rowCount() > 0
-    assert tab.activity_timer.isActive()
+    assert not hasattr(tab, "table")
+    assert [tab.diagnostic_views.tabText(i) for i in range(tab.diagnostic_views.count())] == [
+        "DTCs", "Freeze Frame", "ECU ID", "Monitor Tests", "Readiness"
+    ]
+    assert tab.diagnostic_views.currentIndex() == 0
+    assert tab.layout().count() == 2
 
-    tab.activity_timer.stop()
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
+
+def test_obd_diagnostic_tables_expand_and_action_controls_stay_above_them():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication, QHBoxLayout, QSizePolicy
+
+    from freerov3r.obd_tab import OBDTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = OBDTab(settings={})
+
+    tables = (
+        tab.dtc_table,
+        tab.freeze_frame_table,
+        tab.vehicle_info_table,
+        tab.monitor_tests_table,
+        tab.readiness_table,
+    )
+    for table in tables:
+        assert table.maximumHeight() > 1000
+        assert table.sizePolicy().verticalPolicy() == QSizePolicy.Expanding
+        assert table.wordWrap() is False
+        assert table.verticalHeader().defaultSectionSize() == 30
+        assert table.verticalHeader().isHidden()
+
+    # Raw payload columns stay bounded instead of consuming the whole page width.
+    assert tab.dtc_table.columnWidth(4) == 180
+    assert tab.freeze_frame_table.columnWidth(5) == 180
+    assert tab.vehicle_info_table.columnWidth(5) == 180
+    assert tab.monitor_tests_table.columnWidth(8) == 95
+
+    for index in range(tab.diagnostic_views.count()):
+        page = tab.diagnostic_views.widget(index)
+        page_layout = page.layout()
+        action_index = 1 if index == 1 else 0
+        action_layout = page_layout.itemAt(action_index).layout()
+        assert isinstance(action_layout, QHBoxLayout)
+
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
 
 def test_freeze_frame_uses_graph_selected_pids_and_explains_source():
     global _QT_TEST_APP
@@ -116,9 +160,11 @@ def test_freeze_frame_uses_graph_selected_pids_and_explains_source():
 
     assert tab.selected_pids() == [0x0C, 0x0D]
     assert "selected in the Graph workspace" in tab.freeze_frame_source_note.text()
+    assert [tab.diagnostic_views.tabText(i) for i in range(tab.diagnostic_views.count())] == [
+        "DTCs", "Freeze Frame", "ECU ID", "Monitor Tests", "Readiness"
+    ]
     assert "Graph workspace" in tab.freeze_frame_status_label.text()
 
-    tab.activity_timer.stop()
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()

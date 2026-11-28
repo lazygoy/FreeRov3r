@@ -137,7 +137,10 @@ def test_obd_selection_sync_targets_first_graph(qapp):
 
     from freerov3r.sensor_dashboard import SensorDashboardDock
 
-    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
+    dashboard = SensorDashboardDock(
+        SimpleNamespace(samples=[]),
+        settings={"sensor_dashboard_layout": {"panel_count": 4, "panels": []}},
+    )
     dashboard.set_selected_sensor_ids({"obd_0C", "obd_05"})
 
     assert dashboard.panels[0].selected_sensor_ids() == {"obd_0C", "obd_05"}
@@ -186,4 +189,38 @@ def test_waterfall_switch_stays_inside_dashboard(qapp):
     assert dashboard.waterfall_button.text() == "Back to Graphs"
     assert dashboard._waterfall_widget is waterfall
     assert waterfall.parentWidget() is dashboard.view_stack
+    dashboard.close()
+
+
+def test_first_run_defaults_to_four_engine_obd_signals(qapp):
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import Qt
+    from freerov3r.sensor_dashboard import DEFAULT_GRAPH_SENSOR_IDS, SensorDashboardDock
+
+    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
+
+    assert dashboard.panel_count.currentData() == 4
+    assert [panel.selected_sensor_ids() for panel in dashboard.panels] == [
+        {sensor_id} for sensor_id in DEFAULT_GRAPH_SENSOR_IDS
+    ]
+    waterfall_selected = {
+        dashboard._waterfall_widget.sensor_list.item(i).data(Qt.UserRole)
+        for i in range(dashboard._waterfall_widget.sensor_list.count())
+        if dashboard._waterfall_widget.sensor_list.item(i).checkState() == Qt.Checked
+    }
+    assert waterfall_selected == set(DEFAULT_GRAPH_SENSOR_IDS)
+    dashboard.close()
+
+
+def test_first_run_defaults_do_not_override_saved_empty_layout(qapp):
+    from types import SimpleNamespace
+
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    settings = {"sensor_dashboard_layout": {"panel_count": 2, "panels": []}}
+    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]), settings=settings)
+
+    assert dashboard.panel_count.currentData() == 2
+    assert all(not panel.selected_sensor_ids() for panel in dashboard.panels)
     dashboard.close()
