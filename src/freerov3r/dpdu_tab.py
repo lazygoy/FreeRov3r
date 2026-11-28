@@ -136,12 +136,19 @@ class DPduTab(QWidget):
         config_layout.addRow("Response pattern (hex):", self.pattern_edit)
         config_layout.addRow("Acceptance ID:", self.acceptance_id_edit)
         root.addWidget(config_box)
+        config_note = QLabel(
+            "Resource ID, protocol-specific response mask/pattern and acceptance ID are "
+            "operator-supplied in this first UI. Verify them against the selected VCI's "
+            "MDF/CDF and protocol documentation. FreeRov3r does not guess pin mappings, "
+            "ComParams or a vehicle protocol."
+        )
+        config_note.setWordWrap(True)
+        root.addWidget(config_note)
 
         self.confirm_checkbox = QCheckBox(
             "I have verified the selected VCI, protocol, resource ID, pins and filters, "
             "and authorize physical connection to the vehicle."
         )
-        self.confirm_checkbox.setWordWrap(True)
         root.addWidget(self.confirm_checkbox)
 
         action_row = QHBoxLayout()
