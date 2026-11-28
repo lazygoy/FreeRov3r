@@ -193,12 +193,15 @@ class DPduTab(QWidget):
         self.cable_combo.setMinimumWidth(320)
         self.resource_combo = QComboBox()
         self.resource_combo.setMinimumWidth(320)
+        self.live_resource_combo = QComboBox()
+        self.live_resource_combo.setMinimumWidth(320)
         self.resource_details = QLabel("Select a module and cable to inspect supported resources.")
         self.resource_details.setWordWrap(True)
         self.pin_mapping_details = QLabel("No cable pin mapping selected.")
         self.pin_mapping_details.setWordWrap(True)
         resource_layout.addRow("Cable definition:", self.cable_combo)
-        resource_layout.addRow("MDF resource:", self.resource_combo)
+        resource_layout.addRow("MDF resource definition:", self.resource_combo)
+        resource_layout.addRow("VCI resource ID:", self.live_resource_combo)
         resource_layout.addRow("Resource details:", self.resource_details)
         resource_layout.addRow("Mapped DLC pins:", self.pin_mapping_details)
         root.addWidget(resource_box)
@@ -260,6 +263,7 @@ class DPduTab(QWidget):
         self.module_combo.currentIndexChanged.connect(self._module_changed)
         self.cable_combo.currentIndexChanged.connect(self._resource_selection_changed)
         self.resource_combo.currentIndexChanged.connect(self._resource_selection_changed)
+        self.live_resource_combo.currentIndexChanged.connect(self._live_resource_changed)
         self.query_resources_button.clicked.connect(self.query_compatible_resources)
         self.start_button.clicked.connect(self.start_reception)
         self.stop_button.clicked.connect(self.stop_reception)
@@ -295,6 +299,8 @@ class DPduTab(QWidget):
         self.module_combo.clear()
         self.cable_combo.clear()
         self.resource_combo.clear()
+        self.live_resource_combo.clear()
+        self._live_resource_ids = set()
         self.query_resources_button.setEnabled(False)
         self.start_button.setEnabled(False)
         if not isinstance(registration, DPduModuleRegistration):
@@ -406,7 +412,7 @@ class DPduTab(QWidget):
     def _selected_resource_and_cable(self):
         if self._mdf is None or self._cdf is None:
             raise ValueError("Valid MDF and CDF descriptions are required")
-        resource_id = self.resource_combo.currentData()
+        resource_id = self.live_resource_combo.currentData()
         cable_id = self.cable_combo.currentData()
         resource = next(
             (item for item in self._mdf.resources if item.object_id == resource_id),
@@ -423,6 +429,8 @@ class DPduTab(QWidget):
     def _resource_selection_changed(self, *_):
         self.query_resources_button.setEnabled(False)
         self.start_button.setEnabled(False)
+        self.live_resource_combo.clear()
+        self._live_resource_ids = set()
         try:
             resource, cable = self._selected_resource_and_cable()
             mapped = map_resource_to_dlc_pins(resource, cable)
@@ -486,12 +494,19 @@ class DPduTab(QWidget):
     def _resource_query_completed(self, resource_ids):
         self.resource_combo.setEnabled(True)
         self.cable_combo.setEnabled(True)
+        self.live_resource_combo.clear()
+        for resource_id in resource_ids:
+            self.live_resource_combo.addItem(str(resource_id), int(resource_id))
         self.live_resource_label.setText(
             f"VCI returned {len(resource_ids)} matching live resource ID(s): "
             + (", ".join(str(value) for value in resource_ids) if resource_ids else "none")
         )
         self._live_resource_ids = set(resource_ids)
         self.start_button.setEnabled(bool(resource_ids))
+
+    def _live_resource_changed(self, *_):
+        selected = self.live_resource_combo.currentData()
+        self.start_button.setEnabled(selected in getattr(self, "_live_resource_ids", set()))
 
     def _resource_query_failed(self, message):
         self.live_resource_label.setText(f"Live resource query failed: {message}")
@@ -568,7 +583,9 @@ class DPduTab(QWidget):
         self.status_label.setText(f"D-PDU worker failed: {message}")
 
     def _worker_finished(self):
-        self.start_button.setEnabled(bool(getattr(self, "_live_resource_ids", set())))
+        self.start_button.setEnabled(
+            self.live_resource_combo.currentData() in getattr(self, "_live_resource_ids", set())
+        )
         self.query_resources_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.confirm_checkbox.setChecked(False)
