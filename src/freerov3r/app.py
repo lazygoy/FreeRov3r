@@ -216,7 +216,6 @@ class MainWindow(QMainWindow):
         tasks = [
             ("Pull diagnostic codes (DTCs)", self.show_dtc_mode),
             ("Read OBD-II data", self.show_obd_mode),
-            ("Collect sensor data", self.show_sensor_mode),
             ("Graph sensor data", self.show_graph_mode),
             ("Read vehicle information", self.show_vehicle_info_mode),
             ("Vehicle modules (CAN)", self.show_modules_mode),
@@ -579,7 +578,8 @@ class MainWindow(QMainWindow):
             "sensor_log",
         ):
             setattr(self, name, getattr(self.sensors_tab, name))
-        self.tabs.addTab(self.sensors_tab, "Sensors")
+        # Vehicle identity state remains available to the setup flow, but the
+        # standalone sensor-monitor workspace is intentionally not exposed.
 
     def _build_settings_tab(self):
         self.settings_tab = SettingsTab(
@@ -649,11 +649,6 @@ class MainWindow(QMainWindow):
 
     def show_obd_mode(self):
         self.tabs.setCurrentWidget(self.obd_tab)
-        self.stack.setCurrentIndex(1)
-
-    def show_sensor_mode(self):
-        self.mode_label.setText("<b>Collect sensor data</b><br>Record sensor values and associate them with a vehicle VIN.")
-        self.tabs.setCurrentIndex(1)
         self.stack.setCurrentIndex(1)
 
     def show_graph_mode(self):
