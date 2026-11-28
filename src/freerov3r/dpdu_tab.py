@@ -222,7 +222,7 @@ class DPduTab(QWidget):
         self._inventory_worker = _InventoryWorker(registration, self)
         self._inventory_worker.completed.connect(self._inventory_completed)
         self._inventory_worker.failed.connect(self._inventory_failed)
-        self._inventory_worker.finished.connect(lambda: self.inspect_button.setEnabled(True))
+        self._inventory_worker.finished.connect(self._inventory_finished)
         self._inventory_worker.start()
 
     def _inventory_completed(self, registration, modules):
@@ -241,6 +241,9 @@ class DPduTab(QWidget):
             f"Enumerated {len(self._modules)} live module(s). API has been closed; "
             "no module was initialized and no vehicle resource was connected."
         )
+
+    def _inventory_finished(self):
+        self.inspect_button.setEnabled(True)
 
     def _inventory_failed(self, message):
         self.status_label.setText(f"D-PDU inventory failed: {message}")
@@ -314,6 +317,7 @@ class DPduTab(QWidget):
     def _worker_finished(self):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
+        self.confirm_checkbox.setChecked(False)
         self.confirm_checkbox.setEnabled(True)
         if self._worker is not None:
             self._worker.deleteLater()
