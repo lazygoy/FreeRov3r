@@ -463,6 +463,8 @@ class MainWindow(QMainWindow):
         except ValueError:
             return
         self.workspace_mode = mode
+        if hasattr(self, "header_traffic"):
+            self.header_traffic.setVisible(mode is WorkspaceMode.RESEARCH)
         if hasattr(self, "quick_drawer"):
             self.quick_drawer.set_workspace_mode(mode.value)
         if hasattr(self, "navigation_workspace"):
@@ -591,11 +593,20 @@ class MainWindow(QMainWindow):
         self.header_connection.style().unpolish(self.header_connection)
         self.header_connection.style().polish(self.header_connection)
         rate = self.can_monitor.rate()
-        self.header_traffic.setText(f"{self.frame_counter:,} frames  |  {rate:.1f} fps")
+        development_mode = self.workspace_mode is WorkspaceMode.RESEARCH
+        self.header_traffic.setVisible(development_mode)
+        traffic_text = (
+            f"{self.frame_counter:,} frames · {rate:.1f} fps"
+            if development_mode else "DIAGNOSTIC WORKSPACE"
+        )
+        if development_mode:
+            self.header_traffic.setText(
+                f"{self.frame_counter:,} frames  |  {rate:.1f} fps"
+            )
         if hasattr(self, "quick_drawer"):
             self.quick_drawer.update_context(
                 vehicle_text, self.header_connection.text().replace("● ", ""),
-                f"{self.frame_counter:,} frames · {rate:.1f} fps",
+                traffic_text,
             )
 
     def record_vehicle_event(self, event_type, summary, details=None, vin=None):
