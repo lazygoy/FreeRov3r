@@ -185,51 +185,145 @@ class MainWindow(QMainWindow):
         self.mode_label.setObjectName("modeBanner")
         self.mode_label.setFont(QFont(self.body_font_family, 11, QFont.DemiBold))
 
-        # Welcome
+        # Workspace chooser: always shown at launch.
         welcome = QWidget()
+        welcome.setObjectName("workspaceChooser")
         wlayout = QVBoxLayout(welcome)
         wlayout.setAlignment(Qt.AlignCenter)
         wlayout.setSpacing(18)
-        wlayout.setContentsMargins(48, 40, 48, 40)
+        wlayout.setContentsMargins(54, 36, 54, 42)
 
-        # Reuse the exact photographic banner shown by the startup splash.
         self.welcome_banner = ResponsiveBanner()
-        self.welcome_banner.set_source_pixmap(
-            load_asset_pixmap("brand_banner.svg")
-        )
+        self.welcome_banner.set_source_pixmap(load_asset_pixmap("brand_banner.svg"))
+        self.welcome_banner.setMaximumHeight(190)
         wlayout.addWidget(self.welcome_banner)
 
-        title = QLabel("What would you like to do?")
-        title_font = QFont(self.heading_font_family, 25, QFont.Bold)
-        title_font.setItalic(True)
+        eyebrow = QLabel("FREEROV3R  /  VEHICLE SYSTEMS")
+        eyebrow.setObjectName("chooserEyebrow")
+        eyebrow.setAlignment(Qt.AlignCenter)
+        wlayout.addWidget(eyebrow)
+
+        title = QLabel("What are you here to do?")
+        title.setObjectName("chooserTitle")
+        title_font = QFont(self.heading_font_family, 27, QFont.Bold)
+        title_font.setItalic(False)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignCenter)
         wlayout.addWidget(title)
 
-        subtitle = QLabel("Land Rover L319 workspaces are available by default. A VIN decode identifying another vehicle switches to generic OBD-II/CAN support.")
+        subtitle = QLabel(
+            "Choose a workspace. You can switch at any time without losing your session."
+        )
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setObjectName("welcomeSubtitle")
         wlayout.addWidget(subtitle)
 
-        task_grid = QGridLayout()
-        task_grid.setSpacing(12)
-        tasks = [
-            ("Pull diagnostic codes (DTCs)", self.show_dtc_mode),
-            ("Read OBD-II data", self.show_obd_mode),
-            ("Collect sensor data", self.show_sensor_mode),
-            ("Graph sensor data", self.show_graph_mode),
-            ("Read vehicle information", self.show_vehicle_info_mode),
-            ("Vehicle modules (CAN)", self.show_modules_mode),
-            ("Run Module Health Report", self.open_health_report),
-            ("Vehicle setup wizard", self.run_setup_wizard),
-        ]
-        for index, (text, slot) in enumerate(tasks):
-            btn = QPushButton(text)
-            btn.setMinimumHeight(66)
-            btn.setObjectName("taskButton")
-            btn.clicked.connect(slot)
-            task_grid.addWidget(btn, index // 2, index % 2)
-        wlayout.addLayout(task_grid)
+        choice_row = QGridLayout()
+        choice_row.setSpacing(16)
+
+        diagnostic_card = QWidget()
+        diagnostic_card.setObjectName("chooserCard")
+        diagnostic_layout = QVBoxLayout(diagnostic_card)
+        diagnostic_layout.setContentsMargins(22, 22, 22, 22)
+        diagnostic_layout.setSpacing(10)
+        diagnostic_icon = QLabel("⌁")
+        diagnostic_icon.setObjectName("chooserIcon")
+        diagnostic_layout.addWidget(diagnostic_icon)
+        diagnostic_title = QLabel("VEHICLE DIAGNOSTICS")
+        diagnostic_title.setObjectName("chooserCardTitle")
+        diagnostic_layout.addWidget(diagnostic_title)
+        diagnostic_description = QLabel(
+            "Identify a vehicle, scan control modules, inspect trouble codes, "
+            "monitor live data, graph sensors and run supported service checks."
+        )
+        diagnostic_description.setObjectName("chooserCardDescription")
+        diagnostic_description.setWordWrap(True)
+        diagnostic_layout.addWidget(diagnostic_description, 1)
+        self.diagnostics_entry_button = QPushButton("OPEN DIAGNOSTICS  →")
+        self.diagnostics_entry_button.setObjectName("chooserPrimaryButton")
+        self.diagnostics_entry_button.setMinimumHeight(48)
+        self.diagnostics_entry_button.clicked.connect(self.show_diagnostics_mode)
+        diagnostic_layout.addWidget(self.diagnostics_entry_button)
+
+        development_card = QWidget()
+        development_card.setObjectName("chooserCard")
+        development_layout = QVBoxLayout(development_card)
+        development_layout.setContentsMargins(22, 22, 22, 22)
+        development_layout.setSpacing(10)
+        development_icon = QLabel("⌘")
+        development_icon.setObjectName("chooserIcon")
+        development_layout.addWidget(development_icon)
+        development_title = QLabel("DEVELOPMENT & RESEARCH")
+        development_title.setObjectName("chooserCardTitle")
+        development_layout.addWidget(development_title)
+        development_description = QLabel(
+            "Capture raw CAN traffic, inspect protocols, compare sessions, "
+            "develop signal definitions and extend vehicle support."
+        )
+        development_description.setObjectName("chooserCardDescription")
+        development_description.setWordWrap(True)
+        development_layout.addWidget(development_description, 1)
+        self.development_entry_button = QPushButton("OPEN DEVELOPMENT LAB  →")
+        self.development_entry_button.setObjectName("chooserSecondaryButton")
+        self.development_entry_button.setMinimumHeight(48)
+        self.development_entry_button.clicked.connect(self.show_development_mode)
+        development_layout.addWidget(self.development_entry_button)
+
+        choice_row.addWidget(diagnostic_card, 0, 0)
+        choice_row.addWidget(development_card, 0, 1)
+        wlayout.addLayout(choice_row)
+
+        note = QLabel(
+            "DIAGNOSTICS keeps engineering tools out of the operator workflow. "
+            "DEVELOPMENT exposes the low-level workbench."
+        )
+        note.setObjectName("chooserFootnote")
+        note.setAlignment(Qt.AlignCenter)
+        note.setWordWrap(True)
+        wlayout.addWidget(note)
+
+        welcome.setStyleSheet("""
+            QWidget#workspaceChooser { background: #0b1014; }
+            QLabel#chooserEyebrow {
+                color: #78a58b; font-size: 8pt; font-weight: 800;
+                letter-spacing: 2px; padding-top: 6px;
+            }
+            QLabel#chooserTitle {
+                color: #f0f5f1; letter-spacing: 0.4px;
+            }
+            QLabel#welcomeSubtitle { color: #91a69b; font-size: 10pt; }
+            QWidget#chooserCard {
+                background: #121d22; border: 1px solid #2a3b3d;
+                border-radius: 14px; min-width: 310px; min-height: 250px;
+            }
+            QLabel#chooserIcon {
+                color: #8dc39e; font-size: 34pt; font-weight: 400;
+            }
+            QLabel#chooserCardTitle {
+                color: #e8f1eb; font-size: 12pt; font-weight: 800;
+                letter-spacing: 1px;
+            }
+            QLabel#chooserCardDescription {
+                color: #9aada4; font-size: 9pt; line-height: 1.4;
+            }
+            QPushButton#chooserPrimaryButton {
+                color: #f0fff4; background: #24563c;
+                border: 1px solid #4d8a64; border-radius: 8px;
+                font-weight: 800; padding: 10px 14px;
+            }
+            QPushButton#chooserPrimaryButton:hover { background: #2d6b49; }
+            QPushButton#chooserSecondaryButton {
+                color: #dcebe2; background: #1b292d;
+                border: 1px solid #49605b; border-radius: 8px;
+                font-weight: 800; padding: 10px 14px;
+            }
+            QPushButton#chooserSecondaryButton:hover {
+                background: #263d3b; border-color: #628575;
+            }
+            QLabel#chooserFootnote {
+                color: #667a70; font-size: 8pt; padding-top: 8px;
+            }
+        """)
 
         self.stack.addWidget(welcome)
 
@@ -343,6 +437,7 @@ class MainWindow(QMainWindow):
             toggle_quick_drawer=self.toggle_quick_drawer,
             on_tab_changed=self._sync_navigation_selection,
             on_workspace_mode_changed=self._set_workspace_mode,
+            on_home=self.show_workspace_chooser,
             parent=self,
         )
         self.workspace_scroll = self.navigation_workspace
@@ -353,11 +448,12 @@ class MainWindow(QMainWindow):
             "header_connection",
             "header_traffic",
             "drawer_button",
+            "home_button",
         ):
             setattr(self, name, getattr(self.navigation_workspace, name))
         self.stack.addWidget(self.navigation_workspace)
         self._set_workspace_mode(self.workspace_mode.value)
-        self.stack.setCurrentIndex(1)
+        self.stack.setCurrentIndex(0)
         self._sync_navigation_selection(self.tabs.currentIndex())
 
     def _set_workspace_mode(self, mode_value):
@@ -369,6 +465,8 @@ class MainWindow(QMainWindow):
         self.workspace_mode = mode
         if hasattr(self, "quick_drawer"):
             self.quick_drawer.set_workspace_mode(mode.value)
+        if hasattr(self, "navigation_workspace"):
+            self.navigation_workspace.set_workspace_mode(mode.value)
         for index in range(self.tabs.count()):
             self.tabs.setTabVisible(
                 index, tab_is_visible(self.tabs.tabText(index), mode)
@@ -645,30 +743,43 @@ class MainWindow(QMainWindow):
         layout.addWidget(close_btn)
         dialog.exec()
 
-    def show_dtc_mode(self):
-        self.mode_label.setText("<b>Pull diagnostic codes</b><br>Listen for diagnostic traffic. Full DTC reading requires transmit (currently disabled).")
-        self.tabs.setCurrentIndex(0)
-        self.stack.setCurrentIndex(1)
+    def show_workspace_chooser(self):
+        """Return to the initial purpose selector without ending the session."""
+        self.stack.setCurrentIndex(0)
 
-    def show_obd_mode(self):
+    def show_diagnostics_mode(self):
+        self._set_workspace_mode(WorkspaceMode.DIAGNOSTICS.value)
         self.tabs.setCurrentWidget(self.obd_tab)
         self.stack.setCurrentIndex(1)
 
+    def show_development_mode(self):
+        self._set_workspace_mode(WorkspaceMode.RESEARCH.value)
+        self.tabs.setCurrentWidget(self.research_tab)
+        self.stack.setCurrentIndex(1)
+
+    def show_dtc_mode(self):
+        self._set_workspace_mode(WorkspaceMode.DIAGNOSTICS.value)
+        self.tabs.setCurrentWidget(self.obd_tab)
+        self.stack.setCurrentIndex(1)
+
+    def show_obd_mode(self):
+        self.show_dtc_mode()
+
     def show_sensor_mode(self):
-        self.mode_label.setText("<b>Collect sensor data</b><br>Record sensor values and associate them with a vehicle VIN.")
-        self.tabs.setCurrentIndex(1)
+        self._set_workspace_mode(WorkspaceMode.DIAGNOSTICS.value)
+        self.tabs.setCurrentWidget(self.sensors_tab)
         self.stack.setCurrentIndex(1)
 
     def show_graph_mode(self):
+        self._set_workspace_mode(WorkspaceMode.DIAGNOSTICS.value)
         self.tabs.setCurrentWidget(self.graph_tab)
         self.stack.setCurrentIndex(1)
 
     def show_vehicle_info_mode(self):
-        self.mode_label.setText("<b>Read vehicle information</b><br>Add or select a vehicle by VIN.")
-        self.tabs.setCurrentIndex(1)
-        self.stack.setCurrentIndex(1)
+        self.show_sensor_mode()
 
     def show_modules_mode(self):
+        self._set_workspace_mode(WorkspaceMode.DIAGNOSTICS.value)
         self.tabs.setCurrentWidget(self.modules_tab)
         self.stack.setCurrentIndex(1)
 
