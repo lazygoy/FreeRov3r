@@ -11,12 +11,24 @@ class Esp32DualFramedWifiAdapter(Esp32DualFramedSerialAdapter):
                  connect_timeout=3.0, queue_capacity=10000):
         if isinstance(endpoints, str):
             endpoints = [part.strip() for part in endpoints.split(",") if part.strip()]
-        if len(endpoints or []) != 2 or str(endpoints[0]).casefold() == str(endpoints[1]).casefold():
+        if len(endpoints or []) != 2:
             raise ValueError(
                 "Dual framed ESP32 Wi-Fi capture requires two different host:port endpoints"
             )
         if len(channel_names) != 2:
             raise ValueError("Exactly two channel names are required")
+        parsed = [
+            Esp32ConnectionManager.parse_wifi_endpoint(endpoint)
+            for endpoint in endpoints
+        ]
+        if (
+            parsed[0][0].casefold(), parsed[0][1]
+        ) == (
+            parsed[1][0].casefold(), parsed[1][1]
+        ):
+            raise ValueError(
+                "Dual framed ESP32 Wi-Fi capture requires two different host:port endpoints"
+            )
         self.endpoints = [str(endpoint).strip() for endpoint in endpoints]
         adapters = [
             Esp32ConnectionManager.create_adapter(
