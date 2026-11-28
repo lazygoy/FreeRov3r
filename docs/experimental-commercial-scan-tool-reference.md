@@ -42,28 +42,53 @@ Sources:
 - https://www.snapon.com/DiagnosticsManuals/ZEUS%20NA/Content/ZEUS/Scanner_1.htm
 - https://www.snapon.com/DiagnosticsManuals/ZEUSPLUS%20NA/Content/ZEUS/Basic%20Features%20Controls%20%20Navigation.htm
 
-### Snap-on TITAN naming check
+### Snap-on TRITON (confirmed model)
 
-No Snap-on diagnostic platform named TITAN appears in the current Snap-on US
-catalog or its current product-help listing. Snap-on lists ZEUS+, TRITON,
-TRITON-D10, APOLLO, SOLUS+, and other platforms. The likely similarly named
-Snap-on product is TRITON, but this document does not silently treat them as the
-same product.
+The intended reference is the third-generation TRITON (EEMS349), introduced
+May 15, 2025 and still listed in Snap-on's current US diagnostic lineup in
+November 2026. Snap-on's September 2, 2026 release reports that TRITON received
+a 2026 MOTOR Top 20 Award.
 
-There are unrelated products called TITAN:
-- Titan Tools 51002/51003 wireless OBD-II readers, with basic code, readiness,
-  freeze-frame, live-data and vehicle-information functions.
-- Autocom TITAN, a separate commercial-vehicle diagnostic interface.
+Current published hardware / scanner specifications:
+- 10-inch, 1024x600 capacitive daylight-readable touchscreen.
+- Wireless scan module and Wi-Fi capability.
+- 2-channel lab scope, 3 MHz bandwidth, up to 6 MS/s.
+- All 10 global OBD-II modes.
+- 100+ listed OEM-specific vehicle systems across 12 European, 16 Asian and
+  22 domestic makes.
+- Live-data display modes: PID list, one graph, two graphs or four graphs.
+- Ability to record all available live-data parameters in the background, graph
+  up to four at once, display up to eight parameters in text mode or seven
+  digital values, then pause and review playback.
+- Custom PID lists, PID triggers and alarms, PID sorting, PID locking, graph
+  zoom, step/skip review controls, and unit selection.
+- Vehicle identification, code scan, system selection, functional tests,
+  service resets and vehicle-specific subsystem testing.
 
-If a different TITAN model was intended, its exact manufacturer/model should be
-confirmed before using it as a UI reference.
+Useful UI patterns for FreeRov3r:
+- A code scan that presents system results and lets the operator enter a module.
+- PID list as the default live-data view, with explicit 1/2/4 graph layouts.
+- Custom data-list selection, parameter pinning, sorting and unit controls.
+- Record / pause / playback controls that do not conflate display refresh with
+  the underlying capture.
+- A functional-test area organized under the selected ECU, with each action
+  gated by verified vehicle support and an explicit safety confirmation.
+
+Excluded Snap-on-specific services:
+Fast-Track Intelligent Diagnostics, SureTrack, Smart Data, repair information
+subscriptions, online guided component tests and waveform libraries, cloud
+upload/printing, training, automatic software update prompts, and proprietary
+repair databases. We can build local evidence links and operator-defined test
+plans, but must not copy proprietary text, graphics, databases, or claim those
+services.
 
 Sources:
+- https://www.snapon.com/EN/US/Diagnostics/Products/TRITON
 - https://www.snapon.com/EN/US/Diagnostics/Diagnostics-Tools/Current-Products
-- https://www.snapon.com/EN/US/Diagnostics/Resource-Center
-- https://www.eautotools.com/TITAN-TIT51003-p/tit51003.htm
-- https://device.report/m/0d512d1661bd2d929e4eeacfeb005b4d3607c172546fcb2f67082cfb7b26feb7.pdf
-- https://diagtools.eu/img/cms/Manuals-brochures/TITAN_Product_broschure_A5_ENG.pdf
+- https://www.snapon.com/DiagnosticsManuals/TRITON%20NA/
+- https://www.snapon.com/DiagnosticsManuals/TRITON%20NA/Content/M3000/TRITON.htm
+- https://www.snapon.com/EN/US/Diagnostics/News-Center/Press-Release-Archive/2025-05-15-News-Release-Snap-ons-Third-Generation-TRITON-Scan-Tool-Takes-Technicians-from-Start-to-Fixed
+- https://www.snapon.com/EN/US/Diagnostics/News-Center/Press-Release-Archive/Snap-on-TRITON-Scan-Tool-Wins-MOTOR-Top-20
 
 ### THINKCAR THINKTOOL 399 / Platinum 399
 
