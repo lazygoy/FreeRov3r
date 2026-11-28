@@ -888,7 +888,9 @@ class _ClockCalibrationWorker(QThread):
 class ResearchTab(QWidget):
     """Local-only protocol capture, annotation, comparison and REA handoff."""
 
-    MAX_DISPLAY_ROWS = 500
+    MAX_DISPLAY_ROWS = 150
+    MAX_LIVE_PREVIEW_FRAMES = 2000
+    SUMMARY_FRAME_WINDOW = 2000
     MAX_CAPTURE_FRAMES = 100000
     MAX_PENDING_RECORDS = 100000
 
@@ -906,12 +908,16 @@ class ResearchTab(QWidget):
         self.recording = False
         self._stream_writer = None
         self._stream_archive_path = None
-        self.live_enabled = True
+        # Live preview is opt-in while the Research workspace is visible.
+        # Explicit recording remains active even when the operator changes tabs.
+        self.live_enabled = False
         self._pending_records = []
         self._pending_preview = []
         self.total_recorded_frames = 0
         self.dropped_recorded_frames = 0
         self.dropped_pending_frames = 0
+        self._display_refresh_pending = False
+        self._last_display_refresh = 0.0
         self.dbc_library = DBCLibrary()
 
         self.refresh_timer = QTimer(self)
@@ -1385,6 +1391,12 @@ class ResearchTab(QWidget):
 
     def _set_live_enabled(self, enabled):
         self.live_enabled = bool(enabled)
+        if self.live_enabled:
+            self._flush_pending_frames()
+            if self.isVisible():
+                self._display_refresh_pending = False
+                self._last_display_refresh = time.monotonic()
+                self.refresh_table()
 
     def toggle_recording(self):
         if not self.recording:
@@ -1472,6 +1484,10 @@ class ResearchTab(QWidget):
         self._update_summary()
 
     def observe_frame(self, frame):
+        # Avoid per-frame allocation and metadata conversion when research preview
+        # is hidden and no explicit research recording is running.
+        if not self.recording and not self.live_enabled:
+            return
         record = _frame_record(frame)
         if self.recording:
             if self._recording_started_monotonic is not None:
@@ -1510,12 +1526,18 @@ class ResearchTab(QWidget):
         if self._pending_preview:
             self.live_preview.extend(self._pending_preview)
             self._pending_preview.clear()
-            if len(self.live_preview) > 5000:
-                self.live_preview = self.live_preview[-5000:]
+            if len(self.live_preview) > self.MAX_LIVE_PREVIEW_FRAMES:
+                self.live_preview = self.live_preview[-self.MAX_LIVE_PREVIEW_FRAMES:]
             changed = True
-        # Keep collecting preview frames while hidden, but do not rebuild a large
-        # table the operator cannot see. The next visible refresh catches it up.
-        if changed and self.isVisible():
+        if changed:
+            self._display_refresh_pending = True
+        # Table decoding, DBC lookups and summary generation are deliberately
+        # throttled. The capture buffers are flushed every second independently.
+        now = time.monotonic()
+        if (self._display_refresh_pending and self.isVisible()
+                and now - self._last_display_refresh >= 2.5):
+            self._display_refresh_pending = False
+            self._last_display_refresh = now
             self.refresh_table()
 
     def _visible_records(self):
@@ -2402,7 +2424,9 @@ class ResearchTab(QWidget):
     def _update_summary(self):
         if not hasattr(self, "summary"):
             return
-        dataset = self._visible_records()
+        # The live summary is an at-a-glance window, not a full-capture report.
+        # Full-capture analysis remains available through the explicit analysis tools.
+        dataset = self._visible_records()[-self.SUMMARY_FRAME_WINDOW:]
         counts = Counter((r["arbitration_id"], r["extended"]) for r in dataset)
         services = Counter()
         for record in dataset:
@@ -2411,6 +2435,7 @@ class ResearchTab(QWidget):
                     or hint.startswith("Positive response") or hint.startswith("Possible")):
                 services[hint] += 1
         lines = [
+            f"Summary window: most recent {len(dataset):,} frames",
             f"Recorded frames retained: {len(self.frames):,}",
             f"Recorded frames observed: {self.total_recorded_frames:,}",
             f"Recorded frames dropped: {self.dropped_recorded_frames:,} "
@@ -2428,7 +2453,7 @@ class ResearchTab(QWidget):
         lines += ["", "Recognized protocol hints (heuristic only):"]
         lines.extend(f"  {name}: {count:,}" for name, count in services.most_common(12))
         if self.dbc_library.database is not None:
-            coverage = self.dbc_library.decode_coverage(dataset[-20000:])
+            coverage = self.dbc_library.decode_coverage(dataset[-self.SUMMARY_FRAME_WINDOW:])
             lines += [
                 "",
                 f"Loaded DBC: {self.dbc_library.path.name}",
@@ -2453,7 +2478,7 @@ class ResearchTab(QWidget):
             )
             if self.dbc_library.database is not None:
                 dbc_comparison = self.dbc_library.compare_captures(
-                    dataset[-20000:], self.reference_frames[-20000:]
+                    dataset[-self.SUMMARY_FRAME_WINDOW:], self.reference_frames[-self.SUMMARY_FRAME_WINDOW:]
                 )
                 lines += [
                     "",
