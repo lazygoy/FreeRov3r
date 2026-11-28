@@ -42,5 +42,5 @@ def test_visible_tab_filter_preserves_order_and_workspace_boundaries():
         "Sensors", "Graph", "OBD-II", "Settings"
     )
     assert visible_tab_names(names, WorkspaceMode.RESEARCH) == (
-        "Capture", "Modules", "Sensors", "Graph", "Research", "Wiring Diagrams", "Settings"
+        "Capture", "Sensors", "Graph", "Research", "Modules", "Wiring Diagrams", "Settings"
     )
