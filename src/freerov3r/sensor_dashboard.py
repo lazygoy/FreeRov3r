@@ -539,6 +539,19 @@ class SensorDashboardDock(QWidget):
             self.panels[0].refresh_sensor_choices(self.initial_sensor_ids)
         self.reflow()
 
+        # Keep both workspaces alive in the stack. Creating the OpenGL-backed
+        # page during a user click caused a disruptive native-window transition
+        # on some Windows graphics drivers.
+        self._waterfall_widget = SensorWaterfallDialog(
+            self.sensor_capture, vin_provider=self.vin_provider,
+            parent=self.view_stack, defer_initial_refresh=True
+        )
+        self._waterfall_widget.sensor_list.hide()
+        self._waterfall_widget.selection_status.hide()
+        self._waterfall_widget.source_label.hide()
+        self._waterfall_widget.source_combo.hide()
+        self.view_stack.addWidget(self._waterfall_widget)
+
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self.refresh)
@@ -555,27 +568,17 @@ class SensorDashboardDock(QWidget):
         self._correlation_dialog.activateWindow()
 
     def open_waterfall(self):
-        """Switch the Graph tab's central workspace without creating a window."""
-        showing_waterfall = (
-            self._waterfall_widget is not None
-            and self.view_stack.currentWidget() is self._waterfall_widget
-        )
-        if showing_waterfall:
+        """Switch between the two persistent pages in the embedded workspace."""
+        if self.view_stack.currentWidget() is self._waterfall_widget:
             self.view_stack.setCurrentWidget(self.grid_host)
             self.waterfall_button.setText("2D / 3D View")
             return
-        if self._waterfall_widget is None:
-            self._waterfall_widget = SensorWaterfallDialog(
-                self.sensor_capture, vin_provider=self.vin_provider,
-                parent=self.view_stack, defer_initial_refresh=True
-            )
-            self._waterfall_widget.sensor_list.hide()
-            self._waterfall_widget.selection_status.hide()
-            self._waterfall_widget.source_label.hide()
-            self._waterfall_widget.source_combo.hide()
-            self.view_stack.addWidget(self._waterfall_widget)
-        self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
+        # Show the already-owned page first. Its OpenGL surface is initialized
+        # as a child of the existing dashboard, never as a new top-level window.
         self.view_stack.setCurrentWidget(self._waterfall_widget)
+        self._waterfall_widget.set_selected_sensor_ids(
+            self._selected_dashboard_sensor_ids()
+        )
         self.waterfall_button.setText("Back to Graphs")
 
     def _selected_dashboard_sensor_ids(self):
