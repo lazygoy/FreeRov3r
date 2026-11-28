@@ -334,7 +334,7 @@ class NavigationWorkspace(QScrollArea):
             button.setVisible(visible)
         for section, indices in self._nav_sections:
             section.setVisible(any(
-                self._nav_buttons[index].isVisible()
+                not self._nav_buttons[index].isHidden()
                 for index in indices if index in self._nav_buttons
             ))
 
