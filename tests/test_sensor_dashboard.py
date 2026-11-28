@@ -200,7 +200,12 @@ def test_first_run_defaults_to_four_engine_obd_signals(qapp):
     assert [panel.selected_sensor_ids() for panel in dashboard.panels] == [
         {sensor_id} for sensor_id in DEFAULT_GRAPH_SENSOR_IDS
     ]
-    assert dashboard._waterfall_widget.selected_sensor_ids() == set(DEFAULT_GRAPH_SENSOR_IDS)
+    waterfall_selected = {
+        dashboard._waterfall_widget.sensor_list.item(i).data(256)
+        for i in range(dashboard._waterfall_widget.sensor_list.count())
+        if dashboard._waterfall_widget.sensor_list.item(i).checkState() == 2
+    }
+    assert waterfall_selected == set(DEFAULT_GRAPH_SENSOR_IDS)
     dashboard.close()
 
 
