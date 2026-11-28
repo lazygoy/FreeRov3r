@@ -42,7 +42,9 @@ class CaptureTab(QWidget):
             "Dual ESP32 USB: enter two COM ports separated by a comma. Dual ESP32 Wi-Fi: "
             "enter two IP addresses or host:port endpoints separated by a comma (default "
             "TCP port 3333). ELM327 OBD-II: select its USB or Bluetooth virtual COM port. "
-            "Port discovery lists serial metadata only; it does not probe devices or transmit on CAN."
+            "Both Wi-Fi boards must run binary firmware with Wi-Fi enabled on a trusted local network. "
+            "The TCP stream is unencrypted; do not expose it to the public internet. Port discovery "
+            "lists serial metadata only; it does not probe devices or transmit on CAN."
         )
         controls.addWidget(self.channel_edit)
 
