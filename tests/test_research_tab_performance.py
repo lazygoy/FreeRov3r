@@ -63,6 +63,65 @@ def test_research_recording_keeps_capturing_when_preview_is_disabled():
 
 
 def test_research_live_display_and_summary_windows_are_bounded():
-    assert ResearchTab.MAX_DISPLAY_ROWS == 150
+    assert ResearchTab.MAX_DISPLAY_ROWS == 75
     assert ResearchTab.MAX_LIVE_PREVIEW_FRAMES == 2000
-    assert ResearchTab.SUMMARY_FRAME_WINDOW == 2000
+    assert ResearchTab.SUMMARY_FRAME_WINDOW == 500
+    assert ResearchTab.TIMESTAMP_HEALTH_WINDOW == 500
+
+
+
+def test_live_summary_skips_expensive_dbc_decode():
+    _app()
+    tab = ResearchTab()
+    tab.refresh_timer.stop()
+
+    class SlowDlc:
+        database = object()
+        path = type("Path", (), {"name": "test.dbc"})()
+
+        def decode_coverage(self, _records):
+            raise AssertionError("live summary must not decode DBC signals")
+
+    try:
+        tab.dbc_library = SlowDlc()
+        tab.live_preview = [
+            {
+                "timestamp": 1.0,
+                "arbitration_id": 0x123,
+                "extended": False,
+                "data": "010203",
+            }
+        ]
+        tab._update_summary()
+        assert "Live DBC decoding paused" in tab.summary.toPlainText()
+    finally:
+        _close(tab)
+
+
+def test_recording_summary_skips_expensive_dbc_decode():
+    _app()
+    tab = ResearchTab()
+    tab.refresh_timer.stop()
+
+    class SlowDlc:
+        database = object()
+        path = type("Path", (), {"name": "test.dbc"})()
+
+        def decode_coverage(self, _records):
+            raise AssertionError("recording summary must not decode DBC signals")
+
+    try:
+        tab.dbc_library = SlowDlc()
+        tab.frames = [
+            {
+                "timestamp": 1.0,
+                "arbitration_id": 0x123,
+                "extended": False,
+                "data": "010203",
+            }
+        ]
+        tab.recording = True
+        tab._update_summary()
+        assert "Live DBC decoding paused" in tab.summary.toPlainText()
+    finally:
+        _close(tab)
