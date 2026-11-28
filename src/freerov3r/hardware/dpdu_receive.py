@@ -9,6 +9,7 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass
 
+from ..models import DiagnosticEvent
 from .dpdu_runtime import (
     DPduApiError,
     DPduApiRuntime,
@@ -113,6 +114,38 @@ class DPduEvent:
     extra_info: int | None = None
     status_code: int | None = None
     info_code: int | None = None
+
+    def to_capture_event(
+        self, module_handle: int, logical_link_handle: int, *, source: str
+    ) -> DiagnosticEvent:
+        """Normalize this protocol event without converting it into a CAN frame."""
+        return DiagnosticEvent(
+            source=str(source),
+            item_type=int(self.item_type),
+            timestamp_us=int(self.timestamp_us),
+            timestamp_clock_domain="dpdu_api",
+            module_handle=int(module_handle),
+            logical_link_handle=int(logical_link_handle),
+            cop_handle=(
+                None if int(self.cop_handle) == 0xFFFFFFFF
+                else int(self.cop_handle)
+            ),
+            cop_tag=int(self.cop_tag),
+            payload=bytes(self.data),
+            start_message_timestamp_us=self.start_message_timestamp_us,
+            transmit_done_timestamp_us=self.transmit_done_timestamp_us,
+            acceptance_id=self.acceptance_id,
+            unique_response_identifier=self.unique_response_identifier,
+            status_code=self.status_code,
+            error_code=self.error_code,
+            extra_error_info_id=(
+                self.extra_info if self.item_type == PDU_IT_ERROR else None
+            ),
+            info_code=self.info_code,
+            extra_info_data=(
+                self.extra_info if self.item_type == PDU_IT_INFO else None
+            ),
+        )
 
 
 class DPduReceiveRuntime(DPduApiRuntime):
