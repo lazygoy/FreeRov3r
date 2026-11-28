@@ -73,3 +73,14 @@ def test_dual_framed_wifi_adapter_rejects_duplicate_endpoints():
         assert "two different host:port endpoints" in str(exc)
     else:
         raise AssertionError("duplicate Wi-Fi endpoints must be rejected")
+
+
+def test_dual_framed_wifi_adapter_rejects_default_port_aliases():
+    try:
+        module.Esp32DualFramedWifiAdapter(
+            ["192.168.4.10", "192.168.4.10:3333"]
+        )
+    except ValueError as exc:
+        assert "two different host:port endpoints" in str(exc)
+    else:
+        raise AssertionError("equivalent Wi-Fi endpoints must be rejected")
