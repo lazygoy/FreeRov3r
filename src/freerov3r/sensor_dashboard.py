@@ -532,14 +532,6 @@ class SensorDashboardDock(QWidget):
             for index in range(max(PANEL_COUNTS))
         ]
         self._visible_count = 4
-        self._waterfall_widget = SensorWaterfallDialog(
-            self.sensor_capture, vin_provider=self.vin_provider, parent=self.view_stack
-        )
-        self._waterfall_widget.sensor_list.hide()
-        self._waterfall_widget.selection_status.hide()
-        self._waterfall_widget.source_label.hide()
-        self._waterfall_widget.source_combo.hide()
-        self.view_stack.addWidget(self._waterfall_widget)
         outer.addWidget(self.view_stack, 1)
         self._restore_saved_layout()
         self.refresh()
@@ -564,12 +556,27 @@ class SensorDashboardDock(QWidget):
 
     def open_waterfall(self):
         """Switch the Graph tab's central workspace without creating a window."""
-        showing_waterfall = self.view_stack.currentWidget() is self._waterfall_widget
-        self.view_stack.setCurrentWidget(self.grid_host if showing_waterfall else self._waterfall_widget)
-        self.waterfall_button.setText("2D / 3D View" if showing_waterfall else "Back to Graphs")
-        if not showing_waterfall:
-            self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
-            self._waterfall_widget.refresh_sensor_choices()
+        showing_waterfall = (
+            self._waterfall_widget is not None
+            and self.view_stack.currentWidget() is self._waterfall_widget
+        )
+        if showing_waterfall:
+            self.view_stack.setCurrentWidget(self.grid_host)
+            self.waterfall_button.setText("2D / 3D View")
+            return
+        if self._waterfall_widget is None:
+            self._waterfall_widget = SensorWaterfallDialog(
+                self.sensor_capture, vin_provider=self.vin_provider, parent=self.view_stack
+            )
+            self._waterfall_widget.sensor_list.hide()
+            self._waterfall_widget.selection_status.hide()
+            self._waterfall_widget.source_label.hide()
+            self._waterfall_widget.source_combo.hide()
+            self.view_stack.addWidget(self._waterfall_widget)
+        self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
+        self._waterfall_widget.refresh_sensor_choices()
+        self.view_stack.setCurrentWidget(self._waterfall_widget)
+        self.waterfall_button.setText("Back to Graphs")
 
     def _selected_dashboard_sensor_ids(self):
         return set().union(*(panel.selected_sensor_ids() for panel in self.panels))
@@ -740,7 +747,8 @@ class SensorDashboardDock(QWidget):
             self.panel_count.setCurrentIndex(PANEL_COUNTS.index(panel_count))
             self.reflow()
             self.persist_layout()
-            self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
+            if self._waterfall_widget is not None:
+                self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
             if callable(self.selection_changed_callback):
                 self.selection_changed_callback(self.panels[0].selected_sensor_ids())
 
@@ -755,7 +763,7 @@ class SensorDashboardDock(QWidget):
         vin = self.vin_provider()
         for panel in self.panels:
             panel.set_vehicle_vin(vin)
-        if self.view_stack.currentWidget() is self._waterfall_widget:
+        if self._waterfall_widget is not None and self.view_stack.currentWidget() is self._waterfall_widget:
             self._waterfall_widget.refresh_sensor_choices()
 
     def reflow(self, *_):
