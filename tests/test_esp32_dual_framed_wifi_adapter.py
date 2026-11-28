@@ -1,3 +1,5 @@
+import time
+
 from freerov3r.hardware import esp32_dual_framed_wifi_adapter as module
 
 
@@ -24,6 +26,7 @@ class FakeWifiAdapter:
         self.connected = True
 
     def receive(self, timeout=0.1):
+        time.sleep(min(timeout, 0.01))
         return None
 
     def close(self):
