@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication
 
@@ -50,6 +48,7 @@ def test_research_live_preview_is_disabled_until_workspace_is_selected():
 
 
 def test_research_recording_keeps_capturing_when_preview_is_disabled():
+    _app()
     tab = ResearchTab()
     tab.refresh_timer.stop()
     try:
