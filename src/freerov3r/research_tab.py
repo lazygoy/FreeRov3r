@@ -2466,7 +2466,7 @@ class ResearchTab(QWidget):
                 "",
                 f"Loaded DBC: {self.dbc_library.path.name}",
                 f"DBC frame matches: {coverage['matched_frames']:,} | unmatched: {coverage['unmatched_frames']:,}",
-                "Decoded signal statistics (last 20,000 observed frames):",
+                "Decoded signal statistics (summary window):",
             ]
             lines.extend(
                 f"  {name}: n={stats['count']} min={stats['min']:.5g} mean={stats['mean']:.5g} max={stats['max']:.5g} {stats.get('unit', '')}"
@@ -2474,7 +2474,8 @@ class ResearchTab(QWidget):
             )
         if self.reference_frames:
             current_ids = Counter((r["arbitration_id"], r["extended"]) for r in dataset)
-            reference_ids = Counter((r["arbitration_id"], r["extended"]) for r in self.reference_frames)
+            reference_dataset = self.reference_frames[-self.SUMMARY_FRAME_WINDOW:]
+            reference_ids = Counter((r["arbitration_id"], r["extended"]) for r in reference_dataset)
             changed = sorted(set(current_ids) | set(reference_ids),
                              key=lambda key: abs(current_ids[key] - reference_ids[key]), reverse=True)
             lines += ["", f"Comparison capture: {len(self.reference_frames):,} frames",
