@@ -302,6 +302,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self.research_tab = ResearchTab()
         self.tabs.addTab(self.research_tab, "Research")
+        self.tabs.currentChanged.connect(
+            lambda index: self.research_tab._set_live_enabled(
+                self.tabs.widget(index) is self.research_tab
+            )
+        )
         self.tuning_tab = TuningTab(
             vin_provider=lambda: self.settings.get("current_vin")
         )
