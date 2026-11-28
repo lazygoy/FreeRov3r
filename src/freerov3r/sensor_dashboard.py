@@ -298,11 +298,11 @@ class SensorGraphPanel(QWidget):
         self.sensor_list = QListWidget()
         self.sensor_list.setMaximumHeight(74)
         self.sensor_list.setToolTip(
-            "Select one or more signals for this graph. Each graph has its own sensor selection."
+            "Sensor selection is managed centrally in Choose Sensors (PID)."
         )
         self.sensor_list.itemChanged.connect(self.update_chart)
         self.sensor_list.itemChanged.connect(self.dock.persist_layout)
-        outer.addWidget(self.sensor_list)
+        self.sensor_list.hide()
 
         if HAS_CHARTS:
             self.chart = QChart()
