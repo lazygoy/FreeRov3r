@@ -21,9 +21,7 @@ except ImportError:
 
 from .diagnostics.obd2 import OBD_PIDS
 from .sensors.capture import SensorCapture
-from .sensors.analysis import summarize_sensor_samples
 from .sensors.scaling import normalize_values, sample_clock, sample_time
-from .sensors.thresholds import evaluate_sensor_threshold, normalize_sensor_thresholds
 
 
 class SensorGraphTab(QWidget):
@@ -150,72 +148,6 @@ class SensorGraphTab(QWidget):
     def refresh_favorite_groups(self, selected_name=None):
         """Favorites are managed in the Choose Sensors (PID) dialog."""
         return
-
-    def configure_sensor_threshold(self):
-        row = self.stats_table.currentRow()
-        if row < 0:
-            QMessageBox.information(self, "Select a sensor", "Select a sensor row in the health table first.")
-            return
-        sensor_item = self.stats_table.item(row, 0)
-        if sensor_item is None:
-            return
-        sensor_id = sensor_item.data(Qt.UserRole)
-        if not sensor_id:
-            return
-        stored = self.parent_settings.get("sensor_thresholds", {})
-        config = normalize_sensor_thresholds(stored.get(sensor_id, {}) if isinstance(stored, dict) else {})
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Alert Threshold | {sensor_item.text()}")
-        form = QFormLayout(dialog)
-        enabled = QCheckBox("Enable user-defined alert")
-        enabled.setChecked(config["enabled"])
-        minimum_enabled = QCheckBox("Minimum")
-        maximum_enabled = QCheckBox("Maximum")
-        minimum = QDoubleSpinBox()
-        maximum = QDoubleSpinBox()
-        for control in (minimum, maximum):
-            control.setRange(-1000000000.0, 1000000000.0)
-            control.setDecimals(4)
-            control.setKeyboardTracking(False)
-        minimum_enabled.setChecked(config["minimum"] is not None)
-        maximum_enabled.setChecked(config["maximum"] is not None)
-        minimum.setValue(config["minimum"] if config["minimum"] is not None else 0.0)
-        maximum.setValue(config["maximum"] if config["maximum"] is not None else 0.0)
-        minimum.setEnabled(minimum_enabled.isChecked())
-        maximum.setEnabled(maximum_enabled.isChecked())
-        minimum_enabled.toggled.connect(minimum.setEnabled)
-        maximum_enabled.toggled.connect(maximum.setEnabled)
-        form.addRow(enabled)
-        min_row = QHBoxLayout()
-        min_row.addWidget(minimum_enabled)
-        min_row.addWidget(minimum)
-        form.addRow("Low alert:", min_row)
-        max_row = QHBoxLayout()
-        max_row.addWidget(maximum_enabled)
-        max_row.addWidget(maximum)
-        form.addRow("High alert:", max_row)
-        note = QLabel("These are your own alert limits, not Land Rover specifications.")
-        note.setWordWrap(True)
-        form.addRow(note)
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        form.addRow(buttons)
-        if dialog.exec() != QDialog.Accepted:
-            return
-        low = minimum.value() if minimum_enabled.isChecked() else None
-        high = maximum.value() if maximum_enabled.isChecked() else None
-        if low is not None and high is not None and low >= high:
-            QMessageBox.warning(self, "Invalid alert limits", "The minimum must be lower than the maximum.")
-            return
-        thresholds = self.parent_settings.setdefault("sensor_thresholds", {})
-        if not isinstance(thresholds, dict):
-            thresholds = {}
-            self.parent_settings["sensor_thresholds"] = thresholds
-        thresholds[str(sensor_id)] = {"enabled": enabled.isChecked(), "minimum": low, "maximum": high}
-        if self.settings_save_callback:
-            self.settings_save_callback(self.parent_settings)
-        self.update_statistics(force=True)
 
     def mark_sample(self, sensor_id):
         """Record sample arrival; the activity timer owns widget refreshes."""
