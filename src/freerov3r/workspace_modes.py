@@ -11,7 +11,6 @@ class WorkspaceMode(str, Enum):
 SHARED_TABS = frozenset({"Sensors", "Graph", "Settings"})
 DIAGNOSTIC_TABS = frozenset({
     "OBD-II",
-    "Modules",
     "Special Functions",
     "Topology",
     "Solutions",
@@ -19,6 +18,7 @@ DIAGNOSTIC_TABS = frozenset({
 })
 DEVELOPMENT_TABS = frozenset({
     "Capture",
+    "Modules",
     "D-PDU",
     "Research",
     "Tuning",
