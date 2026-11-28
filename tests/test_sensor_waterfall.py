@@ -149,17 +149,33 @@ def test_2d_scope_cursor_uses_raw_engineering_values():
     assert SharedCrosshairStackedPlot._nearest_value(lane, 8.0) == 1200.0
 
 
+def test_waterfall_renderer_has_ground_grid_without_extra_geometry_layers():
+    import inspect
 
-def test_waterfall_renderer_uses_a_ground_grid_and_no_decorative_contours():
     from freerov3r.sensor_waterfall_gl import WaterfallPlot
 
-    assert hasattr(WaterfallPlot, "_add_ground_plane")
-    assert not hasattr(WaterfallPlot, "_contour_items")
+    source = inspect.getsource(WaterfallPlot)
+    assert "def _add_ground_plane" in source
+    assert "_contour_items" not in source
+    assert "_side_surface_items" not in source
+    assert "_underside_items" not in source
 
 
-def test_2d_sensor_names_are_rendered_as_horizontal_headers():
+def test_2d_sensor_names_use_horizontal_headers():
+    import inspect
+
     from freerov3r.sensor_waterfall_2d import SharedCrosshairStackedPlot
 
-    assert "header" in SharedCrosshairStackedPlot.set_lanes.__code__.co_consts or hasattr(
-        SharedCrosshairStackedPlot, "_headers"
-    )
+    source = inspect.getsource(SharedCrosshairStackedPlot.set_lanes)
+    assert "header = QLabel" in source
+    assert 'setLabel("left"' not in source
+
+
+def test_sensor_scope_defaults_to_3d_waterfall_and_expanded_layout():
+    import inspect
+
+    from freerov3r.sensor_waterfall import SensorWaterfallDialog
+
+    source = inspect.getsource(SensorWaterfallDialog.__init__)
+    assert "setCurrentWidget(waterfall_page)" in source
+    assert "self.resize(1400, 900)" in source
