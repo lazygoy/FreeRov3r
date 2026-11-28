@@ -192,6 +192,7 @@ def test_waterfall_switch_stays_inside_dashboard(qapp):
 def test_first_run_defaults_to_four_engine_obd_signals(qapp):
     from types import SimpleNamespace
 
+    from PySide6.QtCore import Qt
     from freerov3r.sensor_dashboard import DEFAULT_GRAPH_SENSOR_IDS, SensorDashboardDock
 
     dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
@@ -201,9 +202,9 @@ def test_first_run_defaults_to_four_engine_obd_signals(qapp):
         {sensor_id} for sensor_id in DEFAULT_GRAPH_SENSOR_IDS
     ]
     waterfall_selected = {
-        dashboard._waterfall_widget.sensor_list.item(i).data(256)
+        dashboard._waterfall_widget.sensor_list.item(i).data(Qt.UserRole)
         for i in range(dashboard._waterfall_widget.sensor_list.count())
-        if dashboard._waterfall_widget.sensor_list.item(i).checkState() == 2
+        if dashboard._waterfall_widget.sensor_list.item(i).checkState() == Qt.Checked
     }
     assert waterfall_selected == set(DEFAULT_GRAPH_SENSOR_IDS)
     dashboard.close()
