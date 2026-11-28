@@ -218,6 +218,7 @@ class DPduTab(QWidget):
         if self._inventory_worker and self._inventory_worker.isRunning():
             return
         self.inspect_button.setEnabled(False)
+        self.start_button.setEnabled(False)
         self.status_label.setText("Loading selected D-PDU API and enumerating modules. Vehicle remains offline.")
         self._inventory_worker = _InventoryWorker(registration, self)
         self._inventory_worker.completed.connect(self._inventory_completed)
@@ -244,6 +245,10 @@ class DPduTab(QWidget):
 
     def _inventory_finished(self):
         self.inspect_button.setEnabled(True)
+        self.start_button.setEnabled(True)
+        if self._inventory_worker is not None:
+            self._inventory_worker.deleteLater()
+            self._inventory_worker = None
 
     def _inventory_failed(self, message):
         self.status_label.setText(f"D-PDU inventory failed: {message}")
