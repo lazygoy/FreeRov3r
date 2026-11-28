@@ -916,6 +916,7 @@ class ResearchTab(QWidget):
         self.total_recorded_frames = 0
         self.dropped_recorded_frames = 0
         self.dropped_pending_frames = 0
+        self.dropped_preview_frames = 0
         self._display_refresh_pending = False
         self._last_display_refresh = 0.0
         self.dbc_library = DBCLibrary()
@@ -1392,10 +1393,12 @@ class ResearchTab(QWidget):
     def _set_live_enabled(self, enabled):
         self.live_enabled = bool(enabled)
         if self.live_enabled:
+            # Reserve the refresh slot before flushing so opening the workspace
+            # performs one table rebuild, not a timer rebuild plus another rebuild.
+            self._last_display_refresh = time.monotonic()
             self._flush_pending_frames()
             if self.isVisible():
                 self._display_refresh_pending = False
-                self._last_display_refresh = time.monotonic()
                 self.refresh_table()
 
     def toggle_recording(self):
@@ -1511,6 +1514,9 @@ class ResearchTab(QWidget):
                 self.dropped_recorded_frames += 1
             self._pending_records.append(record)
         elif self.live_enabled:
+            if len(self._pending_preview) >= self.MAX_LIVE_PREVIEW_FRAMES:
+                self._pending_preview.pop(0)
+                self.dropped_preview_frames += 1
             self._pending_preview.append(record)
 
     def _flush_pending_frames(self):
@@ -2440,7 +2446,9 @@ class ResearchTab(QWidget):
             f"Recorded frames observed: {self.total_recorded_frames:,}",
             f"Recorded frames dropped: {self.dropped_recorded_frames:,} "
             f"(pending overflow: {self.dropped_pending_frames:,})",
-            f"Live preview frames: {len(self.live_preview):,}" if not self.frames else "Live preview paused while a recorded/imported set is active.",
+            (f"Live preview frames: {len(self.live_preview):,} "
+             f"(preview drops: {self.dropped_preview_frames:,})")
+            if not self.frames else "Live preview paused while a recorded/imported set is active.",
             f"Unique CAN IDs: {len(counts):,}",
             f"Bookmarks: {len(self.bookmarks):,}  |  Operation markers: {len(self.markers):,}",
             "",
