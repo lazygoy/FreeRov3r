@@ -1,16 +1,31 @@
 import csv
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .models import CanFrame
+from .models import CanFrame, DiagnosticEvent
 
 
 @dataclass
 class CaptureSession:
     frames: list[CanFrame] = field(default_factory=list)
+    diagnostic_events: list[DiagnosticEvent] = field(default_factory=list)
 
     def add(self, frame: CanFrame):
         self.frames.append(frame)
+
+    def add_diagnostic_event(self, event: DiagnosticEvent):
+        """Store protocol events separately from raw CAN frames."""
+        if not isinstance(event, DiagnosticEvent):
+            raise TypeError("event must be a DiagnosticEvent")
+        self.diagnostic_events.append(event)
+
+    def export_diagnostic_jsonl(self, path, events=None):
+        """Export protocol events as JSONL without flattening them into CAN rows."""
+        selected = self.diagnostic_events if events is None else events
+        with Path(path).open("w", encoding="utf-8") as stream:
+            for event in selected:
+                stream.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\\n")
 
     def export_csv(self, path):
         fields = [
