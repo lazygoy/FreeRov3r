@@ -1,9 +1,5 @@
-"""Workspace boundaries for the FreeRov3r desktop application.
+"""Explicit boundaries between operator diagnostics and engineering workspaces."""
 
-Capture is shared infrastructure. Research-only analysis is kept out of the
-normal diagnostic navigation so exploratory CAN work is not confused with
-verified vehicle diagnostics.
-"""
 from enum import Enum
 
 
@@ -12,8 +8,22 @@ class WorkspaceMode(str, Enum):
     RESEARCH = "research"
 
 
-SHARED_TABS = frozenset({"Capture"})
-RESEARCH_TABS = frozenset({"Research"})
+SHARED_TABS = frozenset({"Sensors", "Graph", "Settings"})
+DIAGNOSTIC_TABS = frozenset({
+    "OBD-II",
+    "Modules",
+    "Special Functions",
+    "Topology",
+    "Solutions",
+    "Vehicle History",
+})
+DEVELOPMENT_TABS = frozenset({
+    "Capture",
+    "D-PDU",
+    "Research",
+    "Tuning",
+    "Wiring Diagrams",
+})
 
 
 def tab_is_visible(tab_name: str, mode: WorkspaceMode) -> bool:
@@ -21,8 +31,8 @@ def tab_is_visible(tab_name: str, mode: WorkspaceMode) -> bool:
     if tab_name in SHARED_TABS:
         return True
     if mode is WorkspaceMode.RESEARCH:
-        return tab_name in RESEARCH_TABS
-    return tab_name not in RESEARCH_TABS
+        return tab_name in DEVELOPMENT_TABS
+    return tab_name in DIAGNOSTIC_TABS
 
 
 def visible_tab_names(tab_names, mode: WorkspaceMode) -> tuple[str, ...]:
