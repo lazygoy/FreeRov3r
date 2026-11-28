@@ -41,10 +41,9 @@ class SettingsTab(QWidget):
         compatibility_group = QGroupBox("Hardware compatibility")
         compatibility_layout = QVBoxLayout(compatibility_group)
         compatibility_notice = QLabel(
-            "Full diagnostic functionality is available only with the recommended ESP32 CAN interface. "
-            "Bluetooth ELM327, Wi-Fi, and other third-party adapters are supported on a limited basis "
-            "where their hardware and protocols allow. They may not provide complete CAN traffic, "
-            "full module coverage, or advanced diagnostic functions."
+            "ELM327 provides standard OBD-II polling and trouble codes, not general raw CAN capture. "
+            "Two ESP32 CAN receivers provide simultaneous HS-CAN / MS-CAN capture over USB or configured Wi-Fi. "
+            "Full module coverage and advanced functions still depend on verified vehicle protocols and hardware."
         )
         compatibility_notice.setObjectName("hardwareCompatibilityNotice")
         compatibility_notice.setWordWrap(True)
