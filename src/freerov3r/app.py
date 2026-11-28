@@ -153,6 +153,7 @@ class MainWindow(QMainWindow):
         self.capture_start_frames = 0
         self.capture_start_sample_index = 0
         self.capture_start_frame_index = 0
+        self.capture_start_diagnostic_event_index = 0
         self.capture_vin = None
         self.vin_decoder = VinFrameDecoder()
         self.active_interface = None
@@ -751,6 +752,11 @@ class MainWindow(QMainWindow):
 
     def on_frames(self, frames):
         process_frames(self, frames)
+
+    def on_diagnostic_events(self, events):
+        """Accept normalized protocol events from a dedicated diagnostic worker."""
+        for event in events or ():
+            self.session.add_diagnostic_event(event)
 
     def on_frame(self, frame, update_display=True):
         return process_frame(self, frame, update_display=update_display)

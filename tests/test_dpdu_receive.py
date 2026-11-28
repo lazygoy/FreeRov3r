@@ -209,6 +209,19 @@ def test_event_queue_copies_result_and_destroys_api_item(runtime_pair):
     assert event.transmit_done_timestamp_us == 456
     assert event.acceptance_id == 9
     assert event.unique_response_identifier == 0x123
+
+    normalized = event.to_capture_event(17, 91, source="D-PDU:Test_API")
+    assert normalized.source == "D-PDU:Test_API"
+    assert normalized.item_type == PDU_IT_RESULT
+    assert normalized.timestamp_us == 999
+    assert normalized.timestamp_clock_domain == "dpdu_api"
+    assert normalized.module_handle == 17
+    assert normalized.logical_link_handle == 91
+    assert normalized.cop_handle == 700
+    assert normalized.payload == bytes.fromhex("62 F1 90")
+    assert normalized.acceptance_id == 9
+    assert normalized.unique_response_identifier == 0x123
+
     assert any(call[0] == "destroy_item" for call in library.calls)
     assert runtime.get_next_event(17, 91) is None
 
