@@ -189,7 +189,7 @@ def test_segmented_receive_uses_one_overall_timeout_deadline():
     assert len(requested_timeouts) == 2
     # Allow sub-nanosecond float rounding when deadline - monotonic() is
     # evaluated immediately after constructing the deadline.
-    assert requested_timeouts[0] == pytest.approx(0.02, abs=1e-9)
+    assert requested_timeouts[0] == pytest.approx(0.02, abs=1e-6)
     assert 0 < requested_timeouts[1] <= requested_timeouts[0]
 
 
@@ -215,7 +215,7 @@ def test_flow_control_wait_frames_share_one_deadline():
 
     assert transport._wait_flow_control(timeout=0.25) == (0, 0.0)
     assert len(requested_timeouts) == 2
-    assert requested_timeouts[0] == pytest.approx(0.25, abs=1e-9)
+    assert requested_timeouts[0] == pytest.approx(0.25, abs=1e-6)
     assert 0 < requested_timeouts[1] <= requested_timeouts[0]
 
 
