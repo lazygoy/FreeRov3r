@@ -10,6 +10,7 @@ from freerov3r.hardware.dpdu_receive import (
     PDU_IT_RESULT,
     _PduCopCtrlData,
     _PduEventItem,
+    _PduExpectedResponseData,
     _PduResultData,
 )
 from freerov3r.hardware.dpdu_runtime import (
@@ -176,11 +177,14 @@ def test_event_queue_copies_result_and_destroys_api_item(runtime_pair):
     )
 
     library.payload = (ctypes.c_uint8 * 3)(0x62, 0xF1, 0x90)
+    timestamp_flag_bytes = (ctypes.c_uint8 * 1)(0xC0)
     library.result_data = _PduResultData(
         _PduFlagData(0, ctypes.POINTER(ctypes.c_uint8)()),
         0x123,
         9,
-        _PduFlagData(0, ctypes.POINTER(ctypes.c_uint8)()),
+        _PduFlagData(
+            1, ctypes.cast(timestamp_flag_bytes, ctypes.POINTER(ctypes.c_uint8))
+        ),
         456,
         123,
         None,
@@ -223,3 +227,62 @@ def test_close_cancels_receive_primitive_before_disconnect(runtime_pair):
     assert names.index("disconnect") < names.index("destroy_cll")
     assert names.index("destroy_cll") < names.index("module_disconnect")
     assert names.index("module_disconnect") < names.index("destruct")
+
+
+
+def test_iso_22900_structures_use_one_byte_packing():
+    pointer_size = ctypes.sizeof(ctypes.c_void_p)
+    assert _PduExpectedResponseData.mask_data.offset == 12
+    assert _PduExpectedResponseData.pattern_data.offset == 12 + pointer_size
+    assert _PduExpectedResponseData.num_unique_resp_ids.offset == 16 + 2 * pointer_size
+    assert _PduExpectedResponseData.unique_resp_ids.offset == 20 + 2 * pointer_size
+    assert ctypes.sizeof(_PduExpectedResponseData) == 20 + 3 * pointer_size
+
+    assert _PduCopCtrlData.tx_flag.offset == 16
+    assert _PduCopCtrlData.num_possible_expected_responses.offset == 20 + pointer_size
+    assert _PduCopCtrlData.expected_response_array.offset == 24 + pointer_size
+    assert ctypes.sizeof(_PduCopCtrlData) == 24 + 2 * pointer_size
+
+    assert _PduEventItem.cop_tag.offset == 8
+    assert _PduEventItem.timestamp.offset == 8 + pointer_size
+    assert _PduEventItem.data.offset == 12 + pointer_size
+    assert ctypes.sizeof(_PduEventItem) == 12 + 2 * pointer_size
+
+    assert _PduResultData.unique_resp_identifier.offset == 4 + pointer_size
+    assert _PduResultData.timestamp_flags.offset == 12 + pointer_size
+    assert _PduResultData.tx_msg_done_timestamp.offset == 16 + 2 * pointer_size
+    assert _PduResultData.start_msg_timestamp.offset == 20 + 2 * pointer_size
+    assert _PduResultData.extra_info.offset == 24 + 2 * pointer_size
+    assert _PduResultData.num_data_bytes.offset == 24 + 3 * pointer_size
+    assert _PduResultData.data_bytes.offset == 28 + 3 * pointer_size
+
+
+def test_result_timestamps_are_none_when_timestamp_flags_are_clear(runtime_pair):
+    runtime, library = runtime_pair
+    runtime.start_receive_only(
+        17, 91, response_mask=b"\\xff", response_pattern=b"\\x62"
+    )
+    library.payload = (ctypes.c_uint8 * 1)(0x62)
+    library.result_data = _PduResultData(
+        _PduFlagData(0, ctypes.POINTER(ctypes.c_uint8)()),
+        0,
+        1,
+        _PduFlagData(0, ctypes.POINTER(ctypes.c_uint8)()),
+        456,
+        123,
+        None,
+        1,
+        ctypes.cast(library.payload, ctypes.POINTER(ctypes.c_uint8)),
+    )
+    library.event_item = _PduEventItem(
+        PDU_IT_RESULT, 700, None, 999,
+        ctypes.cast(ctypes.pointer(library.result_data), ctypes.c_void_p),
+    )
+    library.event_item_ptr = ctypes.pointer(library.event_item)
+
+    event = runtime.get_next_event(17, 91)
+    assert event.start_message_timestamp_us is None
+    assert event.transmit_done_timestamp_us is None
+
+    runtime.cancel_receive_only(17, 91, 700)
+    runtime.close()
