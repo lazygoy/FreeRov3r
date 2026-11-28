@@ -61,12 +61,6 @@ class SensorGraphTab(QWidget):
         self.record_btn.clicked.connect(self.toggle_record)
         toolbar.addWidget(self.record_btn)
 
-        choose_btn = QPushButton("Choose Sensors (PID)")
-        choose_btn.clicked.connect(
-            lambda: self.open_dashboard_callback() if self.open_dashboard_callback else None
-        )
-        toolbar.addWidget(choose_btn)
-
         import_btn = QPushButton("Import CSV / JSONL")
         import_btn.clicked.connect(self.load_csv)
         toolbar.addWidget(import_btn)
@@ -129,8 +123,9 @@ class SensorGraphTab(QWidget):
         return item.data(Qt.UserRole) or item.text().split("(")[-1].rstrip(")")
 
     def selected_sensor_ids(self):
-        return {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())
-                if self.sensor_list.item(i).checkState() == Qt.Checked}
+        visible = {self._sensor_id(self.sensor_list.item(i)) for i in range(self.sensor_list.count())
+                   if self.sensor_list.item(i).checkState() == Qt.Checked}
+        return visible | set(self.synced_obd_sensor_ids)
 
     def set_selected_sensor_ids(self, sensor_ids):
         selected = {str(value).lower() for value in sensor_ids}
@@ -145,6 +140,8 @@ class SensorGraphTab(QWidget):
             item.setCheckState(Qt.Checked if self._sensor_id(item) in selected else Qt.Unchecked)
         self.sensor_list.blockSignals(False)
         self.update_chart()
+        if self.dashboard_widget is not None and hasattr(self.dashboard_widget, "set_selected_sensor_ids"):
+            self.dashboard_widget.set_selected_sensor_ids(selected)
 
     def update_statistics(self, force=False):
         """Sensor health is intentionally not part of the graph workspace."""
