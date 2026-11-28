@@ -155,8 +155,13 @@ def test_waterfall_renderer_has_ground_grid_without_extra_geometry_layers():
     from freerov3r.sensor_waterfall_gl import WaterfallPlot
 
     source = inspect.getsource(WaterfallPlot)
+    ground_source = inspect.getsource(WaterfallPlot._add_ground_plane)
+    build_source = inspect.getsource(WaterfallPlot._build_scene)
     assert "def _add_ground_plane" in source
     assert "self._ground_surface = floor" in source
+    assert "self._ground_outline = gl.GLLinePlotItem" in ground_source
+    assert "if not self.lanes" not in ground_source
+    assert build_source.index("self._add_ground_plane()") < build_source.index("if not self.lanes:")
     assert "_contour_items" not in source
     assert "_side_surface_items" not in source
     assert "_underside_items" not in source
