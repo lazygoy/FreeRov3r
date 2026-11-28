@@ -236,9 +236,9 @@ def test_iso_22900_structures_use_one_byte_packing():
     pointer_size = ctypes.sizeof(ctypes.c_void_p)
     assert _PduExpectedResponseData.mask_data.offset == 12
     assert _PduExpectedResponseData.pattern_data.offset == 12 + pointer_size
-    assert _PduExpectedResponseData.num_unique_resp_ids.offset == 16 + 2 * pointer_size
-    assert _PduExpectedResponseData.unique_resp_ids.offset == 20 + 2 * pointer_size
-    assert ctypes.sizeof(_PduExpectedResponseData) == 20 + 3 * pointer_size
+    assert _PduExpectedResponseData.num_unique_resp_ids.offset == 12 + 2 * pointer_size
+    assert _PduExpectedResponseData.unique_resp_ids.offset == 16 + 2 * pointer_size
+    assert ctypes.sizeof(_PduExpectedResponseData) == 16 + 3 * pointer_size
 
     assert _PduCopCtrlData.tx_flag.offset == 16
     assert _PduCopCtrlData.num_possible_expected_responses.offset == 20 + pointer_size
