@@ -49,11 +49,27 @@ class NetworkOverviewTab(QWidget):
         self.scan_all_button = QPushButton("⟳  Scan All Modules")
         self.scan_all_button.setObjectName("primaryButton")
         self.scan_all_button.clicked.connect(self.scan_all)
+        self.scan_all_button.setEnabled(False)
+        self.scan_all_button.setToolTip(
+            "Live multi-module scanning is not implemented. The displayed inventory is a labelled simulator fixture."
+        )
         header.addWidget(self.scan_all_button)
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh)
         header.addWidget(self.refresh_button)
         root.addLayout(header)
+
+        self.simulation_notice = QLabel(
+            "SIMULATED MODULE INVENTORY  •  NOT A LIVE VEHICLE SCAN  •  "
+            "Physical ECU addressing and response status are not verified."
+        )
+        self.simulation_notice.setObjectName("simulationNotice")
+        self.simulation_notice.setWordWrap(True)
+        self.simulation_notice.setStyleSheet(
+            "color:#f1c27d;background:#352a1b;border:1px solid #6c5230;"
+            "border-radius:6px;padding:8px;font-weight:700;"
+        )
+        root.addWidget(self.simulation_notice)
 
         self.summary_row = QHBoxLayout()
         self.summary_cards = {}
@@ -428,7 +444,10 @@ class NetworkOverviewTab(QWidget):
             "PHYSICAL BUS / ROUTE: NOT VERIFIED",
         ])
         self.detail_text.setPlainText("\n".join(lines))
-        self.scan_selected_button.setEnabled(bool(module.available))
+        self.scan_selected_button.setEnabled(False)
+        self.scan_selected_button.setToolTip(
+            "Live ECU scanning is not implemented. This selection is simulator data only."
+        )
 
     def _list_selection_changed(self):
         if self._building:
@@ -444,6 +463,7 @@ class NetworkOverviewTab(QWidget):
             self.select_module(code)
 
     def scan_selected(self):
+        return
         if not self.selected_code:
             return
         module = self.network.scan_module(self.selected_code)
@@ -458,6 +478,7 @@ class NetworkOverviewTab(QWidget):
         self.select_module(module.code)
 
     def scan_all(self):
+        return
         modules = self.network.scan_all()
         self.history_callback(
             "topology_full_scan",
