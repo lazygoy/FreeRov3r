@@ -292,6 +292,7 @@ class SensorGraphPanel(QWidget):
         self.index = index
         self.dock = dock
         self.vehicle_vin = None
+        self._last_sample_generation = None
         self._floating_host = None
         self.setWindowTitle(f"Graph {index + 1}")
 
@@ -365,7 +366,13 @@ class SensorGraphPanel(QWidget):
             outer.addWidget(QLabel("Qt Charts is unavailable. Install the PySide6 Charts component."))
 
     def set_vehicle_vin(self, vin):
+        generation = getattr(
+            self.sensor_capture, "total_samples_added", len(self.sensor_capture.samples)
+        )
+        if vin == self.vehicle_vin and generation == self._last_sample_generation:
+            return
         self.vehicle_vin = vin
+        self._last_sample_generation = generation
         self.refresh_sensor_choices()
 
     def refresh_sensor_choices(self, initial_ids=None):
@@ -419,6 +426,11 @@ class SensorGraphPanel(QWidget):
             return
         self.chart.removeAllSeries()
         selected_ids = self.selected_sensor_ids()
+        if not selected_ids:
+            self.chart.setTitle("Select one or more signals above")
+            self.axis_x.setRange(0, 1)
+            self.axis_y.setRange(0, 1)
+            return
         grouped = {}
         for sample in self.sensor_capture.samples:
             if sample.sensor_id not in selected_ids:
@@ -599,7 +611,7 @@ class SensorDashboardDock(QDockWidget):
         self.reflow()
 
         self.refresh_timer = QTimer(self)
-        self.refresh_timer.setInterval(750)
+        self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self.refresh)
         self.refresh_timer.start()
 
@@ -769,6 +781,8 @@ class SensorDashboardDock(QDockWidget):
         self.show()
 
     def refresh(self):
+        if not self.isVisible():
+            return
         vin = self.vin_provider()
         for panel in self.panels:
             panel.set_vehicle_vin(vin)
