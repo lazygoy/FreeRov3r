@@ -155,3 +155,26 @@ def test_graph_tab_has_no_sensor_health_panel(qapp):
     assert not hasattr(tab, "chart")
     tab.activity_timer.stop()
     tab.close()
+
+
+
+def test_waterfall_switch_stays_inside_dashboard(qapp):
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QDialog, QWidget
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
+    assert dashboard.view_stack.currentWidget() is dashboard.grid_host
+
+    dashboard.open_waterfall()
+    waterfall = dashboard.view_stack.currentWidget()
+    assert waterfall is dashboard._waterfall_widget
+    assert isinstance(waterfall, QWidget)
+    assert not isinstance(waterfall, QDialog)
+    assert dashboard.waterfall_button.text() == "Back to Graphs"
+
+    dashboard.open_waterfall()
+    assert dashboard.view_stack.currentWidget() is dashboard.grid_host
+    assert dashboard.waterfall_button.text() == "2D / 3D View"
+    dashboard.close()
