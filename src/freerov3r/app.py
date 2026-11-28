@@ -1,6 +1,7 @@
 """FreeRov3r – user-friendly diagnostic interface with graphing, OBD-II, and modules."""
 import csv
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -77,7 +78,12 @@ from .asset_loader import ASSET_DIR, load_asset_pixmap
 from .research_tab import ResearchTab
 from .tuning_tab import TuningTab
 
-SETTINGS_DIR = Path.home() / ".freerov3r"
+# Keep experimental worktrees isolated from the stable user's settings and history.
+# Stable builds retain the existing ~/.freerov3r default.
+SETTINGS_DIR = Path(
+    os.environ.get("FREEROV3R_CONFIG_HOME")
+    or (Path.home() / ".freerov3r")
+).expanduser()
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
