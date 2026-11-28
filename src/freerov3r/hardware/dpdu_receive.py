@@ -296,6 +296,7 @@ class DPduReceiveRuntime(DPduApiRuntime):
             timestamp = int(item.timestamp)
             data = b""
             start_ts = tx_done_ts = acceptance = unique_id = error_code = extra = None
+            status_code = info_code = None
             if item_type == PDU_IT_RESULT:
                 if not item.data:
                     raise DPduApiError("PDU result event has a null data pointer")
