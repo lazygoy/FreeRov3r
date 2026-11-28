@@ -147,3 +147,19 @@ def test_2d_scope_cursor_uses_raw_engineering_values():
     assert SharedCrosshairStackedPlot._nearest_value(lane, 0.2) == 800.0
     assert SharedCrosshairStackedPlot._nearest_value(lane, 1.7) == 1200.0
     assert SharedCrosshairStackedPlot._nearest_value(lane, 8.0) == 1200.0
+
+
+
+def test_waterfall_renderer_uses_a_ground_grid_and_no_decorative_contours():
+    from freerov3r.sensor_waterfall_gl import WaterfallPlot
+
+    assert hasattr(WaterfallPlot, "_add_ground_plane")
+    assert not hasattr(WaterfallPlot, "_contour_items")
+
+
+def test_2d_sensor_names_are_rendered_as_horizontal_headers():
+    from freerov3r.sensor_waterfall_2d import SharedCrosshairStackedPlot
+
+    assert "header" in SharedCrosshairStackedPlot.set_lanes.__code__.co_consts or hasattr(
+        SharedCrosshairStackedPlot, "_headers"
+    )
