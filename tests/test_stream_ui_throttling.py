@@ -64,3 +64,27 @@ def test_simulators_use_ui_friendly_default_rate():
     assert DualChannelSimulator().speed == 0.25
     assert Receiver.FRAME_BATCH_SIZE == 256
     assert Receiver.FRAME_BATCH_INTERVAL == 0.10
+
+
+def test_hidden_research_preview_buffers_frames_without_rebuilding_table():
+    from freerov3r.research_tab import ResearchTab
+
+    preview = [{"arbitration_id": 0x100, "data": "010203"}]
+    tab = SimpleNamespace(
+        _pending_records=[],
+        _pending_preview=preview.copy(),
+        live_preview=[],
+        frames=[],
+        MAX_CAPTURE_FRAMES=100_000,
+        MAX_DISPLAY_ROWS=500,
+        dropped_recorded_frames=0,
+        isVisible=lambda: False,
+        refresh_table=lambda: (_ for _ in ()).throw(
+            AssertionError("hidden research table must not be rebuilt")
+        ),
+    )
+
+    ResearchTab._flush_pending_frames(tab)
+
+    assert tab.live_preview == preview
+    assert tab._pending_preview == []
