@@ -103,7 +103,7 @@ class VehicleSetupWizard(QDialog):
         detect_row.addStretch()
         connection_layout.addLayout(detect_row)
         self.interface_status = QLabel(
-            "ESP32 interfaces are receive-only. Dual mode requires two different COM ports, entered as COMx,COMy (HS-CAN first, MS-CAN second). "
+            "ESP32 interfaces are receive-only. Dual USB mode requires two different COM ports (HS-CAN first, MS-CAN second). "
             "ELM327 provides standard read-only OBD-II data, not general raw CAN capture. "
             "Dual ESP32 USB uses two COM ports; dual Wi-Fi uses two IP[:port] endpoints separated by a comma. "
             "Wi-Fi discovery is manual. J2534 Pass-Thru supports receive-only CAN capture in this build."
