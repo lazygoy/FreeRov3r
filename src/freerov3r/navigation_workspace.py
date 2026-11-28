@@ -22,9 +22,11 @@ from PySide6.QtWidgets import (
 
 
 _NAV_GROUPS = (
-    ("VEHICLE", ("Sensors", "OBD-II", "Modules", "Special Functions", "Topology", "Wiring Diagrams")),
-    ("ANALYSIS", ("Graph", "Solutions", "Vehicle History")),
-    ("TOOLS", ("Capture", "D-PDU", "Research", "Tuning", "Settings")),
+    ("VEHICLE", ("Sensors", "Modules", "Topology")),
+    ("DIAGNOSTICS", ("OBD-II", "Special Functions")),
+    ("DATA", ("Graph", "Solutions", "Vehicle History")),
+    ("DEVELOPMENT", ("Capture", "D-PDU", "Research", "Tuning", "Wiring Diagrams")),
+    ("CONFIGURATION", ("Settings",)),
 )
 
 _NAV_GLYPHS = {
@@ -56,11 +58,13 @@ class NavigationWorkspace(QScrollArea):
         toggle_quick_drawer,
         on_tab_changed,
         on_workspace_mode_changed=None,
+        on_home=None,
         parent=None,
     ):
         super().__init__(parent)
         self.tabs = tabs
         self._nav_buttons = {}
+        self._nav_sections = []
         tabs.tabBar().hide()
 
         root = QWidget()
@@ -113,6 +117,8 @@ class NavigationWorkspace(QScrollArea):
             section.setObjectName("experimentalSectionLabel")
             section.setFont(QFont(body_font_family, 8, QFont.Bold))
             rail_layout.addWidget(section)
+            section_buttons = []
+            self._nav_sections.append((section, section_buttons))
             for tab_name in tab_names:
                 index = next(
                     (i for i in range(tabs.count()) if tabs.tabText(i) == tab_name),
@@ -134,6 +140,7 @@ class NavigationWorkspace(QScrollArea):
                 )
                 rail_layout.addWidget(button)
                 self._nav_buttons[index] = button
+                section_buttons.append(index)
 
         rail_layout.addStretch(1)
 
@@ -187,6 +194,14 @@ class NavigationWorkspace(QScrollArea):
         self.header_traffic.setObjectName("experimentalTraffic")
         self.header_traffic.setFont(QFont(body_font_family, 8, QFont.Bold))
         header_layout.addWidget(self.header_traffic)
+
+        self.home_button = QToolButton()
+        self.home_button.setObjectName("experimentalHomeButton")
+        self.home_button.setText("WORKSPACE HOME")
+        self.home_button.setToolTip("Return to the task selection screen")
+        if on_home is not None:
+            self.home_button.clicked.connect(on_home)
+        header_layout.addWidget(self.home_button)
 
         self.drawer_button = QToolButton()
         self.drawer_button.setObjectName("experimentalContextButton")
@@ -275,6 +290,14 @@ class NavigationWorkspace(QScrollArea):
                 padding: 9px 11px;
             }
             QLabel#experimentalTraffic { color: #93b9a2; padding: 4px; }
+            QToolButton#experimentalHomeButton {
+                color: #a9bdb3; background: #1a2529;
+                border: 1px solid #344448; border-radius: 7px;
+                padding: 9px 11px; font-weight: 700;
+            }
+            QToolButton#experimentalHomeButton:hover {
+                color: #edf7f0; background: #263b36;
+            }
             QToolButton#experimentalContextButton {
                 color: #e7f4ea; background: #234b37;
                 border: 1px solid #4b8662; border-radius: 7px;
@@ -294,6 +317,14 @@ class NavigationWorkspace(QScrollArea):
             )
         self._refresh_navigation_visibility()
 
+    def set_workspace_mode(self, mode):
+        index = self.workspace_mode_selector.findData(mode)
+        if index >= 0 and index != self.workspace_mode_selector.currentIndex():
+            self.workspace_mode_selector.blockSignals(True)
+            self.workspace_mode_selector.setCurrentIndex(index)
+            self.workspace_mode_selector.blockSignals(False)
+        self._refresh_navigation_visibility()
+
     def _refresh_navigation_visibility(self):
         for index, button in self._nav_buttons.items():
             try:
@@ -301,6 +332,11 @@ class NavigationWorkspace(QScrollArea):
             except AttributeError:
                 visible = True
             button.setVisible(visible)
+        for section, indices in self._nav_sections:
+            section.setVisible(any(
+                self._nav_buttons[index].isVisible()
+                for index in indices if index in self._nav_buttons
+            ))
 
     def _sync_current(self, index):
         for tab_index, button in self._nav_buttons.items():
