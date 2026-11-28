@@ -60,3 +60,28 @@ def test_diagnostic_event_store_rejects_non_event_objects():
     session = CaptureSession()
     with pytest.raises(TypeError, match="DiagnosticEvent"):
         session.add_diagnostic_event({"item_type": 0x1300})
+
+
+
+def test_diagnostic_event_buffer_is_bounded_and_uses_absolute_indices():
+    session = CaptureSession(max_diagnostic_events=3)
+
+    def make_event(index):
+        return DiagnosticEvent(
+            source="D-PDU",
+            item_type=0x1300,
+            timestamp_us=index,
+            timestamp_clock_domain="dpdu_api",
+            module_handle=1,
+            logical_link_handle=2,
+            payload=bytes([index]),
+        )
+
+    for index in range(5):
+        session.add_diagnostic_event(make_event(index))
+
+    assert session.total_diagnostic_events_added == 5
+    assert session.dropped_diagnostic_events == 2
+    assert [event.timestamp_us for event in session.diagnostic_events] == [2, 3, 4]
+    assert [event.timestamp_us for event in session.diagnostic_events_since(0)] == [2, 3, 4]
+    assert [event.timestamp_us for event in session.diagnostic_events_since(3)] == [3, 4]
