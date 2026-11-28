@@ -436,3 +436,32 @@ diagnostic worker. The current J2534 receiver still supplies raw CAN frames,
 and the D-PDU runtime does not yet start a UI-managed worker or automatically
 feed that endpoint. That connection remains a separate step requiring an
 explicit D-PDU device/protocol configuration and hardware validation.
+
+
+## Dedicated D-PDU diagnostic worker
+
+The new `hardware.dpdu_worker.DPduDiagnosticWorker` owns the complete D-PDU
+runtime lifecycle on one QThread. The API is loaded, the selected module is
+initialized, the selected resource is reserved, ComParams are applied, the
+logical link is connected, the receive-only ComPrimitive is started, events
+are polled and normalized, and teardown is performed by that same worker
+thread. The UI thread never calls into the vendor DLL to stop or close it;
+`stop()` only sets a cooperative cancellation event.
+
+Worker configuration requires an explicit module handle, resource ID,
+protocol response mask/pattern, and an explicit
+`operator_confirmed_physical_connection=True` authorization. The worker
+validates the selected module against the live inventory before module
+initialization. Optional uint32 ComParams are applied while the logical link
+is offline and before physical connection. The worker batches normalized
+`DiagnosticEvent` records through a Qt signal; a UI/controller can connect
+that signal to `MainWindow.on_diagnostic_events()`.
+
+This is a worker foundation, not yet a user-facing D-PDU connection screen.
+It is not started automatically, does not select a protocol/resource on the
+operator's behalf, and does not infer response filters or ComParams from an
+unverified vehicle profile. The next UI integration must present the selected
+registration, live module, MDF/CDF-derived resource, protocol, pins, and
+parameters for review, then obtain explicit confirmation before starting the
+worker. Mocked lifecycle tests do not establish compatibility with a physical
+VCI.
