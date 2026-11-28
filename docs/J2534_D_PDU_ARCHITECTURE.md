@@ -401,3 +401,14 @@ All D-PDU event tests use mocked libraries. They validate the ABI-shaped
 structures, zero-send/infinite-receive control values, result payload copying,
 API-owned event destruction, empty-queue handling, and cancellation-before-
 disconnect cleanup. This does not establish compatibility with a physical VCI.
+
+The D-PDU ctypes declarations use the one-byte structure packing required by
+ISO 22900-2:2022 clause 10.1.4.1. This matters on 64-bit Windows: pointer fields
+in structures such as `PDU_EXP_RESP_DATA`, `PDU_COP_CTRL_DATA`, and
+`PDU_RESULT_DATA` are not naturally aligned by the standard ABI. Tests assert
+the field offsets and structure sizes rather than relying on Python mocks that
+would otherwise hide an ABI mismatch.
+
+Result timestamps are exposed only when the corresponding ISO timestamp-valid
+bits are set in `TimestampFlags`. Status and information event codes are kept
+in their own fields rather than being mislabeled as errors.

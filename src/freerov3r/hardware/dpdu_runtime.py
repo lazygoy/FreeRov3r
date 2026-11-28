@@ -27,10 +27,12 @@ MAX_VENDOR_TEXT = 4096
 
 
 class _PduItem(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [("item_type", ctypes.c_int32)]
 
 
 class _PduModuleData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("module_type_id", ctypes.c_uint32),
         ("module_handle", ctypes.c_uint32),
@@ -41,6 +43,7 @@ class _PduModuleData(ctypes.Structure):
 
 
 class _PduModuleItem(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("item_type", ctypes.c_int32),
         ("num_entries", ctypes.c_uint32),
@@ -49,6 +52,7 @@ class _PduModuleItem(ctypes.Structure):
 
 
 class _PduPinData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("dlc_pin_number", ctypes.c_uint32),
         ("dlc_pin_type_id", ctypes.c_uint32),
@@ -56,6 +60,7 @@ class _PduPinData(ctypes.Structure):
 
 
 class _PduResourceData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("bus_type_id", ctypes.c_uint32),
         ("protocol_id", ctypes.c_uint32),
@@ -65,6 +70,7 @@ class _PduResourceData(ctypes.Structure):
 
 
 class _PduResourceIdItemData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("module_handle", ctypes.c_uint32),
         ("num_ids", ctypes.c_uint32),
@@ -73,6 +79,7 @@ class _PduResourceIdItemData(ctypes.Structure):
 
 
 class _PduResourceIdItem(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("item_type", ctypes.c_int32),
         ("num_modules", ctypes.c_uint32),
@@ -81,6 +88,7 @@ class _PduResourceIdItem(ctypes.Structure):
 
 
 class _PduResourceStatusData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("module_handle", ctypes.c_uint32),
         ("resource_id", ctypes.c_uint32),
@@ -89,6 +97,7 @@ class _PduResourceStatusData(ctypes.Structure):
 
 
 class _PduResourceStatusItem(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("item_type", ctypes.c_int32),
         ("num_entries", ctypes.c_uint32),
@@ -97,6 +106,7 @@ class _PduResourceStatusItem(ctypes.Structure):
 
 
 class _PduFlagData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("num_flag_bytes", ctypes.c_uint32),
         ("flag_data", ctypes.POINTER(ctypes.c_uint8)),
@@ -104,6 +114,7 @@ class _PduFlagData(ctypes.Structure):
 
 
 class _PduParamItem(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("item_type", ctypes.c_int32),
         ("com_param_id", ctypes.c_uint32),
@@ -114,6 +125,7 @@ class _PduParamItem(ctypes.Structure):
 
 
 class _PduResourceConflictData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("module_handle", ctypes.c_uint32),
         ("resource_id", ctypes.c_uint32),
@@ -121,6 +133,7 @@ class _PduResourceConflictData(ctypes.Structure):
 
 
 class _PduResourceConflictItem(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("item_type", ctypes.c_int32),
         ("num_entries", ctypes.c_uint32),

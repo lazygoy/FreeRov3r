@@ -9,6 +9,16 @@ from freerov3r.hardware.dpdu_runtime import (
     _PduItem,
     _PduModuleData,
     _PduModuleItem,
+    _PduPinData,
+    _PduResourceData,
+    _PduResourceIdItemData,
+    _PduResourceIdItem,
+    _PduResourceStatusData,
+    _PduResourceStatusItem,
+    _PduFlagData,
+    _PduParamItem,
+    _PduResourceConflictData,
+    _PduResourceConflictItem,
 )
 
 
@@ -698,3 +708,23 @@ def test_runtime_rejects_physical_connect_without_export(registration):
         runtime.connect_logical_link(17, 93)
 
     runtime.close()
+
+
+
+def test_all_d_pdu_runtime_structures_use_iso_byte_packing():
+    structures = (
+        _PduItem,
+        _PduModuleData,
+        _PduModuleItem,
+        _PduPinData,
+        _PduResourceData,
+        _PduResourceIdItemData,
+        _PduResourceIdItem,
+        _PduResourceStatusData,
+        _PduResourceStatusItem,
+        _PduFlagData,
+        _PduParamItem,
+        _PduResourceConflictData,
+        _PduResourceConflictItem,
+    )
+    assert all(structure._pack_ == 1 for structure in structures)
