@@ -498,6 +498,7 @@ class SensorDashboardDock(QWidget):
         self._waterfall_dialog = None
         self._correlation_dialog = None
         self.selection_changed_callback = None
+        self.favorites_changed_callback = None
         self.setObjectName("sensorDashboardWorkspace")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(4, 4, 4, 4)
@@ -692,6 +693,8 @@ class SensorDashboardDock(QWidget):
             self.settings["obd_pid_favorites"] = updated
             if callable(self.save_settings_callback):
                 self.save_settings_callback(self.settings)
+            if callable(self.favorites_changed_callback):
+                self.favorites_changed_callback(name.strip())
             favorites.clear()
             favorites.addItem("Choose favorite…", None)
             for favorite_name in sorted(updated, key=str.casefold):
@@ -728,40 +731,6 @@ class SensorDashboardDock(QWidget):
         """Keep OBD-II selection synchronization anchored to graph one."""
         self.panels[0].refresh_sensor_choices(set(sensor_ids or ()))
         self.persist_layout()
-
-    def _apply_layout(self, layout):
-        layout = normalize_dashboard_layout(layout)
-        self._loading_config = True
-        try:
-            count = layout["panel_count"]
-            self.panel_count.setCurrentIndex(PANEL_COUNTS.index(count))
-            configs = layout["panels"]
-            for index, panel in enumerate(self.panels):
-                config = configs[index] if index < len(configs) and isinstance(configs[index], dict) else {}
-                ids = config.get("sensor_ids", [])
-                panel.refresh_sensor_choices(set(ids) if isinstance(ids, list) else set())
-                seconds = config.get("window_seconds", 60)
-                window_index = panel.window_combo.findData(seconds)
-                panel.window_combo.setCurrentIndex(window_index if window_index >= 0 else 2)
-                panel.auto_scale.setChecked(bool(config.get("auto_scale", True)))
-        finally:
-            self._loading_config = False
-        self.reflow()
-        self.persist_layout()
-
-    def save_layout_to_favorite(self):
-        name = self.favorite_combo.currentData()
-        if not name:
-            return
-        layouts = self.settings.get("sensor_dashboard_favorites", {})
-        if not isinstance(layouts, dict):
-            layouts = {}
-        layouts = dict(layouts)
-        layouts[name] = self._layout_payload()
-        self.settings["sensor_dashboard_favorites"] = layouts
-        if callable(self.save_settings_callback):
-            self.save_settings_callback(self.settings)
-        self._refresh_favorites(name)
 
     def refresh(self):
         if not self.isVisible():
