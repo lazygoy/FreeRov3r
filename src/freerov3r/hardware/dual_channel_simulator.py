@@ -18,7 +18,7 @@ class DualChannelSimulator(CanAdapter):
          "frames": ((0x300, 8), (0x301, 4), (0x320, 8))},
     )
 
-    def __init__(self, *, speed: float = 1.0, channels: tuple[str, ...] | None = None):
+    def __init__(self, *, speed: float = 0.25, channels: tuple[str, ...] | None = None):
         if (isinstance(speed, bool) or not isinstance(speed, (int, float))
                 or not math.isfinite(speed) or speed <= 0):
             raise ValueError("Simulation speed must be finite and greater than zero.")

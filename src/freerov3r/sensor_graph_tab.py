@@ -378,8 +378,8 @@ class SensorGraphTab(QWidget):
         self.update_statistics(force=True)
 
     def mark_sample(self, sensor_id):
+        """Record sample arrival; the activity timer owns widget refreshes."""
         self.last_sample_time[str(sensor_id)] = time.monotonic()
-        self._update_activity_indicators()
 
     def _update_activity_indicators(self):
         now = time.monotonic()

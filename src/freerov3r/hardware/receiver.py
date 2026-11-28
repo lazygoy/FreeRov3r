@@ -38,8 +38,8 @@ class FrameBatcher:
 class Receiver(QThread):
     frame_received = Signal(object)
     frames_received = Signal(object)
-    FRAME_BATCH_SIZE = 64
-    FRAME_BATCH_INTERVAL = 0.05
+    FRAME_BATCH_SIZE = 256
+    FRAME_BATCH_INTERVAL = 0.10
     status = Signal(str)
     dtcs_completed = Signal(object)
     dtcs_failed = Signal(str)
