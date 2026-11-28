@@ -325,15 +325,15 @@ class MainWindow(QMainWindow):
         self.toast_manager = ToastManager(self)
         self.sensor_dashboard_dock = SensorDashboardDock(
             self.sensor_capture,
-            self,
+            self.graph_tab,
             initial_sensor_ids=self.graph_tab.selected_sensor_ids(),
             vin_provider=lambda: self.settings.get("current_vin"),
             settings=self.settings,
             save_settings_callback=save_settings,
         )
-        self.addDockWidget(Qt.BottomDockWidgetArea, self.sensor_dashboard_dock)
-        self.sensor_dashboard_dock.hide()
-        self.graph_tab.open_dashboard_callback = self.show_sensor_dashboard
+        self.graph_tab.set_dashboard_widget(self.sensor_dashboard_dock)
+        self.sensor_dashboard_dock.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
+        self.graph_tab.open_dashboard_callback = self.sensor_dashboard_dock.choose_sensors
 
     def _build_navigation_workspace(self):
         self.navigation_workspace = NavigationWorkspace(
@@ -416,7 +416,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, "obd_tab"):
             self.obd_tab._refresh_favorite_combo(selected_name)
         if hasattr(self, "sensor_dashboard_dock"):
-            self.sensor_dashboard_dock._refresh_favorites(selected_name)
         # A dashboard layout belongs to its sensor favorite. Remove orphaned
         # layouts when the corresponding sensor favorite is deleted.
         groups = self.settings.get("obd_pid_favorites", {})
@@ -430,9 +429,7 @@ class MainWindow(QMainWindow):
     def show_sensor_dashboard(self):
         if hasattr(self, "sensor_dashboard_dock"):
             self.sensor_dashboard_dock.refresh()
-            self.sensor_dashboard_dock._refresh_favorites()
-            self.sensor_dashboard_dock.show()
-            self.sensor_dashboard_dock.raise_()
+            self.sensor_dashboard_dock.choose_sensors()
 
     def open_health_report(self):
         """Open module diagnostics and immediately run the health-report workflow."""
