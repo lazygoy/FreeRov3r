@@ -187,3 +187,31 @@ def test_waterfall_switch_stays_inside_dashboard(qapp):
     assert dashboard._waterfall_widget is waterfall
     assert waterfall.parentWidget() is dashboard.view_stack
     dashboard.close()
+
+
+def test_first_run_defaults_to_four_engine_obd_signals(qapp):
+    from types import SimpleNamespace
+
+    from freerov3r.sensor_dashboard import DEFAULT_GRAPH_SENSOR_IDS, SensorDashboardDock
+
+    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
+
+    assert dashboard.panel_count.currentData() == 4
+    assert [panel.selected_sensor_ids() for panel in dashboard.panels] == [
+        {sensor_id} for sensor_id in DEFAULT_GRAPH_SENSOR_IDS
+    ]
+    assert dashboard._waterfall_widget.selected_sensor_ids() == set(DEFAULT_GRAPH_SENSOR_IDS)
+    dashboard.close()
+
+
+def test_first_run_defaults_do_not_override_saved_empty_layout(qapp):
+    from types import SimpleNamespace
+
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    settings = {"sensor_dashboard_layout": {"panel_count": 2, "panels": []}}
+    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]), settings=settings)
+
+    assert dashboard.panel_count.currentData() == 2
+    assert all(not panel.selected_sensor_ids() for panel in dashboard.panels)
+    dashboard.close()
