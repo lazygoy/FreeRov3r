@@ -888,9 +888,10 @@ class _ClockCalibrationWorker(QThread):
 class ResearchTab(QWidget):
     """Local-only protocol capture, annotation, comparison and REA handoff."""
 
-    MAX_DISPLAY_ROWS = 150
+    MAX_DISPLAY_ROWS = 75
     MAX_LIVE_PREVIEW_FRAMES = 2000
-    SUMMARY_FRAME_WINDOW = 2000
+    SUMMARY_FRAME_WINDOW = 500
+    TIMESTAMP_HEALTH_WINDOW = 500
     MAX_CAPTURE_FRAMES = 100000
     MAX_PENDING_RECORDS = 100000
 
@@ -1541,7 +1542,7 @@ class ResearchTab(QWidget):
         # throttled. The capture buffers are flushed every second independently.
         now = time.monotonic()
         if (self._display_refresh_pending and self.isVisible()
-                and now - self._last_display_refresh >= 2.5):
+                and now - self._last_display_refresh >= 5.0):
             self._display_refresh_pending = False
             self._last_display_refresh = now
             self.refresh_table()
@@ -1623,7 +1624,7 @@ class ResearchTab(QWidget):
     def _update_timestamp_health(self):
         if not hasattr(self, "timestamp_health_label"):
             return
-        records = (self.frames if self.frames else self.live_preview)[-1000:]
+        records = (self.frames if self.frames else self.live_preview)[-self.TIMESTAMP_HEALTH_WINDOW:]
         if not records:
             self.timestamp_health_label.setText(
                 "No device timestamps observed yet. Host monotonic time remains the shared timeline."
@@ -1635,7 +1636,7 @@ class ResearchTab(QWidget):
         ):
             self.timestamp_health_label.setText(
                 f"{report['frame_count']:,} frames; no valid ESP32 device timestamps. "
-                "Older firmware/capture formats remain supported. Live health uses the most recent 1,000 frames."
+                "Older firmware/capture formats remain supported. Live health uses the most recent 500 frames."
             )
             return
         summaries = []
@@ -2433,6 +2434,7 @@ class ResearchTab(QWidget):
         # The live summary is an at-a-glance window, not a full-capture report.
         # Full-capture analysis remains available through the explicit analysis tools.
         dataset = self._visible_records()[-self.SUMMARY_FRAME_WINDOW:]
+        live_analysis_active = self.recording or (bool(self.live_preview) and not self.frames)
         counts = Counter((r["arbitration_id"], r["extended"]) for r in dataset)
         services = Counter()
         for record in dataset:
@@ -2460,8 +2462,14 @@ class ResearchTab(QWidget):
         )
         lines += ["", "Recognized protocol hints (heuristic only):"]
         lines.extend(f"  {name}: {count:,}" for name, count in services.most_common(12))
-        if self.dbc_library.database is not None:
-            coverage = self.dbc_library.decode_coverage(dataset[-self.SUMMARY_FRAME_WINDOW:])
+        if self.dbc_library.database is not None and live_analysis_active:
+            lines += [
+                "",
+                f"Loaded DBC: {self.dbc_library.path.name}",
+                "Live DBC decoding paused to protect capture responsiveness; use the explicit DBC analysis tools.",
+            ]
+        elif self.dbc_library.database is not None:
+            coverage = self.dbc_library.decode_coverage(dataset)
             lines += [
                 "",
                 f"Loaded DBC: {self.dbc_library.path.name}",
@@ -2485,7 +2493,7 @@ class ResearchTab(QWidget):
                 f"{current_ids[(can_id, extended)] - reference_ids[(can_id, extended)]:+}"
                 for can_id, extended in changed[:12]
             )
-            if self.dbc_library.database is not None:
+            if self.dbc_library.database is not None and not live_analysis_active:
                 dbc_comparison = self.dbc_library.compare_captures(
                     dataset[-self.SUMMARY_FRAME_WINDOW:], self.reference_frames[-self.SUMMARY_FRAME_WINDOW:]
                 )
