@@ -1607,7 +1607,7 @@ class ResearchTab(QWidget):
         ):
             self.timestamp_health_label.setText(
                 f"{report['frame_count']:,} frames; no valid ESP32 device timestamps. "
-                "Older firmware/capture formats remain supported. Live health uses the most recent 10,000 frames."
+                "Older firmware/capture formats remain supported. Live health uses the most recent 1,000 frames."
             )
             return
         summaries = []
@@ -1623,7 +1623,7 @@ class ResearchTab(QWidget):
         self.timestamp_health_label.setText(
             " | ".join(summaries)
             + " | ESP32 clocks are independent; residuals are timing consistency estimates, "
-              "not absolute transport latency. Live health uses the most recent 10,000 frames."
+              "not absolute transport latency. Live health uses the most recent 1,000 frames."
         )
 
     def show_selected_frame(self):
