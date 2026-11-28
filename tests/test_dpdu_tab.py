@@ -26,7 +26,7 @@ def test_parse_uint32_rejects_invalid_values(text):
     [
         ("FF", b"\xff"),
         ("62 F1 90", b"\x62\xf1\x90"),
-        ("0x07E8", b"\x7e\x08"),
+        ("0x7E08", b"\x7e\x08"),
         ("7E:8F", b"\x7e\x8f"),
         ("7E,8F", b"\x7e\x8f"),
     ],
