@@ -298,6 +298,7 @@ def test_capture_history_report_formats_lifecycle_and_vin_metadata():
             "bitrate": 500000,
             "frames": 1250,
             "sensor_samples": 84,
+            "diagnostic_events": 7,
             "sensor_samples_dropped_from_bounded_buffer": 3,
             "duration_seconds": 61.5,
             "archive_file": "vehicles/SALXXXXXXXXXXXX1/captures/capture.json",
@@ -308,6 +309,7 @@ def test_capture_history_report_formats_lifecycle_and_vin_metadata():
     assert "Bitrate: 500000" in report
     assert "Frames recorded: 1250" in report
     assert "Sensor samples: 84" in report
+    assert "Diagnostic protocol events: 7" in report
     assert "dropped from bounded buffer: 3" in report
     assert "Duration: 61.5 seconds" in report
     assert "capture.json" in report
