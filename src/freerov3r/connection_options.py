@@ -15,7 +15,7 @@ ADVANCED_CONNECTION_OPTIONS = (
     ("esp32_framed_wifi", "Single ESP32 CAN (Wi-Fi)", ""),
     ("esp32", "ESP32 legacy serial adapter", "COM3"),
     ("esp32_dual", "ESP32 dual legacy serial", "COM3,COM4"),
-    ("elm327", "ELM327 raw CAN monitor (advanced)", ""),
+    ("elm327", "ELM327 monitor mode (limited / adapter-dependent)", ""),
     ("socketcan", "SocketCAN", "can0"),
     ("slcan", "SLCAN", "COM3"),
     ("j2534", "J2534 Pass-Thru (registered driver)", ""),
