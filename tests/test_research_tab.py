@@ -969,3 +969,29 @@ def test_module_inventory_report_retention_preserves_vehicle_and_capture_provena
     assert records[0]["applicability"]["profile_ids"] == ["land_rover_l319_lr4"]
     assert records[0]["source_capture_ids"] == ["session-a", "session-b"]
     assert records[0]["data"]["identity_confirmed"] is False
+
+
+def test_research_tab_analysis_tools_are_grouped_into_compact_tabs(monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from freerov3r.research_tab import ResearchTab
+
+    app = QApplication.instance() or QApplication([])
+    tab = ResearchTab()
+
+    assert tab.analysis_tabs.count() == 4
+    assert [
+        tab.analysis_tabs.tabText(index)
+        for index in range(tab.analysis_tabs.count())
+    ] == ["DBC & Signals", "Network", "Protocols", "Capture & Reports"]
+    assert tab.analysis_tabs.isAncestorOf(tab.load_dbc_button)
+    assert tab.analysis_tabs.isAncestorOf(tab.cross_capture_validation_button)
+    assert tab.analysis_tabs.isAncestorOf(tab.sequence_analysis_button)
+    assert tab.analysis_tabs.isAncestorOf(tab.did_decode_button)
+    assert tab.analysis_tabs.isAncestorOf(tab.clear_button)
+    assert tab.analysis_tabs.minimumHeight() <= tab.analysis_tabs.maximumHeight()
+
+    tab.refresh_timer.stop()
+    tab.close()
+    app.processEvents()

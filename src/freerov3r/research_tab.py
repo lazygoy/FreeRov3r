@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QGridLayout, QWidget,
-    QDoubleSpinBox,
+    QDoubleSpinBox, QTabWidget,
 )
 
 from freerov3r.capture_storage import (
@@ -1065,56 +1065,42 @@ class ResearchTab(QWidget):
             controls.setColumnStretch(column, 1)
         root.addLayout(controls)
 
-        dbc_controls = QHBoxLayout()
         self.load_dbc_button = QPushButton("Load DBC")
         self.load_dbc_button.setToolTip("Import a local DBC for passive CAN signal decoding. No frames are transmitted.")
         self.load_dbc_button.clicked.connect(self.load_dbc)
-        dbc_controls.addWidget(self.load_dbc_button)
         self.dbc_evidence_button = QPushButton("DBC Evidence")
         self.dbc_evidence_button.setToolTip("Record the source, target vehicle, physical bus and evidence grade for the loaded DBC.")
         self.dbc_evidence_button.clicked.connect(self.edit_dbc_evidence)
-        dbc_controls.addWidget(self.dbc_evidence_button)
         self.inspect_dbc_button = QPushButton("Inspect DBC")
         self.inspect_dbc_button.clicked.connect(self.inspect_dbc)
-        dbc_controls.addWidget(self.inspect_dbc_button)
         self.compare_dbc_button = QPushButton("Compare DBCs")
         self.compare_dbc_button.clicked.connect(self.compare_dbcs)
-        dbc_controls.addWidget(self.compare_dbc_button)
         self.dbc_audit_button = QPushButton("Audit capture vs DBC")
         self.dbc_audit_button.setToolTip("Measure passive capture coverage against the loaded DBC; unmatched frames are not automatically faults.")
         self.dbc_audit_button.clicked.connect(self.audit_capture_against_dbc)
-        dbc_controls.addWidget(self.dbc_audit_button)
         self.dbc_signal_behavior_button = QPushButton("Analyze DBC signals")
         self.dbc_signal_behavior_button.setToolTip("Summarize decoded signal values and capture-relative behavior. Passive only.")
         self.dbc_signal_behavior_button.clicked.connect(self.analyze_dbc_signal_behavior)
-        dbc_controls.addWidget(self.dbc_signal_behavior_button)
         self.dbc_signal_graph_button = QPushButton("Graph DBC signals")
         self.dbc_signal_graph_button.setToolTip(
             "Plot selected decoded signals against capture-relative time and overlay scanner action markers. Passive only."
         )
         self.dbc_signal_graph_button.clicked.connect(self.graph_dbc_signals)
-        dbc_controls.addWidget(self.dbc_signal_graph_button)
         self.cross_bus_button = QPushButton("Cross-bus correlation")
         self.cross_bus_button.setToolTip(
             "Find repeated CAN ID activity patterns across buses using only the shared host monotonic timeline."
         )
         self.cross_bus_button.clicked.connect(self.analyze_cross_bus_traffic)
-        dbc_controls.addWidget(self.cross_bus_button)
         self.cross_bus_signal_button = QPushButton("Signal-level correlation")
         self.cross_bus_signal_button.setToolTip(
             "Compare repeated CAN payload byte and bit transitions across candidate bus pairs. Shared host clock only; passive analysis."
         )
         self.cross_bus_signal_button.clicked.connect(self.analyze_cross_bus_signals)
-        dbc_controls.addWidget(self.cross_bus_signal_button)
         self.cross_capture_validation_button = QPushButton("Validate across captures")
         self.cross_capture_validation_button.setToolTip(
             "Check whether byte/bit relationships recur consistently in multiple independent capture files."
         )
         self.cross_capture_validation_button.clicked.connect(self.analyze_cross_capture_signals)
-        dbc_controls.addWidget(self.cross_capture_validation_button)
-        dbc_controls.setContentsMargins(0, 0, 0, 0)
-        dbc_controls.setSpacing(5)
-        root.addLayout(dbc_controls)
         self.dbc_status = QLabel("DBC: none loaded. Install optional protocols support to decode imported DBC files.")
         self.dbc_status.setWordWrap(False)
         if self.dbc_library.path is not None:
@@ -1182,10 +1168,6 @@ class ResearchTab(QWidget):
         splitter.setStretchFactor(1, 2)
         root.addWidget(splitter, 1)
 
-        footer = QGridLayout()
-        footer.setContentsMargins(0, 0, 0, 0)
-        footer.setHorizontalSpacing(5)
-        footer.setVerticalSpacing(3)
         self.isotp_button = QPushButton("Reassemble ISO-TP")
         self.isotp_button.clicked.connect(self.analyze_isotp)
         self.pair_button = QPushButton("Pair UDS transactions")
@@ -1210,20 +1192,47 @@ class ResearchTab(QWidget):
         self.packet_button.clicked.connect(self.copy_analysis_packet)
         self.clear_button = QPushButton("Clear research data")
         self.clear_button.clicked.connect(self.clear_data)
-        footer_buttons = (
-            self.isotp_button, self.pair_button, self.address_map_button,
+
+        self.analysis_tabs = QTabWidget()
+        self.analysis_tabs.setDocumentMode(True)
+        self.analysis_tabs.setMinimumHeight(112)
+        self.analysis_tabs.setMaximumHeight(142)
+
+        def add_analysis_tab(title, buttons):
+            page = QWidget()
+            grid = QGridLayout(page)
+            grid.setContentsMargins(6, 4, 6, 4)
+            grid.setHorizontalSpacing(5)
+            grid.setVerticalSpacing(4)
+            columns = 3
+            for index, button in enumerate(buttons):
+                button.setToolTip(button.toolTip() or button.text())
+                grid.addWidget(button, index // columns, index % columns)
+            for column in range(columns):
+                grid.setColumnStretch(column, 1)
+            self.analysis_tabs.addTab(page, title)
+
+        add_analysis_tab("DBC & Signals", [
+            self.load_dbc_button, self.dbc_evidence_button, self.inspect_dbc_button,
+            self.compare_dbc_button, self.dbc_audit_button, self.dbc_signal_behavior_button,
+            self.dbc_signal_graph_button, self.payload_variability_button,
+        ])
+        add_analysis_tab("Network", [
+            self.cross_bus_button, self.cross_bus_signal_button,
+            self.cross_capture_validation_button, self.module_inventory_button,
+            self.can_timing_button, self.address_map_button,
+        ])
+        add_analysis_tab("Protocols", [
+            self.isotp_button, self.pair_button, self.did_decode_button,
+        ])
+        add_analysis_tab("Capture & Reports", [
             self.marker_analysis_button, self.sequence_analysis_button,
-            self.did_decode_button, self.module_inventory_button,
-            self.can_timing_button, self.payload_variability_button,
             self.packet_button, self.clear_button,
-        )
-        for index, button in enumerate(footer_buttons):
-            button.setToolTip(button.text())
-            footer.addWidget(button, index // 4, index % 4)
-            footer.setColumnStretch(index % 4, 1)
+        ])
+        root.addWidget(self.analysis_tabs)
+
         self.count_label = QLabel("0 displayed · 0 recorded")
-        footer.addWidget(self.count_label, 3, 0, 1, 4)
-        root.addLayout(footer)
+        root.addWidget(self.count_label)
 
     def set_clock_sync_adapters(self, adapters=()):
         """Enable calibration only for two live framed ESP32 adapters."""
