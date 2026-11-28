@@ -54,7 +54,7 @@ class CaptureSession:
         selected = self.diagnostic_events if events is None else events
         with Path(path).open("w", encoding="utf-8") as stream:
             for event in selected:
-                stream.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\\n")
+                stream.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
 
     def export_csv(self, path):
         fields = [
