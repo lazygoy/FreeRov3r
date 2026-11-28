@@ -1,6 +1,8 @@
 """Clean 3D sensor-history waterfall surfaces using PyQtGraph OpenGL."""
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
@@ -10,6 +12,16 @@ from PySide6.QtWidgets import QSizePolicy
 PALETTE = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80",
            "#A78BFA", "#FACC15", "#FB923C", "#60A5FA")
 LANE_SPACING = 1.65
+
+
+def camera_fit_distance(width, height, time_extent, lane_extent, fov_degrees=60.0,
+                        margin=1.12):
+    """Return a perspective-camera distance that fits the plot to its viewport."""
+    aspect = max(0.5, float(width) / max(1.0, float(height)))
+    half_fov_tangent = math.tan(math.radians(float(fov_degrees)) / 2.0)
+    horizontal_distance = float(time_extent) / (2.0 * half_fov_tangent * aspect)
+    vertical_distance = float(lane_extent) / (2.0 * half_fov_tangent)
+    return max(4.0, horizontal_distance, vertical_distance * 0.72) * float(margin)
 
 
 class WaterfallPlot(gl.GLViewWidget):
@@ -37,8 +49,28 @@ class WaterfallPlot(gl.GLViewWidget):
         self.setCameraPosition(distance=20, elevation=26, azimuth=-48)
 
     def _camera_distance(self):
-        lane_extent = max(1, len(self.lanes) - 1) * LANE_SPACING + 1.2
-        return max(14.0, self.time_extent * 1.05, lane_extent * 1.20)
+        lane_extent = max(1, len(self.lanes) - 1) * LANE_SPACING + 1.6
+        return camera_fit_distance(
+            self.width(), self.height(), self.time_extent, lane_extent,
+            fov_degrees=float(self.opts.get("fov", 60.0)),
+        )
+
+    def _fit_camera(self):
+        self.opts["center"] = pg.Vector(
+            self.time_extent / 2.0,
+            max(0, len(self.lanes) - 1) * LANE_SPACING / 2.0,
+            self.height_scale * 0.30,
+        )
+        self.setCameraPosition(
+            distance=self._camera_distance(),
+            elevation=float(self.opts.get("elevation", 26)),
+            azimuth=float(self.opts.get("azimuth", -48)),
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._scene_sensor_ids:
+            self._fit_camera()
 
     def set_lanes(self, lanes, colors=None):
         self.lanes = list(lanes or [])[:8]
@@ -148,10 +180,7 @@ class WaterfallPlot(gl.GLViewWidget):
         )
         self.addItem(self._cursor_line)
         self._scene_sensor_ids = tuple(lane["sensor_id"] for lane in self.lanes)
-        self.opts["center"] = pg.Vector(self.time_extent / 2.0,
-                                        (count - 1) * LANE_SPACING / 2.0,
-                                        self.height_scale * 0.30)
-        self.setCameraPosition(distance=self._camera_distance(), elevation=26, azimuth=-48)
+        self._fit_camera()
         self.update()
 
     def _update_lane_items(self):
