@@ -231,7 +231,18 @@ class SensorWaterfallDialog(QWidget):
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self.refresh_sensor_choices)
-        self.refresh_timer.start()
+
+    def showEvent(self, event):
+        """Run live refresh only while this embedded page is actually visible."""
+        super().showEvent(event)
+        if not self.refresh_timer.isActive():
+            self.refresh_timer.start()
+
+    def hideEvent(self, event):
+        """Stop polling while the waterfall page is not the active workspace."""
+        if hasattr(self, "refresh_timer"):
+            self.refresh_timer.stop()
+        super().hideEvent(event)
 
     def refresh_sensor_choices(self):
         vin = self.vin_provider()
