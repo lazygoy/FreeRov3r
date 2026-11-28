@@ -1,4 +1,4 @@
-"""Dockable multi-panel live sensor dashboard."""
+"""Embedded multi-panel live sensor dashboard."""
 
 import math
 from datetime import datetime
@@ -6,9 +6,9 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QMargins
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDockWidget, QGridLayout, QHBoxLayout,
+    QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
-    QInputDialog, QFileDialog, QMessageBox,
+    QInputDialog, QFileDialog, QMessageBox, QStackedWidget,
 )
 
 try:
@@ -19,11 +19,11 @@ except ImportError:
 
 from .sensors.scaling import sample_clock, sample_time
 from .sensors.correlation import correlate_sensor_series, make_event_marker
-from .sensors.presets import PRESET_GROUPS, build_sensor_preset
 from .sensor_waterfall import SensorWaterfallDialog
+from .diagnostics.obd2 import OBD_PIDS
 
 
-PANEL_COUNTS = (1, 2, 4, 6, 8)
+PANEL_COUNTS = (1, 2, 4)
 GRAPH_PALETTE = ("#38BDF8", "#F59E0B", "#F472B6", "#4ADE80", "#A78BFA", "#FACC15", "#FB923C", "#60A5FA")
 TIME_WINDOWS = (
     ("10 seconds", 10),
@@ -262,27 +262,6 @@ class SensorCorrelationDialog(QDialog):
             QMessageBox.warning(self, "Export failed", str(exc))
 
 
-class _FloatingGraphWindow(QDialog):
-    def __init__(self, dock, panel):
-        super().__init__(None, Qt.Window)
-        self.dock = dock
-        self.panel = panel
-        self._restoring = False
-        self.setWindowTitle(f"FreeRov3r | {panel.windowTitle()}")
-        self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setMinimumSize(900, 560)
-        self.resize(1100, 700)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        panel.setParent(self)
-        layout.addWidget(panel)
-
-    def closeEvent(self, event):
-        if not self._restoring:
-            self.dock.restore_panel(self.panel, self)
-        event.accept()
-
-
 class SensorGraphPanel(QWidget):
     """One independently configured sensor graph."""
 
@@ -293,7 +272,6 @@ class SensorGraphPanel(QWidget):
         self.dock = dock
         self.vehicle_vin = None
         self._last_sample_generation = None
-        self._floating_host = None
         self.setWindowTitle(f"Graph {index + 1}")
 
         outer = QVBoxLayout(self)
@@ -313,24 +291,17 @@ class SensorGraphPanel(QWidget):
         self.auto_scale.toggled.connect(self.update_chart)
         self.auto_scale.toggled.connect(self.dock.persist_layout)
         controls.addWidget(self.auto_scale)
-        self.popout_button = QPushButton("Pop out")
-        self.popout_button.clicked.connect(self.toggle_popout)
-        controls.addWidget(self.popout_button)
-        self.topmost = QCheckBox("Stay on top")
-        self.topmost.setEnabled(False)
-        self.topmost.toggled.connect(self._set_topmost)
-        controls.addWidget(self.topmost)
         controls.addStretch(1)
         outer.addLayout(controls)
 
         self.sensor_list = QListWidget()
         self.sensor_list.setMaximumHeight(74)
         self.sensor_list.setToolTip(
-            "Select one or more signals for this graph. Each graph has its own sensor selection."
+            "Sensor selection is managed centrally in Choose Sensors (PID)."
         )
         self.sensor_list.itemChanged.connect(self.update_chart)
         self.sensor_list.itemChanged.connect(self.dock.persist_layout)
-        outer.addWidget(self.sensor_list)
+        self.sensor_list.hide()
 
         if HAS_CHARTS:
             self.chart = QChart()
@@ -509,50 +480,30 @@ class SensorGraphPanel(QWidget):
             padding = max((high - low) * 0.12, abs(high) * 0.01, 0.1)
             self.axis_y.setRange(low - padding, high + padding)
 
-    def toggle_popout(self):
-        if self._floating_host is None:
-            self.dock.popout_panel(self)
-        else:
-            self.dock.restore_panel(self, self._floating_host)
-
-    def _set_topmost(self, checked):
-        if self._floating_host is None:
-            return
-        host = self._floating_host
-        host.setWindowFlag(Qt.WindowStaysOnTopHint, checked)
-        host.show()
-
-
-class SensorDashboardDock(QDockWidget):
-    """Application-wide dock containing up to eight independently configured graphs."""
+class SensorDashboardDock(QWidget):
+    """Embedded multi-graph workspace with a focused sensor picker."""
 
     def __init__(
         self, sensor_capture, parent=None, initial_sensor_ids=None, vin_provider=None,
         settings=None, save_settings_callback=None,
     ):
-        super().__init__("Sensor Dashboard", parent)
+        super().__init__(parent)
         self.sensor_capture = sensor_capture
         self.vin_provider = vin_provider or (lambda: None)
         self.initial_sensor_ids = set(initial_sensor_ids or ())
         self.settings = settings if isinstance(settings, dict) else {}
         self.save_settings_callback = save_settings_callback
         self._loading_config = False
-        self._waterfall_dialog = None
+        self._waterfall_widget = None
         self._correlation_dialog = None
-        self.setObjectName("sensorDashboardDock")
-        self.setAllowedAreas(Qt.AllDockWidgetAreas)
-        self.setFeatures(
-            QDockWidget.DockWidgetClosable
-            | QDockWidget.DockWidgetMovable
-            | QDockWidget.DockWidgetFloatable
-        )
-
-        container = QWidget(self)
-        self.container = container
-        outer = QVBoxLayout(container)
-        outer.setContentsMargins(6, 6, 6, 6)
+        self.selection_changed_callback = None
+        self.favorites_changed_callback = None
+        self.setObjectName("sensorDashboardWorkspace")
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setSpacing(5)
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("Visible graphs:"))
+        controls.addWidget(QLabel("Graphs:"))
         self.panel_count = QComboBox()
         for count in PANEL_COUNTS:
             self.panel_count.addItem(str(count), count)
@@ -560,77 +511,51 @@ class SensorDashboardDock(QDockWidget):
         self.panel_count.currentIndexChanged.connect(self.reflow)
         self.panel_count.currentIndexChanged.connect(self.persist_layout)
         controls.addWidget(self.panel_count)
-        controls.addWidget(QLabel("Sensor favorite:"))
-        self.favorite_combo = QComboBox()
-        self.favorite_combo.setMinimumWidth(150)
-        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
-        controls.addWidget(self.favorite_combo)
-        self.load_favorite_button = QPushButton("Load")
-        self.load_favorite_button.clicked.connect(self.load_favorite)
-        controls.addWidget(self.load_favorite_button)
-        self.save_favorite_button = QPushButton("Save layout")
-        self.save_favorite_button.clicked.connect(self.save_layout_to_favorite)
-        controls.addWidget(self.save_favorite_button)
-        self.waterfall_button = QPushButton("Sensor Scope (2D / 3D)")
+        self.choose_sensors_button = QPushButton("Choose Sensors (PID)")
+        self.choose_sensors_button.clicked.connect(self.choose_sensors)
+        controls.addWidget(self.choose_sensors_button)
+        self.waterfall_button = QPushButton("2D / 3D View")
         self.waterfall_button.clicked.connect(self.open_waterfall)
         controls.addWidget(self.waterfall_button)
-        self.compare_button = QPushButton("Compare / Events")
-        self.compare_button.clicked.connect(self.open_correlation)
-        controls.addWidget(self.compare_button)
-        controls.addWidget(QLabel("Quick preset:"))
-        self.preset_combo = QComboBox()
-        for preset_name in PRESET_GROUPS:
-            self.preset_combo.addItem(preset_name, preset_name)
-        controls.addWidget(self.preset_combo)
-        self.apply_preset_button = QPushButton("Apply")
-        self.apply_preset_button.clicked.connect(self.apply_sensor_preset)
-        controls.addWidget(self.apply_preset_button)
         controls.addStretch(1)
-        self.topmost = QCheckBox("Floating dashboard stays on top")
-        self.topmost.toggled.connect(self._set_topmost)
-        controls.addWidget(self.topmost)
         outer.addLayout(controls)
 
-        self.grid_host = QWidget(container)
+        self.view_stack = QStackedWidget(self)
+        self.grid_host = QWidget(self.view_stack)
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setSpacing(6)
-        outer.addWidget(self.grid_host, 1)
-        self.setWidget(container)
+        self.view_stack.addWidget(self.grid_host)
 
         self.panels = [
             SensorGraphPanel(sensor_capture, index, self)
             for index in range(max(PANEL_COUNTS))
         ]
         self._visible_count = 4
-        self._refresh_favorites()
+        outer.addWidget(self.view_stack, 1)
         self._restore_saved_layout()
         self.refresh()
         if self.initial_sensor_ids and not self.panels[0].selected_sensor_ids():
             self.panels[0].refresh_sensor_choices(self.initial_sensor_ids)
         self.reflow()
 
+        # Keep both workspaces alive in the stack. Creating the OpenGL-backed
+        # page during a user click caused a disruptive native-window transition
+        # on some Windows graphics drivers.
+        self._waterfall_widget = SensorWaterfallDialog(
+            self.sensor_capture, vin_provider=self.vin_provider,
+            parent=self.view_stack, defer_initial_refresh=True
+        )
+        self._waterfall_widget.sensor_list.hide()
+        self._waterfall_widget.selection_status.hide()
+        self._waterfall_widget.source_label.hide()
+        self._waterfall_widget.source_combo.hide()
+        self.view_stack.addWidget(self._waterfall_widget)
+
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self.refresh)
         self.refresh_timer.start()
-
-    def apply_sensor_preset(self):
-        name = self.preset_combo.currentData()
-        vin = self.vin_provider()
-        available = {
-            sample.sensor_id for sample in self.sensor_capture.samples
-            if not vin or (sample.metadata or {}).get("vin", "UNASSIGNED") == vin
-        }
-        layout = build_sensor_preset(name, available)
-        if layout is None:
-            QMessageBox.information(
-                self, "No matching captured signals",
-                f"The {name} preset has no matching signals in the current capture. "
-                "It does not send PID requests or assume vehicle support."
-            )
-            return
-        self._apply_layout(layout)
 
     def open_correlation(self):
         if self._correlation_dialog is None:
@@ -643,34 +568,21 @@ class SensorDashboardDock(QDockWidget):
         self._correlation_dialog.activateWindow()
 
     def open_waterfall(self):
-        if self._waterfall_dialog is None:
-            self._waterfall_dialog = SensorWaterfallDialog(
-                self.sensor_capture, vin_provider=self.vin_provider, parent=self
-            )
-        self._waterfall_dialog.showMaximized()
-        self._waterfall_dialog.raise_()
-        self._waterfall_dialog.activateWindow()
+        """Switch between the two persistent pages in the embedded workspace."""
+        if self.view_stack.currentWidget() is self._waterfall_widget:
+            self.view_stack.setCurrentWidget(self.grid_host)
+            self.waterfall_button.setText("2D / 3D View")
+            return
+        # Show the already-owned page first. Its OpenGL surface is initialized
+        # as a child of the existing dashboard, never as a new top-level window.
+        self.view_stack.setCurrentWidget(self._waterfall_widget)
+        self._waterfall_widget.set_selected_sensor_ids(
+            self._selected_dashboard_sensor_ids()
+        )
+        self.waterfall_button.setText("Back to Graphs")
 
-    def _refresh_favorites(self, selected_name=None):
-        groups = self.settings.get("obd_pid_favorites", {})
-        self.favorite_combo.blockSignals(True)
-        self.favorite_combo.clear()
-        self.favorite_combo.addItem("Choose sensor favorite…", None)
-        if isinstance(groups, dict):
-            for name in sorted(groups, key=str.casefold):
-                self.favorite_combo.addItem(name, name)
-        if selected_name:
-            index = self.favorite_combo.findData(selected_name)
-            if index >= 0:
-                self.favorite_combo.setCurrentIndex(index)
-        self.favorite_combo.blockSignals(False)
-        self.load_favorite_button.setEnabled(self.favorite_combo.currentData() is not None)
-        self.save_favorite_button.setEnabled(self.favorite_combo.currentData() is not None)
-
-    def _favorite_selection_changed(self, *_):
-        enabled = self.favorite_combo.currentData() is not None
-        self.load_favorite_button.setEnabled(enabled)
-        self.save_favorite_button.setEnabled(enabled)
+    def _selected_dashboard_sensor_ids(self):
+        return set().union(*(panel.selected_sensor_ids() for panel in self.panels))
 
     def _layout_payload(self):
         return normalize_dashboard_layout({
@@ -716,69 +628,139 @@ class SensorDashboardDock(QDockWidget):
         finally:
             self._loading_config = False
 
-    def load_favorite(self):
-        name = self.favorite_combo.currentData()
-        if not name:
-            return
-        self._refresh_favorites(name)
-        layouts = self.settings.get("sensor_dashboard_favorites", {})
-        layout = layouts.get(name) if isinstance(layouts, dict) else None
-        if isinstance(layout, dict):
-            self._apply_layout(layout)
-        else:
-            groups = self.settings.get("obd_pid_favorites", {})
-            sensor_ids = groups.get(name, []) if isinstance(groups, dict) else []
-            if not isinstance(sensor_ids, (list, tuple, set)):
-                sensor_ids = []
-            self._loading_config = True
-            try:
-                for index, panel in enumerate(self.panels):
-                    panel.refresh_sensor_choices(set(sensor_ids) if index == 0 else set())
-                self.panel_count.setCurrentIndex(0)
-            finally:
-                self._loading_config = False
+    def choose_sensors(self):
+        """Choose captured signals or defined OBD-II PIDs for each graph panel."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Choose Sensors (PID)")
+        dialog.resize(620, 680)
+        layout = QVBoxLayout(dialog)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Assign to:"))
+        target = QComboBox()
+        for index in range(4):
+            target.addItem(f"Graph {index + 1}", index)
+        top.addWidget(target, 1)
+        top.addWidget(QLabel("Favorites:"))
+        favorites = QComboBox()
+        favorites.addItem("Choose favorite…", None)
+        groups = self.settings.get("obd_pid_favorites", {})
+        if isinstance(groups, dict):
+            for name in sorted(groups, key=str.casefold):
+                favorites.addItem(name, name)
+        top.addWidget(favorites, 1)
+        load = QPushButton("Load")
+        top.addWidget(load)
+        layout.addLayout(top)
+        hint = QLabel("Captured sensors and standard PID definitions. PID support depends on the vehicle and ECU.")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        sensor_list = QListWidget()
+        layout.addWidget(sensor_list, 1)
+
+        vin = self.vin_provider()
+        available = {}
+        for sample in self.sensor_capture.samples:
+            if vin and (sample.metadata or {}).get("vin", "UNASSIGNED") != vin:
+                continue
+            available.setdefault(sample.sensor_id, (sample.name, sample.unit or ""))
+        for pid, name, unit in OBD_PIDS:
+            available.setdefault(f"obd_{int(pid, 16):02X}", (name, unit))
+
+        def fill_list(selected=None):
+            selected = set(selected or ())
+            sensor_list.clear()
+            for sensor_id, (name, unit) in sorted(available.items(), key=lambda item: item[1][0].casefold()):
+                label = f"{name} ({sensor_id})" + (f" · {unit}" if unit else "")
+                item = QListWidgetItem(label)
+                item.setData(Qt.UserRole, sensor_id)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked if sensor_id in selected else Qt.Unchecked)
+                if sensor_id.startswith("obd_") and not any(s.sensor_id == sensor_id for s in self.sensor_capture.samples):
+                    item.setToolTip("PID definition available; vehicle support has not yet been confirmed.")
+                sensor_list.addItem(item)
+
+        def current_ids():
+            return {sensor_list.item(i).data(Qt.UserRole) for i in range(sensor_list.count())
+                    if sensor_list.item(i).checkState() == Qt.Checked}
+
+        def target_changed(*_):
+            fill_list(self.panels[int(target.currentData())].selected_sensor_ids())
+
+        def load_group():
+            name = favorites.currentData()
+            current_groups = self.settings.get("obd_pid_favorites", {})
+            stored = current_groups.get(name, []) if name and isinstance(current_groups, dict) else []
+            ids = set()
+            if isinstance(stored, (list, tuple, set)):
+                for value in stored:
+                    value = str(value).strip().lower()
+                    if value.startswith("obd_"):
+                        ids.add(value)
+                    else:
+                        try:
+                            ids.add(f"obd_{int(value, 16):02X}")
+                        except ValueError:
+                            ids.add(value)
+            for sensor_id in ids:
+                available.setdefault(sensor_id, (sensor_id, ""))
+            fill_list(ids)
+
+        def save_group():
+            ids = sorted(current_ids())
+            if not ids:
+                QMessageBox.information(dialog, "No sensors selected", "Select at least one sensor to save a favorite.")
+                return
+            name, accepted = QInputDialog.getText(dialog, "Save sensor favorite", "Favorite name:")
+            if not accepted or not name.strip():
+                return
+            updated = dict(self.settings.get("obd_pid_favorites", {}))
+            updated[name.strip()] = ids
+            self.settings["obd_pid_favorites"] = updated
+            if callable(self.save_settings_callback):
+                self.save_settings_callback(self.settings)
+            if callable(self.favorites_changed_callback):
+                self.favorites_changed_callback(name.strip())
+            favorites.clear()
+            favorites.addItem("Choose favorite…", None)
+            for favorite_name in sorted(updated, key=str.casefold):
+                favorites.addItem(favorite_name, favorite_name)
+            favorites.setCurrentIndex(favorites.findData(name.strip()))
+
+        load.clicked.connect(load_group)
+        target.currentIndexChanged.connect(target_changed)
+        fill_list(self.panels[0].selected_sensor_ids())
+        actions = QHBoxLayout()
+        save = QPushButton("Save Favorite")
+        save.clicked.connect(save_group)
+        actions.addWidget(save)
+        actions.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(dialog.reject)
+        actions.addWidget(cancel)
+        apply_button = QPushButton("Apply to Graph")
+        apply_button.clicked.connect(dialog.accept)
+        actions.addWidget(apply_button)
+        layout.addLayout(actions)
+        if dialog.exec() == QDialog.Accepted:
+            index = int(target.currentData())
+            selected = current_ids()
+            self.panels[index].refresh_sensor_choices(selected)
+            needed = max(int(self.panel_count.currentData()), index + 1)
+            panel_count = 1 if needed <= 1 else 2 if needed <= 2 else 4
+            self.panel_count.setCurrentIndex(PANEL_COUNTS.index(panel_count))
             self.reflow()
             self.persist_layout()
+            if self._waterfall_widget is not None:
+                self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
+            if callable(self.selection_changed_callback):
+                self.selection_changed_callback(self.panels[0].selected_sensor_ids())
 
-    def _apply_layout(self, layout):
-        layout = normalize_dashboard_layout(layout)
-        self._loading_config = True
-        try:
-            count = layout["panel_count"]
-            self.panel_count.setCurrentIndex(PANEL_COUNTS.index(count))
-            configs = layout["panels"]
-            for index, panel in enumerate(self.panels):
-                config = configs[index] if index < len(configs) and isinstance(configs[index], dict) else {}
-                ids = config.get("sensor_ids", [])
-                panel.refresh_sensor_choices(set(ids) if isinstance(ids, list) else set())
-                seconds = config.get("window_seconds", 60)
-                window_index = panel.window_combo.findData(seconds)
-                panel.window_combo.setCurrentIndex(window_index if window_index >= 0 else 2)
-                panel.auto_scale.setChecked(bool(config.get("auto_scale", True)))
-        finally:
-            self._loading_config = False
-        self.reflow()
+    def set_selected_sensor_ids(self, sensor_ids):
+        """Keep OBD-II selection synchronization anchored to graph one."""
+        self.panels[0].refresh_sensor_choices(set(sensor_ids or ()))
+        if self._waterfall_widget is not None:
+            self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
         self.persist_layout()
-
-    def save_layout_to_favorite(self):
-        name = self.favorite_combo.currentData()
-        if not name:
-            return
-        layouts = self.settings.get("sensor_dashboard_favorites", {})
-        if not isinstance(layouts, dict):
-            layouts = {}
-        layouts = dict(layouts)
-        layouts[name] = self._layout_payload()
-        self.settings["sensor_dashboard_favorites"] = layouts
-        if callable(self.save_settings_callback):
-            self.save_settings_callback(self.settings)
-        self._refresh_favorites(name)
-
-    def _set_topmost(self, checked):
-        if checked and not self.isFloating():
-            self.setFloating(True)
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, checked)
-        self.show()
 
     def refresh(self):
         if not self.isVisible():
@@ -786,6 +768,8 @@ class SensorDashboardDock(QDockWidget):
         vin = self.vin_provider()
         for panel in self.panels:
             panel.set_vehicle_vin(vin)
+        if self._waterfall_widget is not None and self.view_stack.currentWidget() is self._waterfall_widget:
+            self._waterfall_widget.refresh_sensor_choices()
 
     def reflow(self, *_):
         count = int(self.panel_count.currentData())
@@ -793,46 +777,9 @@ class SensorDashboardDock(QDockWidget):
         for panel in self.panels:
             self.grid.removeWidget(panel)
             panel.hide()
-            if panel._floating_host is None:
-                panel.setParent(self.grid_host)
+            panel.setParent(self.grid_host)
         rows, columns = panel_grid_dimensions(count)
         for index, panel in enumerate(self.panels[:count]):
-            if panel._floating_host is not None:
-                continue
             self.grid.addWidget(panel, index // columns, index % columns)
             panel.show()
         self.grid_host.updateGeometry()
-
-    def popout_panel(self, panel):
-        if panel._floating_host is not None:
-            return
-        self.grid.removeWidget(panel)
-        panel.hide()
-        host = _FloatingGraphWindow(self, panel)
-        panel._floating_host = host
-        panel.popout_button.setText("Dock back")
-        panel.topmost.setEnabled(True)
-        # Reparenting a hidden widget hides it in Qt; explicitly show the
-        # graph panel inside its new top-level window.
-        panel.show()
-        host.showNormal()
-        host.raise_()
-        host.activateWindow()
-
-    def restore_panel(self, panel, host):
-        if panel._floating_host is not host:
-            return
-        host._restoring = True
-        if host.layout() is not None:
-            host.layout().removeWidget(panel)
-        host.hide()
-        panel._floating_host = None
-        panel.topmost.blockSignals(True)
-        panel.topmost.setChecked(False)
-        panel.topmost.blockSignals(False)
-        panel.topmost.setEnabled(False)
-        panel.popout_button.setText("Pop out")
-        panel.setParent(self.grid_host)
-        panel.show()
-        self.reflow()
-        host.deleteLater()

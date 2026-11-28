@@ -9,26 +9,20 @@ from freerov3r.sensor_dashboard import (
 
 @pytest.mark.parametrize(
     ("count", "expected"),
-    [
-        (1, (1, 1)),
-        (2, (2, 1)),
-        (4, (2, 2)),
-        (6, (2, 3)),
-        (8, (2, 4)),
-    ],
+    [(1, (1, 1)), (2, (2, 1)), (4, (2, 2))],
 )
 def test_panel_grid_dimensions(count, expected):
     assert panel_grid_dimensions(count) == expected
 
 
-@pytest.mark.parametrize("count", [0, 3, 5, 7, 9, 10])
+@pytest.mark.parametrize("count", [0, 3, 5, 6, 8, 9])
 def test_panel_grid_dimensions_rejects_unsupported_counts(count):
     with pytest.raises(ValueError, match="panel count"):
         panel_grid_dimensions(count)
 
 
-def test_dashboard_panel_counts_are_ordered_and_capped_at_eight():
-    assert PANEL_COUNTS == (1, 2, 4, 6, 8)
+def test_dashboard_panel_counts_are_ordered_and_capped_at_four():
+    assert PANEL_COUNTS == (1, 2, 4)
 
 
 def test_normalize_dashboard_layout_preserves_independent_panel_settings():
@@ -51,7 +45,7 @@ def test_normalize_dashboard_layout_preserves_independent_panel_settings():
         "window_seconds": 300,
         "auto_scale": True,
     }
-    assert len(layout["panels"]) == 8
+    assert len(layout["panels"]) == 4
 
 
 def test_normalize_dashboard_layout_handles_legacy_favorite_without_layout():
@@ -83,15 +77,13 @@ def test_normalize_dashboard_layout_sanitizes_invalid_settings():
     }
 
 
-def test_dashboard_favorite_and_persistence_methods_belong_to_dock():
+def test_dashboard_exposes_picker_and_embedded_scope_controls():
     from freerov3r.sensor_dashboard import SensorDashboardDock
 
-    assert callable(getattr(SensorDashboardDock, "_refresh_favorites", None))
-    assert callable(getattr(SensorDashboardDock, "_favorite_selection_changed", None))
+    assert callable(getattr(SensorDashboardDock, "choose_sensors", None))
+    assert callable(getattr(SensorDashboardDock, "set_selected_sensor_ids", None))
     assert callable(getattr(SensorDashboardDock, "persist_layout", None))
     assert callable(getattr(SensorDashboardDock, "_restore_saved_layout", None))
-    assert callable(getattr(SensorDashboardDock, "load_favorite", None))
-    assert callable(getattr(SensorDashboardDock, "save_layout_to_favorite", None))
 
 
 @pytest.fixture
@@ -103,91 +95,94 @@ def qapp(monkeypatch):
     yield app
 
 
-def test_dashboard_initializes_persists_and_loads_sensor_favorites(qapp):
+def test_dashboard_initializes_and_persists_four_way_layout(qapp):
     from types import SimpleNamespace
 
     from freerov3r.sensor_dashboard import SensorDashboardDock
 
-    favorite_layout = {
+    layout = {
         "panel_count": 2,
         "panels": [
             {"sensor_ids": ["obd_0C"], "window_seconds": 10, "auto_scale": False},
             {"sensor_ids": ["obd_05"], "window_seconds": 300, "auto_scale": True},
         ],
     }
-    settings = {
-        "obd_pid_favorites": {"Engine": ["obd_0C", "obd_05"]},
-        "sensor_dashboard_favorites": {"Engine": favorite_layout},
-        "sensor_dashboard_layout": favorite_layout,
-    }
+    settings = {"sensor_dashboard_layout": layout}
     saved = []
-    dock = SensorDashboardDock(
+    dashboard = SensorDashboardDock(
         SimpleNamespace(samples=[]),
         settings=settings,
         save_settings_callback=lambda value: saved.append(dict(value)),
     )
 
-    assert dock.panel_count.currentData() == 2
-    assert dock.panels[0].selected_sensor_ids() == {"obd_0C"}
-    assert dock.panels[1].selected_sensor_ids() == {"obd_05"}
-    assert dock.favorite_combo.findData("Engine") >= 0
+    assert dashboard.panel_count.currentData() == 2
+    assert dashboard.panels[0].selected_sensor_ids() == {"obd_0C"}
+    assert dashboard.panels[1].selected_sensor_ids() == {"obd_05"}
+    assert not hasattr(dashboard.panels[0], "popout_button")
+    assert dashboard.panels[0].sensor_list.isHidden()
 
-    dock.favorite_combo.setCurrentIndex(dock.favorite_combo.findData("Engine"))
-    dock.load_favorite()
-    dock.save_layout_to_favorite()
-    dock.persist_layout()
-
-    assert settings["sensor_dashboard_favorites"]["Engine"]["panel_count"] == 2
+    dashboard.panel_count.setCurrentIndex(dashboard.panel_count.findData(4))
+    dashboard.persist_layout()
+    assert settings["sensor_dashboard_layout"]["panel_count"] == 4
     assert saved
 
     restored = SensorDashboardDock(SimpleNamespace(samples=[]), settings=settings)
-    assert restored.panel_count.currentData() == 2
-    assert restored.panels[0].selected_sensor_ids() == {"obd_0C"}
-    assert restored.panels[1].selected_sensor_ids() == {"obd_05"}
-
+    assert restored.panel_count.currentData() == 4
     restored.close()
-    dock.close()
+    dashboard.close()
 
 
-def test_legacy_sensor_favorite_loads_into_first_graph(qapp):
+def test_obd_selection_sync_targets_first_graph(qapp):
     from types import SimpleNamespace
 
     from freerov3r.sensor_dashboard import SensorDashboardDock
 
-    settings = {"obd_pid_favorites": {"Idle test": ["obd_0C", "obd_05"]}}
-    dock = SensorDashboardDock(SimpleNamespace(samples=[]), settings=settings)
-    dock.favorite_combo.setCurrentIndex(dock.favorite_combo.findData("Idle test"))
-    dock.load_favorite()
+    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
+    dashboard.set_selected_sensor_ids({"obd_0C", "obd_05"})
 
-    assert dock.panel_count.currentData() == 1
-    assert dock.panels[0].selected_sensor_ids() == {"obd_0C", "obd_05"}
-    assert all(not panel.selected_sensor_ids() for panel in dock.panels[1:])
-
-    dock.close()
+    assert dashboard.panels[0].selected_sensor_ids() == {"obd_0C", "obd_05"}
+    assert all(not panel.selected_sensor_ids() for panel in dashboard.panels[1:])
+    dashboard.close()
 
 
-
-def test_graph_panel_popout_and_close_restore_widget_parent(qapp):
+def test_graph_tab_has_no_sensor_health_panel(qapp):
     from types import SimpleNamespace
 
+    from freerov3r.sensor_graph_tab import SensorGraphTab
+
+    tab = SensorGraphTab(SimpleNamespace(samples=[]))
+    assert not hasattr(tab, "stats_table")
+    assert not hasattr(tab, "chart")
+    tab.activity_timer.stop()
+    tab.close()
+
+
+
+def test_waterfall_switch_stays_inside_dashboard(qapp):
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QDialog, QWidget
     from freerov3r.sensor_dashboard import SensorDashboardDock
 
-    dock = SensorDashboardDock(SimpleNamespace(samples=[]))
-    panel = dock.panels[0]
+    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
+    assert dashboard.view_stack.currentWidget() is dashboard.grid_host
 
-    panel.popout_button.click()
-    qapp.processEvents()
-    host = panel._floating_host
-    assert host is not None
-    assert host.isWindow()
-    assert host.isVisible()
-    assert panel.parent() is host
-    assert not panel.isHidden()
+    # The OpenGL-backed page exists before the first click and stays owned by
+    # the same stack throughout both directions of the transition.
+    waterfall = dashboard._waterfall_widget
+    assert waterfall is not None
+    assert waterfall.parentWidget() is dashboard.view_stack
+    assert dashboard.view_stack.indexOf(waterfall) >= 0
 
-    host.close()
-    qapp.processEvents()
+    dashboard.open_waterfall()
+    assert dashboard.view_stack.currentWidget() is waterfall
+    assert isinstance(waterfall, QWidget)
+    assert not isinstance(waterfall, QDialog)
+    assert dashboard.waterfall_button.text() == "Back to Graphs"
 
-    assert panel._floating_host is None
-    assert panel.parent() is dock.grid_host
-    assert not panel.isHidden()
-    dock.close()
+    dashboard.open_waterfall()
+    assert dashboard.view_stack.currentWidget() is dashboard.grid_host
+    assert dashboard.waterfall_button.text() == "2D / 3D View"
+    assert dashboard._waterfall_widget is waterfall
+    assert waterfall.parentWidget() is dashboard.view_stack
+    dashboard.close()

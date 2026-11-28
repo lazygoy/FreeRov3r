@@ -6,7 +6,7 @@ from bisect import bisect_left
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QHBoxLayout, QLabel, QListWidget,
+    QComboBox, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QVBoxLayout, QSlider, QPushButton, QTabWidget, QWidget,
 )
 
@@ -122,10 +122,10 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
     return sorted(lanes, key=lambda lane: lane["name"].casefold())
 
 
-class SensorWaterfallDialog(QDialog):
+class SensorWaterfallDialog(QWidget):
     """Live 3D sensor view with independent lane scales and visibility controls."""
 
-    def __init__(self, sensor_capture, vin_provider=None, parent=None):
+    def __init__(self, sensor_capture, vin_provider=None, parent=None, defer_initial_refresh=False):
         super().__init__(parent)
         self.sensor_capture = sensor_capture
         self._sensor_choices_initialized = False
@@ -134,8 +134,7 @@ class SensorWaterfallDialog(QDialog):
         self.demo_samples = generate_lr4_demo_samples()
         self.vin_provider = vin_provider or (lambda: None)
         self.setWindowTitle("FreeRov3r | Sensor Signal Scope")
-        self.setMinimumSize(1000, 700)
-        self.resize(1400, 900)
+        self.setMinimumSize(0, 0)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
@@ -150,7 +149,8 @@ class SensorWaterfallDialog(QDialog):
         self.window_combo.setCurrentIndex(2)
         controls.addWidget(self.window_combo)
         controls.addWidget(QLabel("Scale: independent per sensor"))
-        controls.addWidget(QLabel("Data source:"))
+        self.source_label = QLabel("Data source:")
+        controls.addWidget(self.source_label)
         self.source_combo = QComboBox()
         self.source_combo.addItem("Live sensor data", "live")
         self.source_combo.addItem("Synthetic LR4 demo", "demo")
@@ -226,11 +226,23 @@ class SensorWaterfallDialog(QDialog):
         self.color_button.clicked.connect(self._choose_sensor_color)
         self.color_sensor_combo.currentIndexChanged.connect(self._sync_color_button)
         self.source_combo.currentIndexChanged.connect(self.refresh_sensor_choices)
-        self.refresh_sensor_choices()
+        if not defer_initial_refresh:
+            self.refresh_sensor_choices()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self.refresh_sensor_choices)
-        self.refresh_timer.start()
+
+    def showEvent(self, event):
+        """Run live refresh only while this embedded page is actually visible."""
+        super().showEvent(event)
+        if not self.refresh_timer.isActive():
+            self.refresh_timer.start()
+
+    def hideEvent(self, event):
+        """Stop polling while the waterfall page is not the active workspace."""
+        if hasattr(self, "refresh_timer"):
+            self.refresh_timer.stop()
+        super().hideEvent(event)
 
     def refresh_sensor_choices(self):
         vin = self.vin_provider()
@@ -278,6 +290,37 @@ class SensorWaterfallDialog(QDialog):
                 self.sensor_list.addItem(item)
             self.sensor_list.blockSignals(False)
             self._sensor_choices_initialized = True
+        self._update_selection_status()
+        self.refresh_plot()
+
+    def set_selected_sensor_ids(self, sensor_ids):
+        """Mirror the dashboard's central PID selection without a second picker."""
+        selected = {str(sensor_id) for sensor_id in (sensor_ids or ())}
+        vin = self.vin_provider()
+        available = {}
+        for sample in self.sensor_capture.samples:
+            if vin and (sample.metadata or {}).get("vin", "UNASSIGNED") != vin:
+                continue
+            available.setdefault(sample.sensor_id, sample.name)
+        for sensor_id in selected:
+            available.setdefault(sensor_id, sensor_id)
+        self.sensor_list.blockSignals(True)
+        self.sensor_list.clear()
+        for sensor_id, name in sorted(available.items(), key=lambda item: item[1].casefold()):
+            item = QListWidgetItem(f"{name} ({sensor_id})")
+            item.setData(Qt.UserRole, sensor_id)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if sensor_id in selected else Qt.Unchecked)
+            self.sensor_list.addItem(item)
+        self.sensor_list.blockSignals(False)
+        self._sensor_choices_initialized = True
+        source = self.source_combo.currentData()
+        samples = self.demo_samples if source == "demo" else self.sensor_capture.samples
+        generation = len(samples) if source == "demo" else getattr(
+            self.sensor_capture, "total_samples_added", len(samples)
+        )
+        self._last_choice_signature = (source, None if source == "demo" else vin,
+                                       generation, len(samples))
         self._update_selection_status()
         self.refresh_plot()
 
