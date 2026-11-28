@@ -35,6 +35,7 @@ from .modules_tab import ModulesTab
 from .vehicle_setup_wizard import VehicleSetupWizard, VinDecodeWorker, VinQueryWorker
 from .settings_tab import SettingsTab
 from .capture_tab import CaptureTab
+from .dpdu_tab import DPduTab
 from .sensors_tab import SensorsTab
 from .navigation_workspace import NavigationWorkspace
 from .workspace_modes import WorkspaceMode, tab_is_visible
@@ -238,6 +239,8 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
 
         self._build_capture_tab()
+        self.dpdu_tab = DPduTab(self.on_diagnostic_events, parent=self)
+        self.tabs.addTab(self.dpdu_tab, "D-PDU")
         self._build_sensors_tab()
         self.graph_tab = SensorGraphTab(self.sensor_capture, settings_save_callback=save_settings)
         self.graph_tab.parent_settings = self.settings
@@ -911,6 +914,12 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.receiver and self.receiver.isRunning():
             self.toggle_capture()
+        if hasattr(self, "dpdu_tab") and not self.dpdu_tab.shutdown():
+            self.status.setText(
+                "D-PDU worker is still shutting down. Close cancelled to avoid unloading an active driver."
+            )
+            event.ignore()
+            return
         self.save_current_settings()
         event.accept()
 
