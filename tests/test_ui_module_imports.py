@@ -100,6 +100,30 @@ def test_obd_tab_constructs_with_default_settings():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_freeze_frame_uses_graph_selected_pids_and_explains_source():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.obd_tab import OBDTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = OBDTab(settings={})
+    tab.selected_pids_provider = lambda: {
+        "obd_0C_rpm", "obd_0D", "obd_0C", "can_123"
+    }
+
+    assert tab.selected_pids() == [0x0C, 0x0D]
+    assert "selected in the Graph workspace" in tab.freeze_frame_source_note.text()
+    assert "Graph workspace" in tab.freeze_frame_status_label.text()
+
+    tab.activity_timer.stop()
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
+
 def test_modules_tab_remains_available_from_app_module():
     from freerov3r.app import ModulesTab as app_modules_tab
     from freerov3r.modules_tab import ModulesTab
