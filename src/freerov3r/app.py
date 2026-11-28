@@ -153,6 +153,7 @@ class MainWindow(QMainWindow):
         self.capture_start_frames = 0
         self.capture_start_sample_index = 0
         self.capture_start_frame_index = 0
+        self.capture_start_diagnostic_event_index = 0
         self.capture_vin = None
         self.vin_decoder = VinFrameDecoder()
         self.active_interface = None
