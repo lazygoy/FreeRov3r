@@ -53,7 +53,7 @@ class Esp32ConnectionManager:
         return host, port
 
     @classmethod
-    def create_adapter(cls, transport, endpoint, *, channel_names=None):
+    def create_adapter(cls, transport, endpoint, *, channel_names=None, connect_timeout=3.0):
         """Create a binary protocol v1 ESP32 adapter for USB or Wi-Fi."""
         value = str(endpoint or "").strip()
         if transport == "usb":
@@ -66,5 +66,8 @@ class Esp32ConnectionManager:
             )
         if transport == "wifi":
             host, port = cls.parse_wifi_endpoint(value)
-            return Esp32WifiAdapter(host, port=port, channel_names=channel_names)
+            return Esp32WifiAdapter(
+                host, port=port, connect_timeout=connect_timeout,
+                channel_names=channel_names,
+            )
         raise ValueError(f"Unsupported ESP32 transport: {transport}")
