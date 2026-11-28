@@ -36,7 +36,7 @@ class FakeWifiAdapter:
 def test_dual_framed_wifi_adapter_opens_two_independent_receivers(monkeypatch):
     created = []
 
-    def create_adapter(transport, endpoint, *, channel_names=None):
+    def create_adapter(transport, endpoint, *, channel_names=None, connect_timeout=3.0):
         assert transport == "wifi"
         host, _, port = endpoint.partition(":")
         adapter = FakeWifiAdapter(host, int(port or 3333), channel_names)
