@@ -3,27 +3,27 @@ from freerov3r.workspace_modes import WorkspaceMode, tab_is_visible, visible_tab
 
 def test_diagnostic_workspace_contains_scan_tool_functions():
     for name in (
-        "Sensors", "OBD-II", "Modules", "Special Functions",
+        "Sensors", "OBD-II", "Special Functions",
         "Topology", "Graph", "Solutions", "Vehicle History", "Settings",
     ):
         assert tab_is_visible(name, WorkspaceMode.DIAGNOSTICS)
 
 
 def test_diagnostic_workspace_hides_engineering_tools():
-    for name in ("Capture", "D-PDU", "Research", "Tuning", "Wiring Diagrams"):
+    for name in ("Capture", "Modules", "D-PDU", "Research", "Tuning", "Wiring Diagrams"):
         assert not tab_is_visible(name, WorkspaceMode.DIAGNOSTICS)
 
 
 def test_development_workspace_exposes_engineering_tools():
     for name in (
-        "Capture", "D-PDU", "Research", "Tuning", "Wiring Diagrams",
+        "Capture", "Modules", "D-PDU", "Research", "Tuning", "Wiring Diagrams",
         "Sensors", "Graph", "Settings",
     ):
         assert tab_is_visible(name, WorkspaceMode.RESEARCH)
 
 
 def test_development_workspace_hides_operator_only_scan_pages():
-    for name in ("OBD-II", "Modules", "Special Functions", "Topology", "Solutions", "Vehicle History"):
+    for name in ("OBD-II", "Special Functions", "Topology", "Solutions", "Vehicle History"):
         assert not tab_is_visible(name, WorkspaceMode.RESEARCH)
 
 
@@ -42,5 +42,5 @@ def test_visible_tab_filter_preserves_order_and_workspace_boundaries():
         "Sensors", "Graph", "OBD-II", "Modules", "Settings"
     )
     assert visible_tab_names(names, WorkspaceMode.RESEARCH) == (
-        "Capture", "Sensors", "Graph", "Research", "Wiring Diagrams", "Settings"
+        "Capture", "Modules", "Sensors", "Graph", "Research", "Wiring Diagrams", "Settings"
     )
