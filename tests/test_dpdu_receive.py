@@ -8,6 +8,8 @@ from freerov3r.hardware.dpdu_receive import (
     PDU_COPT_SENDRECV,
     PDU_ERR_EVENT_QUEUE_EMPTY,
     PDU_IT_RESULT,
+    PDU_IT_STATUS,
+    PDU_COPST_FINISHED,
     _PduCopCtrlData,
     _PduEventItem,
     _PduExpectedResponseData,
@@ -286,3 +288,24 @@ def test_result_timestamps_are_none_when_timestamp_flags_are_clear(runtime_pair)
 
     runtime.cancel_receive_only(17, 91, 700)
     runtime.close()
+
+
+
+def test_terminal_status_event_retires_receive_primitive(runtime_pair):
+    runtime, library = runtime_pair
+    runtime.start_receive_only(
+        17, 91, response_mask=b"\\xff", response_pattern=b"\\x62"
+    )
+    status_data = ctypes.c_uint32(PDU_COPST_FINISHED)
+    library.event_item = _PduEventItem(
+        PDU_IT_STATUS, 700, None, 1000,
+        ctypes.cast(ctypes.pointer(status_data), ctypes.c_void_p),
+    )
+    library.event_item_ptr = ctypes.pointer(library.event_item)
+
+    event = runtime.get_next_event(17, 91)
+
+    assert event.item_type == PDU_IT_STATUS
+    assert event.status_code == PDU_COPST_FINISHED
+    runtime.close()
+    assert not any(call[0] == "cancel" for call in library.calls)
