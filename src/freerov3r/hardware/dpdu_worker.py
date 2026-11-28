@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import threading
-import time
 from typing import Callable
 
 from PySide6.QtCore import QThread, Signal
