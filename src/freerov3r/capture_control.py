@@ -13,6 +13,7 @@ from .hardware.esp32_serial_adapter import Esp32SerialAdapter
 from .hardware.esp32_dual_serial_adapter import Esp32DualSerialAdapter
 from .hardware.esp32_connection import Esp32ConnectionManager
 from .hardware.esp32_dual_framed_adapter import Esp32DualFramedSerialAdapter
+from .hardware.esp32_dual_framed_wifi_adapter import Esp32DualFramedWifiAdapter
 from .hardware.elm327_serial_adapter import Elm327SerialAdapter
 from .hardware.elm327_obd_adapter import Elm327ObdAdapter
 from .hardware.python_can_adapter import PythonCanAdapter
@@ -160,6 +161,15 @@ def toggle_capture(window):
             adapter = Esp32ConnectionManager.create_adapter("wifi", channel)
         except ValueError as exc:
             QMessageBox.warning(window, "ESP32 Wi-Fi connection", str(exc))
+            return
+    elif interface == "esp32_framed_dual_wifi":
+        endpoints = [part.strip() for part in channel.split(",") if part.strip()]
+        try:
+            adapter = Esp32DualFramedWifiAdapter(
+                endpoints, channel_names=("HS-CAN", "MS-CAN")
+            )
+        except ValueError as exc:
+            QMessageBox.warning(window, "Dual ESP32 Wi-Fi connection", str(exc))
             return
     elif interface == "esp32":
         adapter = Esp32SerialAdapter(port=channel)
