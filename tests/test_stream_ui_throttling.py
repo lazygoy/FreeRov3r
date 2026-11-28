@@ -79,6 +79,8 @@ def test_hidden_research_preview_buffers_frames_without_rebuilding_table():
         MAX_DISPLAY_ROWS=500,
         MAX_LIVE_PREVIEW_FRAMES=2000,
         dropped_recorded_frames=0,
+        _display_refresh_pending=False,
+        _last_display_refresh=0.0,
         isVisible=lambda: False,
         refresh_table=lambda: (_ for _ in ()).throw(
             AssertionError("hidden research table must not be rebuilt")
