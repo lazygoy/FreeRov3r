@@ -384,6 +384,8 @@ class DPduTab(QWidget):
         handle = self.module_combo.currentData()
         module = next((item for item in self._modules if item.module_handle == handle), None)
         self.resource_combo.clear()
+        self.live_resource_combo.clear()
+        self._live_resource_ids = set()
         self.query_resources_button.setEnabled(False)
         self.start_button.setEnabled(False)
         if module is None:
@@ -412,7 +414,7 @@ class DPduTab(QWidget):
     def _selected_resource_and_cable(self):
         if self._mdf is None or self._cdf is None:
             raise ValueError("Valid MDF and CDF descriptions are required")
-        resource_id = self.live_resource_combo.currentData()
+        resource_id = self.resource_combo.currentData()
         cable_id = self.cable_combo.currentData()
         resource = next(
             (item for item in self._mdf.resources if item.object_id == resource_id),
@@ -514,17 +516,17 @@ class DPduTab(QWidget):
     def _resource_query_finished(self):
         self.resource_combo.setEnabled(True)
         self.cable_combo.setEnabled(True)
-        self.query_resources_button.setEnabled(True)
         if self._resource_worker is not None:
             self._resource_worker.deleteLater()
             self._resource_worker = None
+        self._resource_selection_changed()
 
     def start_reception(self):
         if self._worker and self._worker.isRunning():
             return
         registration = self.registration_combo.currentData()
         module_handle = self.module_combo.currentData()
-        resource_id = self.resource_combo.currentData()
+        resource_id = self.live_resource_combo.currentData()
         if (
             not isinstance(registration, DPduModuleRegistration)
             or module_handle is None
