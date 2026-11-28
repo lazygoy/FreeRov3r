@@ -102,7 +102,7 @@ class OBDTab(QWidget):
         self.freeze_frame_source_note.setWordWrap(True)
         self.freeze_frame_source_note.setObjectName("freezeFrameSourceNote")
         freeze_layout.addWidget(self.freeze_frame_source_note)
-        freeze_actions = QVBoxLayout()
+        freeze_actions = QHBoxLayout()
         self.read_freeze_frame_btn = QPushButton("Read Freeze Frame")
         self.read_freeze_frame_btn.setEnabled(False)
         self.read_freeze_frame_btn.setToolTip(
@@ -300,7 +300,10 @@ class OBDTab(QWidget):
                     response.get("channel", ""),
                 )
                 for column, value in enumerate(values):
-                    self.monitor_tests_table.setItem(row, column, QTableWidgetItem(str(value)))
+                    item = QTableWidgetItem(str(value))
+                    if len(str(value)) > 24:
+                        item.setToolTip(str(value))
+                    self.monitor_tests_table.setItem(row, column, item)
         self.monitor_tests_status_label.setText(
             f"Read complete: {self.monitor_tests_table.rowCount()} test result(s) across "
             f"{len(responses)} ECU response(s); {len(supported)} supported monitor ID(s). "
@@ -332,7 +335,10 @@ class OBDTab(QWidget):
                     result.get("raw", ""),
                 )
                 for column, value in enumerate(values):
-                    self.vehicle_info_table.setItem(row, column, QTableWidgetItem(str(value)))
+                    item = QTableWidgetItem(str(value))
+                    if len(str(value)) > 24:
+                        item.setToolTip(str(value))
+                    self.vehicle_info_table.setItem(row, column, item)
         self.vehicle_info_status_label.setText(
             f"Read complete: {sum(len(result.get('items', [])) for result in results)} "
             f"identification record(s) from {len(results)} ECU response(s)."
@@ -362,7 +368,10 @@ class OBDTab(QWidget):
                     result.get("raw", ""),
                 )
                 for column, value in enumerate(values):
-                    self.freeze_frame_table.setItem(row, column, QTableWidgetItem(str(value)))
+                    item = QTableWidgetItem(str(value))
+                    if len(str(value)) > 24:
+                        item.setToolTip(str(value))
+                    self.freeze_frame_table.setItem(row, column, item)
         self.freeze_frame_status_label.setText(
             f"Read complete: {len(results)} PID response(s) across the selected freeze frame."
             if results else "No valid freeze-frame responses were returned."
