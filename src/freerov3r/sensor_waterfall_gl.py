@@ -37,7 +37,7 @@ class WaterfallPlot(gl.GLViewWidget):
 
     def _camera_distance(self):
         lane_extent = max(1, len(self.lanes) - 1) * LANE_SPACING + 1.2
-        return max(17.0, self.time_extent * 1.25, lane_extent * 1.45)
+        return max(14.0, self.time_extent * 1.05, lane_extent * 1.20)
 
     def set_lanes(self, lanes, colors=None):
         self.lanes = list(lanes or [])[:8]
@@ -94,7 +94,7 @@ class WaterfallPlot(gl.GLViewWidget):
         grid.setSpacing(x=1.0, y=LANE_SPACING)
         grid.setColor((0.24, 0.34, 0.47, 0.55))
         grid.translate(self.time_extent / 2.0,
-                       (len(self.lanes) - 1) * LANE_SPACING / 2.0, 0.0)
+                       (len(self.lanes) - 1) * LANE_SPACING / 2.0, -0.03)
         self.addItem(grid)
         self._ground_plane = grid
 
