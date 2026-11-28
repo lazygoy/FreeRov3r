@@ -125,7 +125,7 @@ def prepare_waterfall_lanes(samples, selected_ids=None, window_seconds=60,
 class SensorWaterfallDialog(QWidget):
     """Live 3D sensor view with independent lane scales and visibility controls."""
 
-    def __init__(self, sensor_capture, vin_provider=None, parent=None):
+    def __init__(self, sensor_capture, vin_provider=None, parent=None, defer_initial_refresh=False):
         super().__init__(parent)
         self.sensor_capture = sensor_capture
         self._sensor_choices_initialized = False
@@ -226,7 +226,8 @@ class SensorWaterfallDialog(QWidget):
         self.color_button.clicked.connect(self._choose_sensor_color)
         self.color_sensor_combo.currentIndexChanged.connect(self._sync_color_button)
         self.source_combo.currentIndexChanged.connect(self.refresh_sensor_choices)
-        self.refresh_sensor_choices()
+        if not defer_initial_refresh:
+            self.refresh_sensor_choices()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self.refresh_sensor_choices)
@@ -302,6 +303,13 @@ class SensorWaterfallDialog(QWidget):
             self.sensor_list.addItem(item)
         self.sensor_list.blockSignals(False)
         self._sensor_choices_initialized = True
+        source = self.source_combo.currentData()
+        samples = self.demo_samples if source == "demo" else self.sensor_capture.samples
+        generation = len(samples) if source == "demo" else getattr(
+            self.sensor_capture, "total_samples_added", len(samples)
+        )
+        self._last_choice_signature = (source, None if source == "demo" else vin,
+                                       generation, len(samples))
         self._update_selection_status()
         self.refresh_plot()
 
