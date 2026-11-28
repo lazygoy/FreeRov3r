@@ -499,6 +499,24 @@ def test_main_window_constructs_without_hardware():
     assert window.header_connection.text() == "● OFFLINE"
     assert window.research_tab.live_enabled is False
     assert window.backend.count() == 3
+    assert window.stack.currentIndex() == 0
+    assert window.diagnostics_entry_button.text() == "OPEN DIAGNOSTICS  →"
+    assert window.development_entry_button.text() == "OPEN DEVELOPMENT LAB  →"
+
+    window.show_development_mode()
+    assert window.stack.currentIndex() == 1
+    assert window.tabs.currentWidget() is window.research_tab
+    assert window.tabs.isTabVisible(window.tabs.indexOf(window.capture_tab))
+    assert not window.tabs.isTabVisible(window.tabs.indexOf(window.obd_tab))
+
+    window.show_diagnostics_mode()
+    assert window.stack.currentIndex() == 1
+    assert window.tabs.currentWidget() is window.obd_tab
+    assert not window.tabs.isTabVisible(window.tabs.indexOf(window.capture_tab))
+    assert window.tabs.isTabVisible(window.tabs.indexOf(window.obd_tab))
+
+    window.show_workspace_chooser()
+    assert window.stack.currentIndex() == 0
 
     window.rate_timer.stop()
     window.graph_tab.activity_timer.stop()
