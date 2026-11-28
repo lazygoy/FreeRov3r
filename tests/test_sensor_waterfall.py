@@ -172,11 +172,11 @@ def test_2d_sensor_names_use_horizontal_headers():
     assert 'setLabel("left"' not in source
 
 
-def test_sensor_scope_defaults_to_3d_waterfall_and_expanded_layout():
+def test_sensor_scope_defaults_to_3d_waterfall_and_fits_embedded_layout():
     import inspect
 
     from freerov3r.sensor_waterfall import SensorWaterfallDialog
 
     source = inspect.getsource(SensorWaterfallDialog.__init__)
     assert "setCurrentWidget(waterfall_page)" in source
-    assert "self.resize(1400, 900)" in source
+    assert "self.setMinimumSize(0, 0)" in source
