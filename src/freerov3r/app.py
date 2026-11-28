@@ -253,13 +253,8 @@ class MainWindow(QMainWindow):
         self.obd_tab.selected_pids_provider = self.graph_tab.selected_sensor_ids
         self.obd_tab.read_vehicle_info_callback = self.request_vehicle_info_scan
         self.obd_tab.read_monitor_tests_callback = self.request_monitor_tests_scan
-        self.graph_tab.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
-        self.obd_tab.selection_changed_callback = self.graph_tab.set_selected_sensor_ids
         self.graph_tab.navigate_to_obd_callback = lambda: self.tabs.setCurrentWidget(self.obd_tab)
-        self.obd_tab.navigate_to_graph_callback = lambda: self.tabs.setCurrentWidget(self.graph_tab)
         self.graph_tab.favorites_changed_callback = self._refresh_sensor_favorites
-        self.obd_tab.favorites_changed_callback = self._refresh_sensor_favorites
-        self.graph_tab.set_selected_sensor_ids(self.obd_tab.selected_sensor_ids())
         self.tabs.addTab(self.obd_tab, "OBD-II")
         self.module_networks = {}
         self.module_network = SimulatedModuleNetwork()
