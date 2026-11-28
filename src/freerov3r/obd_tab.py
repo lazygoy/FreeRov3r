@@ -147,7 +147,7 @@ class OBDTab(QWidget):
         self.vehicle_info_table.setAlternatingRowColors(True)
         self.vehicle_info_table.setEditTriggers(QTableWidget.NoEditTriggers)
         vehicle_info_layout.addWidget(self.vehicle_info_table)
-        layout.addWidget(vehicle_info_group)
+        self.diagnostic_views.addTab(vehicle_info_group, "ECU ID")
 
         monitor_tests_group = QGroupBox("ON-BOARD MONITOR TEST RESULTS (MODE 06)")
         monitor_tests_layout = QVBoxLayout(monitor_tests_group)
@@ -175,12 +175,12 @@ class OBDTab(QWidget):
         self.monitor_tests_table.setAlternatingRowColors(True)
         self.monitor_tests_table.setEditTriggers(QTableWidget.NoEditTriggers)
         monitor_tests_layout.addWidget(self.monitor_tests_table)
-        layout.addWidget(monitor_tests_group)
+        self.diagnostic_views.addTab(monitor_tests_group, "Monitor Tests")
 
         self.readiness_metadata_label = QLabel("MIL and DTC count: not yet read")
         self.readiness_metadata_label.setWordWrap(True)
         readiness_layout.addWidget(self.readiness_metadata_label)
-        layout.addWidget(readiness_group)
+        self.diagnostic_views.addTab(readiness_group, "Readiness")
         self.read_dtcs_callback = None
         self.read_readiness_callback = None
         self.read_vehicle_info_callback = None
