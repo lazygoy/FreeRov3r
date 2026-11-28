@@ -99,9 +99,9 @@ class NavigationWorkspace(QScrollArea):
         self.workspace_mode_selector = QComboBox()
         self.workspace_mode_selector.setObjectName("experimentalModeSelector")
         self.workspace_mode_selector.addItem("DIAGNOSTICS", "diagnostics")
-        self.workspace_mode_selector.addItem("CAN RESEARCH LAB", "research")
+        self.workspace_mode_selector.addItem("DEVELOPMENT & RESEARCH", "research")
         self.workspace_mode_selector.setToolTip(
-            "Switch between vehicle diagnostics and passive CAN research"
+            "Switch between commercial-style vehicle diagnostics and the engineering workbench"
         )
         if on_workspace_mode_changed is not None:
             self.workspace_mode_selector.currentIndexChanged.connect(
@@ -284,9 +284,20 @@ class NavigationWorkspace(QScrollArea):
                 border: 1px solid #354d45; border-radius: 7px;
                 padding: 9px 11px;
             }
-            QLabel#experimentalConnectionOffline {
+            QLabel#experimentalConnectionOffline,
+            QLabel#headerOffline {
                 color: #c5cdd0; background: #252e32;
                 border: 1px solid #414c50; border-radius: 7px;
+                padding: 9px 11px;
+            }
+            QLabel#headerOnline {
+                color: #d8f5df; background: #173c2b;
+                border: 1px solid #397b55; border-radius: 7px;
+                padding: 9px 11px;
+            }
+            QLabel#headerSimulation {
+                color: #f4e5bf; background: #42351d;
+                border: 1px solid #806a37; border-radius: 7px;
                 padding: 9px 11px;
             }
             QLabel#experimentalTraffic { color: #93b9a2; padding: 4px; }
