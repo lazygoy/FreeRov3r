@@ -109,6 +109,8 @@ class DPduEvent:
     unique_response_identifier: int | None = None
     error_code: int | None = None
     extra_info: int | None = None
+    status_code: int | None = None
+    info_code: int | None = None
 
 
 class DPduReceiveRuntime(DPduApiRuntime):
@@ -304,8 +306,22 @@ class DPduReceiveRuntime(DPduApiRuntime):
                 if length and not result.data_bytes:
                     raise DPduApiError("PDU result event has a null payload buffer")
                 data = ctypes.string_at(result.data_bytes, length) if length else b""
-                start_ts = int(result.start_msg_timestamp)
-                tx_done_ts = int(result.tx_msg_done_timestamp)
+                timestamp_flags = 0
+                if (
+                    int(result.timestamp_flags.num_flag_bytes) > 0
+                    and result.timestamp_flags.flag_data
+                ):
+                    timestamp_flags = int(result.timestamp_flags.flag_data[0])
+                # ISO 22900-2 D.2.4: bit 7 validates TxMsgDoneTimestamp;
+                # bit 6 validates StartMsgTimestamp.
+                start_ts = (
+                    int(result.start_msg_timestamp)
+                    if timestamp_flags & 0x40 else None
+                )
+                tx_done_ts = (
+                    int(result.tx_msg_done_timestamp)
+                    if timestamp_flags & 0x80 else None
+                )
                 acceptance = int(result.acceptance_id)
                 unique_id = int(result.unique_resp_identifier)
             elif item_type == PDU_IT_ERROR:
@@ -313,14 +329,21 @@ class DPduReceiveRuntime(DPduApiRuntime):
                     raise DPduApiError("PDU error event has a null data pointer")
                 detail = ctypes.cast(item.data, ctypes.POINTER(_PduErrorData)).contents
                 error_code, extra = int(detail.error_code_id), int(detail.extra_error_info_id)
+            elif item_type == PDU_IT_STATUS:
+                if not item.data:
+                    raise DPduApiError("PDU status event has a null data pointer")
+                status_code = int(ctypes.cast(
+                    item.data, ctypes.POINTER(ctypes.c_uint32)
+                ).contents.value)
             elif item_type == PDU_IT_INFO:
                 if not item.data:
                     raise DPduApiError("PDU info event has a null data pointer")
                 detail = ctypes.cast(item.data, ctypes.POINTER(_PduInfoData)).contents
-                error_code, extra = int(detail.info_code), int(detail.extra_info_data)
+                info_code, extra = int(detail.info_code), int(detail.extra_info_data)
             event = DPduEvent(
                 item_type, cop_handle, tag, timestamp, data,
                 start_ts, tx_done_ts, acceptance, unique_id, error_code, extra,
+                status_code, info_code,
             )
             return event
         finally:
