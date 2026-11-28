@@ -48,6 +48,7 @@ class SharedCrosshairStackedPlot(QWidget):
         self._vertical_lines = []
         self._horizontal_lines = []
         self._value_labels = []
+        self._headers = []
         self._proxies = []
         self._active_index = None
         self._cursor_time = None
@@ -87,7 +88,7 @@ class SharedCrosshairStackedPlot(QWidget):
                 low, high = (min(y_values), max(y_values)) if y_values else (0.0, 1.0)
                 padding = max((high - low) * 0.12, abs(high) * 0.01, 0.01)
                 self.plots[index].setYRange(low - padding, high + padding, padding=0)
-                self.plots[index].setLabel("left", f'{lane["name"]} ({lane["unit"]})', color=TEXT)
+                self._headers[index].setText(f'{lane["name"]}  ·  {lane["unit"]}')
                 color = self._colors.get(lane["sensor_id"], PALETTE[index % len(PALETTE)])
                 self._curves[index].setPen(pg.mkPen(color, width=1.8))
             self._sync_x_ranges()
@@ -101,8 +102,19 @@ class SharedCrosshairStackedPlot(QWidget):
             return
 
         for index, lane in enumerate(self.lanes):
+            plot_container = QWidget()
+            plot_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            plot_container.setStyleSheet(f"background: {BACKGROUND};")
+            lane_layout = QVBoxLayout(plot_container)
+            lane_layout.setContentsMargins(0, 0, 0, 0)
+            lane_layout.setSpacing(1)
+            header = QLabel(f'{lane["name"]}  ·  {lane["unit"]}')
+            header.setStyleSheet(f"color: {TEXT}; font-weight: 600; padding-left: 5px; background: #111C2E;")
+            header.setFixedHeight(22)
+            lane_layout.addWidget(header)
+            self._headers.append(header)
             plot = _SensorPlotWidget()
-            plot.setMinimumHeight(118)
+            plot.setMinimumHeight(96)
             plot.setMouseTracking(True)
             plot.viewport().setMouseTracking(True)
             plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -112,9 +124,7 @@ class SharedCrosshairStackedPlot(QWidget):
             plot.getAxis("bottom").setTextPen(QColor(TEXT))
             plot.getAxis("left").setPen(QColor("#64748B"))
             plot.getAxis("bottom").setPen(QColor("#64748B"))
-            plot.getAxis("left").setWidth(105)
-            plot.setLabel("left", f'{lane["name"]} ({lane["unit"]})',
-                          color=TEXT)
+            plot.getAxis("left").setWidth(62)
             if index == len(self.lanes) - 1:
                 plot.setLabel("bottom", "Elapsed time", units="s", color=TEXT)
             else:
@@ -157,7 +167,8 @@ class SharedCrosshairStackedPlot(QWidget):
             self._value_labels.append(value_label)
             self._vertical_lines.append(vertical)
             self._horizontal_lines.append(horizontal)
-            self.plot_layout.addWidget(plot, 1)
+            lane_layout.addWidget(plot, 1)
+            self.plot_layout.addWidget(plot_container, 1)
             self.plots.append(plot)
             plot.entered.connect(lambda i=index: self._set_active(i))
             plot.left.connect(self._handle_plot_leave)
@@ -179,6 +190,7 @@ class SharedCrosshairStackedPlot(QWidget):
         self._vertical_lines.clear()
         self._horizontal_lines.clear()
         self._value_labels.clear()
+        self._headers.clear()
         self._active_index = None
         while self.plot_layout.count():
             item = self.plot_layout.takeAt(0)

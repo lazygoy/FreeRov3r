@@ -50,8 +50,17 @@ def test_frame_batch_coalesces_sensor_and_obd_widget_updates(monkeypatch):
         display_updates["refresh_sensor_list"] = True
         return f"frame-{frame}"
 
+    callbacks = []
+    monkeypatch.setattr(frame_processing.QTimer, "singleShot",
+                        lambda _delay, callback: callbacks.append(callback))
     monkeypatch.setattr(frame_processing, "process_frame", fake_process_frame)
     frame_processing.process_frames(window, [1, 2, 3])
+
+    assert window.log.calls == []
+    assert window.sensor_log.calls == []
+    assert window.obd_tab.update_calls == []
+    assert len(callbacks) == 1
+    callbacks.pop()()
 
     assert window.log.calls == ["frame-1\nframe-2\nframe-3"]
     assert window.sensor_log.calls == ["sensor-1\nsensor-2\nsensor-3"]
@@ -94,6 +103,30 @@ def test_hidden_research_preview_buffers_frames_without_rebuilding_table():
 
 
 
+def test_display_queue_bounds_log_backlog_without_dropping_capture_frames():
+    window = SimpleNamespace(
+        frame_counter=1205,
+        frame_count_label=_TextSink(),
+        log=_TextSink(),
+        sensor_log=_TextSink(),
+        obd_tab=SimpleNamespace(update_value=lambda *_: None),
+        graph_tab=SimpleNamespace(refresh_sensor_list=lambda: None),
+    )
+    pending = frame_processing._new_display_queue()
+    window._pending_display_updates = pending
+    frame_processing._queue_lines(
+        pending, "frame_lines",
+        [f"frame-{index}" for index in range(frame_processing.MAX_PENDING_DISPLAY_LINES + 5)],
+        "dropped_frame_lines",
+    )
+    window._display_flush_pending = True
+    frame_processing.flush_display_updates(window)
+    assert len(window.log.calls[0].splitlines()) == frame_processing.MAX_PENDING_DISPLAY_LINES + 1
+    assert "5 older frame log lines" in window.log.calls[0]
+    assert window.frame_count_label.calls == ["Frames: 1205"]
+
+
+
 def test_obd_value_update_does_not_sweep_all_activity_indicators(monkeypatch):
     from types import SimpleNamespace
 
@@ -130,3 +163,33 @@ def test_hidden_sensor_activity_refresh_skips_widget_sweeps():
 
     OBDTab._update_activity_indicators(hidden_obd)
     SensorGraphTab._update_activity_indicators(hidden_graph)
+
+
+
+def test_hidden_sensor_dashboard_skips_all_panel_refresh_work():
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    dock = SimpleNamespace(isVisible=lambda: False)
+    SensorDashboardDock.refresh(dock)
+
+
+def test_dashboard_panel_refreshes_only_when_vin_or_capture_changes():
+    from freerov3r.sensor_dashboard import SensorGraphPanel
+
+    capture = SimpleNamespace(total_samples_added=20, samples=[object()])
+    panel = SimpleNamespace(
+        sensor_capture=capture,
+        vehicle_vin="VIN-TEST",
+        _last_sample_generation=20,
+        refresh_calls=0,
+    )
+    panel.refresh_sensor_choices = lambda: setattr(
+        panel, "refresh_calls", panel.refresh_calls + 1
+    )
+
+    SensorGraphPanel.set_vehicle_vin(panel, "VIN-TEST")
+    assert panel.refresh_calls == 0
+
+    capture.total_samples_added = 21
+    SensorGraphPanel.set_vehicle_vin(panel, "VIN-TEST")
+    assert panel.refresh_calls == 1
