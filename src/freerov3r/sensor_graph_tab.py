@@ -182,7 +182,7 @@ class SensorGraphTab(QWidget):
         self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
         layout.addLayout(favorite_row)
         self.activity_timer = QTimer(self)
-        self.activity_timer.setInterval(350)
+        self.activity_timer.setInterval(1000)
         self.activity_timer.timeout.connect(self._update_activity_indicators)
         self.activity_timer.start()
         self.refresh_favorite_groups()
@@ -382,6 +382,8 @@ class SensorGraphTab(QWidget):
         self.last_sample_time[str(sensor_id)] = time.monotonic()
 
     def _update_activity_indicators(self):
+        if not self.isVisible():
+            return
         now = time.monotonic()
         self.activity_phase = not self.activity_phase
         for i in range(self.sensor_list.count()):

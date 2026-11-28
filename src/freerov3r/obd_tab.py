@@ -108,7 +108,7 @@ class OBDTab(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.itemChanged.connect(self._on_table_item_changed)
         self.activity_timer = QTimer(self)
-        self.activity_timer.setInterval(350)
+        self.activity_timer.setInterval(1000)
         self.activity_timer.timeout.connect(self._update_activity_indicators)
         self.activity_timer.start()
         self.table.setSortingEnabled(False)
@@ -589,6 +589,8 @@ class OBDTab(QWidget):
             self.selection_changed_callback(self.selected_sensor_ids())
 
     def _update_activity_indicators(self):
+        if not self.isVisible():
+            return
         now = time.monotonic()
         self.activity_phase = not self.activity_phase
         for pid, row in self.pid_rows.items():
@@ -608,7 +610,6 @@ class OBDTab(QWidget):
                 display_value = f"{value:.2f}".rstrip("0").rstrip(".")
             self.table.item(row, 5).setText(display_value)
             self.last_sample_time[pid] = time.monotonic()
-            self._update_activity_indicators()
 
     def clear_values(self):
         for row in range(self.table.rowCount()):
