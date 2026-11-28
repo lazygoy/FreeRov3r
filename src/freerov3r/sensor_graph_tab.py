@@ -30,6 +30,7 @@ class SensorGraphTab(QWidget):
     def __init__(self, sensor_capture: SensorCapture, parent=None, settings_save_callback=None):
         super().__init__(parent)
         self.sensor_capture = sensor_capture
+        self.known_sensor_ids = set()
         self.series_map = {}
         self.color_map = {}
         self.hidden_sensor_ids = set()
@@ -231,6 +232,7 @@ class SensorGraphTab(QWidget):
                 item.setCheckState(Qt.Unchecked if sample.sensor_id in self.hidden_sensor_ids else Qt.Checked)
                 self.sensor_list.addItem(item)
         self.sensor_list.blockSignals(False)
+        self.known_sensor_ids = seen
         self.update_statistics(force=True)
         if HAS_CHARTS:
             self.update_chart()
