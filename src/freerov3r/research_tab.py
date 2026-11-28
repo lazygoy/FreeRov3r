@@ -1652,7 +1652,7 @@ class ResearchTab(QWidget):
         self.timestamp_health_label.setText(
             " | ".join(summaries)
             + " | ESP32 clocks are independent; residuals are timing consistency estimates, "
-              "not absolute transport latency. Live health uses the most recent 1,000 frames."
+              "not absolute transport latency. Live health uses the most recent 500 frames."
         )
 
     def show_selected_frame(self):
@@ -2499,7 +2499,7 @@ class ResearchTab(QWidget):
                 )
                 lines += [
                     "",
-                    "Decoded DBC signal comparison (last 20,000 frames per capture):",
+                    "Decoded DBC signal comparison (last 500 frames per capture):",
                     f"Working matched/unmatched: {dbc_comparison['working']['matched_frames']:,} / {dbc_comparison['working']['unmatched_frames']:,}",
                     f"Reference matched/unmatched: {dbc_comparison['reference']['matched_frames']:,} / {dbc_comparison['reference']['unmatched_frames']:,}",
                 ]
