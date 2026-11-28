@@ -635,7 +635,7 @@ class SensorDashboardDock(QDockWidget):
             self._waterfall_dialog = SensorWaterfallDialog(
                 self.sensor_capture, vin_provider=self.vin_provider, parent=self
             )
-        self._waterfall_dialog.show()
+        self._waterfall_dialog.showMaximized()
         self._waterfall_dialog.raise_()
         self._waterfall_dialog.activateWindow()
 
