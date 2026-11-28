@@ -755,6 +755,8 @@ class SensorDashboardDock(QWidget):
     def set_selected_sensor_ids(self, sensor_ids):
         """Keep OBD-II selection synchronization anchored to graph one."""
         self.panels[0].refresh_sensor_choices(set(sensor_ids or ()))
+        if self._waterfall_widget is not None:
+            self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
         self.persist_layout()
 
     def refresh(self):
