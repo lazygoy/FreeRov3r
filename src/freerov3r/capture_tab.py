@@ -41,6 +41,7 @@ class CaptureTab(QWidget):
         self.backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.backend.addItem("SLCAN", ("slcan", "COM3"))
+        self.backend.addItem("J2534 Pass-Thru (registered driver, CAN receive)", ("j2534", ""))
         controls.addWidget(QLabel("Connection:"))
         controls.addWidget(self.backend)
 

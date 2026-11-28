@@ -30,6 +30,7 @@ class SettingsTab(QWidget):
         self.settings_backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
         self.settings_backend.addItem("SocketCAN", ("socketcan", "can0"))
         self.settings_backend.addItem("SLCAN", ("slcan", "COM3"))
+        self.settings_backend.addItem("J2534 Pass-Thru (CAN receive)", ("j2534", ""))
         self.settings_channel = QLineEdit()
         self.settings_channel.setPlaceholderText("COM port or CAN channel")
         self.settings_bitrate = QComboBox()

@@ -177,7 +177,11 @@ def test_settings_tab_constructs_and_exposes_controls():
         show_about_dialog=lambda: None,
         save_settings=lambda: None,
     )
-    assert tab.settings_backend.count() == 10
+    assert tab.settings_backend.count() == 11
+    assert any(
+        tab.settings_backend.itemData(index)[0] == "j2534"
+        for index in range(tab.settings_backend.count())
+    )
     assert tab.graph_refresh_spin.minimum() == 250
     assert tab.graph_refresh_spin.maximum() == 5000
 
@@ -211,7 +215,11 @@ def test_capture_tab_constructs_with_callbacks():
         clear_capture_display=lambda: None,
         back_to_tasks=lambda: None,
     )
-    assert tab.backend.count() == 13
+    assert tab.backend.count() == 14
+    assert any(
+        tab.backend.itemData(index)[0] == "j2534"
+        for index in range(tab.backend.count())
+    )
     assert tab.log.maximumBlockCount() == 1200
     assert tab.can_format_filter.count() == 3
 

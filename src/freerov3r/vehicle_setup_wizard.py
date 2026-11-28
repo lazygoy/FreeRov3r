@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from .hardware.elm327_serial_adapter import query_vin
-from .hardware.interface_discovery import discover_interfaces
+from .hardware.interface_inventory import discover_all_interfaces
 from .diagnostics.vehicle_identification import (
     identify_vehicle, validate_vin, decode_vin_online,
 )
@@ -69,7 +69,7 @@ class VehicleSetupWizard(QDialog):
         root.addWidget(self.page_title)
         self.page_description = QLabel(
             "Detect USB serial and paired Bluetooth COM interfaces, or choose one manually. "
-            "Wi-Fi discovery is not implemented yet. Detection does not transmit to the vehicle."
+            "Wi-Fi discovery is not implemented yet. J2534 driver inventory is passive; detection does not load the driver or transmit to the vehicle."
         )
         self.page_description.setWordWrap(True)
         self.page_description.setObjectName("splashSubtitle")
@@ -94,6 +94,7 @@ class VehicleSetupWizard(QDialog):
             ("elm327_obd", "ELM327 active OBD-II polling", ""),
             ("socketcan", "SocketCAN", "can0"),
             ("slcan", "SLCAN", "COM3"),
+            ("j2534", "J2534 Pass-Thru (registered driver)", ""),
         ]
         for kind, label, channel in self._interfaces:
             self.interface_combo.addItem(label, (kind, channel))
@@ -113,7 +114,7 @@ class VehicleSetupWizard(QDialog):
         self.interface_status = QLabel(
             "ESP32 interfaces are receive-only. Dual mode requires two different COM ports, entered as COMx,COMy (HS-CAN first, MS-CAN second). "
             "Bluetooth/serial ELM327 supports either passive CAN monitoring or read-only Mode 01 polling. "
-            "Wi-Fi adapter support is not implemented yet."
+            "Wi-Fi adapter support is not implemented yet. J2534 Pass-Thru supports receive-only CAN capture in this build."
         )
         self.interface_status.setWordWrap(True)
         self.interface_status.setObjectName("mutedText")
@@ -206,7 +207,7 @@ class VehicleSetupWizard(QDialog):
 
     def detect_interfaces(self):
         current = self.channel_edit.currentText().strip()
-        ports = discover_interfaces()
+        ports = discover_all_interfaces()
         self.channel_edit.clear()
         for port in ports:
             self.channel_edit.addItem(port["device"], port["device"])
@@ -223,7 +224,7 @@ class VehicleSetupWizard(QDialog):
             self.channel_edit.setCurrentIndex(0)
         elif not ports:
             self.channel_edit.setEditText("")
-        recognized = [p for p in ports if p["kind"] in ("esp32", "elm327", "slcan")]
+        recognized = [p for p in ports if p["kind"] in ("esp32", "elm327", "slcan", "j2534")]
         if len(recognized) == 1:
             candidate = recognized[0]
             for index in range(self.interface_combo.count()):

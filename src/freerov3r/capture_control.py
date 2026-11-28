@@ -16,6 +16,8 @@ from .hardware.esp32_dual_framed_adapter import Esp32DualFramedSerialAdapter
 from .hardware.elm327_serial_adapter import Elm327SerialAdapter
 from .hardware.elm327_obd_adapter import Elm327ObdAdapter
 from .hardware.python_can_adapter import PythonCanAdapter
+from .hardware.j2534_discovery import discover_j2534_devices
+from .hardware.j2534_adapter import J2534CanAdapter, J2534Connection
 from .core.capture.session_context import CaptureSessionContext
 
 
@@ -157,6 +159,23 @@ def toggle_capture(window):
             port=channel,
             pids=window.obd_tab.selected_pids(),
             request_interval=window.obd_tab.poll_interval_ms.value() / 1000.0,
+        )
+    elif interface == "j2534":
+        registration = next(
+            (device for device in discover_j2534_devices()
+             if device.function_library.casefold() == channel.casefold()),
+            None,
+        )
+        if registration is None:
+            QMessageBox.warning(
+                window, "J2534 Pass-Thru",
+                "Select an installed J2534 device from Detect interfaces. "
+                "The driver registration may have changed since discovery."
+            )
+            return
+        adapter = J2534CanAdapter(
+            registration,
+            J2534Connection(baudrate=bitrate),
         )
     else:
         adapter = PythonCanAdapter(interface=interface, channel=channel, bitrate=bitrate)
