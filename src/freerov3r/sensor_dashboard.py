@@ -666,7 +666,8 @@ class SensorDashboardDock(QWidget):
 
         def load_group():
             name = favorites.currentData()
-            stored = groups.get(name, []) if name and isinstance(groups, dict) else []
+            current_groups = self.settings.get("obd_pid_favorites", {})
+            stored = current_groups.get(name, []) if name and isinstance(current_groups, dict) else []
             ids = set()
             if isinstance(stored, (list, tuple, set)):
                 for value in stored:
@@ -678,6 +679,8 @@ class SensorDashboardDock(QWidget):
                             ids.add(f"obd_{int(value, 16):02X}")
                         except ValueError:
                             ids.add(value)
+            for sensor_id in ids:
+                available.setdefault(sensor_id, (sensor_id, ""))
             fill_list(ids)
 
         def save_group():
