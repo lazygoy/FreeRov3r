@@ -28,8 +28,8 @@ def make_config(registration, **overrides):
         "registration": registration,
         "module_handle": 17,
         "resource_id": 600,
-        "response_mask": b"\\xff",
-        "response_pattern": b"\\x62",
+        "response_mask": b"\xff",
+        "response_pattern": b"\x62",
         "operator_confirmed_physical_connection": True,
         "com_params_uint32": ((10, 500000),),
         "batch_size": 1,
@@ -44,8 +44,8 @@ def test_worker_config_requires_explicit_physical_connection_confirmation(regist
             registration=registration,
             module_handle=17,
             resource_id=600,
-            response_mask=b"\\xff",
-            response_pattern=b"\\x62",
+            response_mask=b"\xff",
+            response_pattern=b"\x62",
         )
 
 
@@ -63,7 +63,7 @@ def test_worker_owns_runtime_lifecycle_and_emits_normalized_events(registration)
                     cop_handle=91,
                     cop_tag=0,
                     timestamp_us=123456,
-                    data=b"\\x62\\xf1\\x90",
+                    data=b"\x62\xf1\x90",
                     acceptance_id=1,
                     unique_response_identifier=0x7E8,
                 )
@@ -126,7 +126,7 @@ def test_worker_owns_runtime_lifecycle_and_emits_normalized_events(registration)
     assert all(call[1] == worker_thread_id for call in calls)
     assert len(emitted) == 1
     assert emitted[0].source == "dpdu"
-    assert emitted[0].payload == b"\\x62\\xf1\\x90"
+    assert emitted[0].payload == b"\x62\xf1\x90"
     assert emitted[0].unique_response_identifier == 0x7E8
     assert "Receiving protocol-level diagnostic events" in statuses
 
