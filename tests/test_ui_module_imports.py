@@ -496,6 +496,15 @@ def test_main_window_constructs_without_hardware():
     _QT_TEST_APP = QApplication.instance() or QApplication([])
     window = MainWindow()
     assert window.tabs.count() >= 8
+    assert "Sensors" not in [
+        window.tabs.tabText(index) for index in range(window.tabs.count())
+    ]
+    assert "Sensors" not in window.quick_drawer.nav_buttons
+    from PySide6.QtWidgets import QPushButton
+    assert all(
+        button.text() != "Collect sensor data"
+        for button in window.stack.widget(0).findChildren(QPushButton)
+    )
     assert window.receiver is None
     assert window.header_connection.text() == "● OFFLINE"
     assert window.research_tab.live_enabled is False
