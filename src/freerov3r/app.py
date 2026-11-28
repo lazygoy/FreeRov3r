@@ -327,7 +327,6 @@ class MainWindow(QMainWindow):
             save_settings_callback=save_settings,
         )
         self.graph_tab.set_dashboard_widget(self.sensor_dashboard_dock)
-        self.sensor_dashboard_dock.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
         self.sensor_dashboard_dock.favorites_changed_callback = self._refresh_sensor_favorites
         self.graph_tab.open_dashboard_callback = self.sensor_dashboard_dock.choose_sensors
 
@@ -406,11 +405,9 @@ class MainWindow(QMainWindow):
             self.quick_drawer.setVisible(not self.quick_drawer.isVisible())
 
     def _refresh_sensor_favorites(self, selected_name=None):
-        """Keep sensor favorites synchronized across Graph, OBD-II and dashboard."""
+        """Keep sensor favorites synchronized across Graph and dashboard."""
         if hasattr(self, "graph_tab"):
             self.graph_tab.refresh_favorite_groups(selected_name)
-        if hasattr(self, "obd_tab"):
-            self.obd_tab._refresh_favorite_combo(selected_name)
         # A dashboard layout belongs to its sensor favorite. Remove orphaned
         # layouts when the corresponding sensor favorite is deleted.
         groups = self.settings.get("obd_pid_favorites", {})
