@@ -1,156 +1,31 @@
-"""Searchable OBD-II PID selection and favorite-group workspace."""
+"""Read-only OBD-II diagnostic codes and freeze-frame workspace."""
 
-import time
-
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QSpinBox, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSpinBox,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .diagnostics.obd2 import (
-    OBD_PIDS, PID_CATEGORIES_ALL, PID_MULTI_VALUE_KEYS, search_mode01_pids,
-)
 
 
 class OBDTab(QWidget):
-    """Searchable, categorized OBD-II PID selector with persistent user groups."""
+    """Read-only OBD-II diagnostic code and freeze-frame interface."""
 
     def __init__(self, settings=None, parent=None, settings_save_callback=None):
         super().__init__(parent)
-        self.settings = settings if settings is not None else {}
-        self.settings_save_callback = settings_save_callback
-        self.pid_rows = {}
-        self._loading_group = False
-        self._syncing_selection = False
-        self.selection_changed_callback = None
         self.selected_pids_provider = None
-        self.favorites_changed_callback = None
-        self.navigate_to_graph_callback = None
-        self.last_sample_time = {}
-        self.activity_phase = True
         layout = QVBoxLayout(self)
 
         note = QLabel(
-            "<b>OBD-II</b><br>"
-            "Read-only Mode 01 polling is available when using the dedicated ELM327 OBD-II "
-            "connection. Other interfaces remain passive unless their transmit support is "
-            "implemented and explicitly enabled. No ECU write commands are sent. "
-            "The simulator streams clearly labeled synthetic Mode 01 values; real vehicles "
-            "also populate this table when matching response frames are observed. "
-            "A listed PID is not proof that the vehicle supports it."
+            "<b>OBD-II Diagnostics</b><br>"
+            "Use this workspace to read stored, pending and permanent diagnostic trouble "
+            "codes or retrieve ECU freeze-frame data. Freeze Frame uses OBD-II PIDs selected "
+            "in the Graph workspace. Requests are read-only and require an ELM327 OBD-II adapter."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        search_row = QHBoxLayout()
-        search_row.addWidget(QLabel("Find sensor:"))
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search coolant, RPM, throttle, voltage, PID…")
-        self.search_edit.textChanged.connect(self.filter_pids)
-        search_row.addWidget(self.search_edit, 2)
-        search_row.addWidget(QLabel("Category:"))
-        self.category_combo = QComboBox()
-        self.category_combo.addItems(PID_CATEGORIES_ALL)
-        self.category_combo.currentTextChanged.connect(self.filter_pids)
-        search_row.addWidget(self.category_combo, 1)
-        layout.addLayout(search_row)
-
-        favorite_row = QHBoxLayout()
-        favorite_row.addWidget(QLabel("Favorite group:"))
-        self.favorite_combo = QComboBox()
-        self.favorite_combo.setMinimumWidth(170)
-        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
-        favorite_row.addWidget(self.favorite_combo, 1)
-        self.load_group_btn = QPushButton("Load")
-        self.load_group_btn.clicked.connect(self.load_favorite_group)
-        favorite_row.addWidget(self.load_group_btn)
-        self.save_group_btn = QPushButton("Save selected as…")
-        self.save_group_btn.clicked.connect(self.save_favorite_group)
-        favorite_row.addWidget(self.save_group_btn)
-        self.delete_group_btn = QPushButton("Delete")
-        self.delete_group_btn.clicked.connect(self.delete_favorite_group)
-        favorite_row.addWidget(self.delete_group_btn)
-        layout.addLayout(favorite_row)
-
-        self.table = QTableWidget(len(OBD_PIDS), 7)
-        self.table.setHorizontalHeaderLabels(
-            ["Poll", "PID", "Category", "Sensor", "Unit", "Value", "Live"]
-        )
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
-        for row, (pid, desc, unit) in enumerate(OBD_PIDS):
-            pid_int = int(pid, 16)
-            category = next(
-                (entry[3] for entry in search_mode01_pids() if entry[0] == pid),
-                "Other",
-            )
-            poll_item = QTableWidgetItem()
-            poll_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
-            poll_item.setCheckState(Qt.Checked)
-            self.table.setItem(row, 0, poll_item)
-            self.table.setItem(row, 1, QTableWidgetItem(pid))
-            self.table.setItem(row, 2, QTableWidgetItem(category))
-            self.table.setItem(row, 3, QTableWidgetItem(desc))
-            self.table.setItem(row, 4, QTableWidgetItem(unit))
-            self.table.setItem(row, 5, QTableWidgetItem("—"))
-            live_item = QTableWidgetItem("○")
-            live_item.setTextAlignment(Qt.AlignCenter)
-            live_item.setToolTip("No recent samples")
-            self.table.setItem(row, 6, live_item)
-            self.pid_rows[pid_int] = row
-        self.table.setColumnWidth(0, 48)
-        self.table.setColumnWidth(1, 58)
-        self.table.setColumnWidth(2, 110)
-        self.table.setColumnWidth(4, 65)
-        self.table.setColumnWidth(5, 85)
-        self.table.setColumnWidth(6, 48)
-        self.table.setAlternatingRowColors(True)
-        self.table.itemChanged.connect(self._on_table_item_changed)
-        self.activity_timer = QTimer(self)
-        self.activity_timer.setInterval(1000)
-        self.activity_timer.timeout.connect(self._update_activity_indicators)
-        self.activity_timer.start()
-        self.table.setSortingEnabled(False)
-        layout.addWidget(self.table, 1)
-
-        poll_row = QHBoxLayout()
-        poll_row.addWidget(QLabel("Request interval:"))
-        self.poll_interval_ms = QSpinBox()
-        self.poll_interval_ms.setRange(50, 2000)
-        self.poll_interval_ms.setValue(200)
-        self.poll_interval_ms.setSuffix(" ms / PID")
-        self.poll_interval_ms.setToolTip(
-            "Delay between sequential Mode 01 PID requests on an active ELM327 connection."
-        )
-        poll_row.addWidget(self.poll_interval_ms)
-        select_visible_btn = QPushButton("Select visible")
-        select_visible_btn.clicked.connect(lambda: self._set_visible_checks(Qt.Checked))
-        poll_row.addWidget(select_visible_btn)
-        clear_visible_btn = QPushButton("Clear visible")
-        clear_visible_btn.clicked.connect(lambda: self._set_visible_checks(Qt.Unchecked))
-        poll_row.addWidget(clear_visible_btn)
-        self.open_graph_btn = QPushButton("View in Graph")
-        self.open_graph_btn.clicked.connect(lambda: self.navigate_to_graph_callback() if self.navigate_to_graph_callback else None)
-        poll_row.addWidget(self.open_graph_btn)
-        poll_row.addStretch()
-        layout.addLayout(poll_row)
-
-        btn_row = QHBoxLayout()
-        self.request_btn = QPushButton(
-            "Active polling is selected by the ELM327 OBD-II connection"
-        )
-        self.request_btn.setEnabled(False)
-        self.request_btn.setToolTip(
-            "Polling starts only when the dedicated ELM327 OBD-II adapter is selected."
-        )
-        btn_row.addWidget(self.request_btn)
-        clear_btn = QPushButton("Clear Values")
-        clear_btn.clicked.connect(self.clear_values)
-        btn_row.addWidget(clear_btn)
-        layout.addLayout(btn_row)
-
+        self.diagnostic_views = QTabWidget()
         dtc_group = QGroupBox("DIAGNOSTIC TROUBLE CODES")
         dtc_layout = QVBoxLayout(dtc_group)
         dtc_actions = QHBoxLayout()
@@ -177,7 +52,8 @@ class OBDTab(QWidget):
         self.dtc_table.setAlternatingRowColors(True)
         self.dtc_table.setEditTriggers(QTableWidget.NoEditTriggers)
         dtc_layout.addWidget(self.dtc_table)
-        layout.addWidget(dtc_group)
+        self.diagnostic_views.addTab(dtc_group, "DTCs")
+        layout.addWidget(self.diagnostic_views)
 
         readiness_group = QGroupBox("READINESS MONITORS (MODE 01 PID 01)")
         readiness_layout = QVBoxLayout(readiness_group)
@@ -241,7 +117,7 @@ class OBDTab(QWidget):
         self.freeze_frame_table.setAlternatingRowColors(True)
         self.freeze_frame_table.setEditTriggers(QTableWidget.NoEditTriggers)
         freeze_layout.addWidget(self.freeze_frame_table)
-        layout.addWidget(freeze_group)
+        self.diagnostic_views.addTab(freeze_group, "Freeze Frame")
         self.read_freeze_frame_callback = None
 
         vehicle_info_group = QGroupBox("VEHICLE / ECU IDENTIFICATION (MODE 09)")
@@ -353,7 +229,9 @@ class OBDTab(QWidget):
             return
         pids = self.selected_pids()
         if not pids:
-            self.freeze_frame_status_label.setText("Select at least one PID above.")
+            self.freeze_frame_status_label.setText(
+                "Select OBD-II PIDs in the Graph workspace before requesting Freeze Frame."
+            )
             return
         if self.read_freeze_frame_callback(pids, self.freeze_frame_number.value()):
             self.read_freeze_frame_btn.setEnabled(False)
@@ -550,164 +428,16 @@ class OBDTab(QWidget):
         self.dtc_status_label.setText(f"DTC read failed: {message}")
         self.read_dtcs_btn.setEnabled(True)
 
-    def filter_pids(self, *_):
-        query = self.search_edit.text()
-        category = self.category_combo.currentText()
-        visible = {int(row[0], 16) for row in search_mode01_pids(query, category)}
-        for pid, row in self.pid_rows.items():
-            self.table.setRowHidden(row, pid not in visible)
-
-    def _set_visible_checks(self, state):
-        for row in range(self.table.rowCount()):
-            if not self.table.isRowHidden(row):
-                self.table.item(row, 0).setCheckState(state)
-
     def selected_pids(self):
-        if callable(self.selected_pids_provider):
-            pids = set()
-            for sensor_id in self.selected_pids_provider():
-                parts = str(sensor_id).lower().split("_", 2)
-                if len(parts) >= 2 and parts[0] == "obd":
-                    try:
-                        pids.add(int(parts[1], 16))
-                    except ValueError:
-                        continue
-            return sorted(pids)
-        return [
-            int(self.table.item(row, 1).text(), 16)
-            for row in range(self.table.rowCount())
-            if self.table.item(row, 0).checkState() == Qt.Checked
-        ]
-
-    def selected_sensor_ids(self):
-        selected = set()
-        for pid in self.selected_pids():
-            keys = PID_MULTI_VALUE_KEYS.get(pid)
-            if keys:
-                selected.update(f"obd_{pid:02X}_{key}" for key in keys)
-            else:
-                selected.add(f"obd_{pid:02X}")
-        return selected
-
-    def set_selected_sensor_ids(self, sensor_ids):
-        selected = {str(value).lower() for value in sensor_ids}
-        self._syncing_selection = True
-        self.table.blockSignals(True)
-        for pid, row in self.pid_rows.items():
-            keys = PID_MULTI_VALUE_KEYS.get(pid, ())
-            checked = f"obd_{pid:02X}" in selected or any(
-                f"obd_{pid:02X}_{key}" in selected for key in keys
-            )
-            self.table.item(row, 0).setCheckState(Qt.Checked if checked else Qt.Unchecked)
-        self.table.blockSignals(False)
-        self._syncing_selection = False
-
-    def _on_table_item_changed(self, item):
-        if item.column() == 0 and not self._syncing_selection and self.selection_changed_callback:
-            self.selection_changed_callback(self.selected_sensor_ids())
-
-    def _update_activity_indicators(self):
-        if not self.isVisible():
-            return
-        now = time.monotonic()
-        self.activity_phase = not self.activity_phase
-        for pid, row in self.pid_rows.items():
-            item = self.table.item(row, 6)
-            active = now - self.last_sample_time.get(pid, 0) <= 5.0
-            item.setText("●" if active else "○")
-            item.setForeground(QColor("#39d98a") if active and self.activity_phase else
-                               QColor("#27885b") if active else QColor("#77818c"))
-            item.setToolTip("Live data arriving" if active else "No recent samples")
-
-    def update_value(self, pid, value):
-        row = self.pid_rows.get(pid)
-        if row is not None:
-            if isinstance(value, str):
-                display_value = value
-            else:
-                display_value = f"{value:.2f}".rstrip("0").rstrip(".")
-            self.table.item(row, 5).setText(display_value)
-            self.last_sample_time[pid] = time.monotonic()
-
-    def clear_values(self):
-        for row in range(self.table.rowCount()):
-            self.table.item(row, 5).setText("—")
-
-    def _favorite_groups(self):
-        groups = self.settings.get("obd_pid_favorites", {})
-        return groups if isinstance(groups, dict) else {}
-
-    def _refresh_favorite_combo(self, selected_name=None):
-        self._loading_group = True
-        self.favorite_combo.clear()
-        self.favorite_combo.addItem("Choose saved group…", None)
-        for name in sorted(self._favorite_groups(), key=str.casefold):
-            self.favorite_combo.addItem(name, name)
-        if selected_name:
-            index = self.favorite_combo.findData(selected_name)
-            if index >= 0:
-                self.favorite_combo.setCurrentIndex(index)
-        self._loading_group = False
-        has_group = self.favorite_combo.currentData() is not None
-        self.load_group_btn.setEnabled(has_group)
-        self.delete_group_btn.setEnabled(has_group)
-
-    def _favorite_selection_changed(self, *_):
-        if self._loading_group:
-            return
-        has_group = self.favorite_combo.currentData() is not None
-        self.load_group_btn.setEnabled(has_group)
-        self.delete_group_btn.setEnabled(has_group)
-
-    def load_favorite_group(self):
-        name = self.favorite_combo.currentData()
-        if not name:
-            return
-        sensor_ids = set()
-        for value in self._favorite_groups().get(name, []):
-            text = str(value).strip().lower()
-            if text.startswith("obd_"):
-                sensor_ids.add(text)
-            else:
+        """Return selected OBD-II PIDs from the Graph workspace."""
+        if not callable(self.selected_pids_provider):
+            return []
+        pids = set()
+        for sensor_id in self.selected_pids_provider():
+            parts = str(sensor_id).lower().split("_", 2)
+            if len(parts) >= 2 and parts[0] == "obd":
                 try:
-                    sensor_ids.add(f"obd_{int(text, 16):02X}")
+                    pids.add(int(parts[1], 16))
                 except ValueError:
                     continue
-        self.set_selected_sensor_ids(sensor_ids)
-        if self.selection_changed_callback:
-            self.selection_changed_callback(sensor_ids)
-
-    def save_favorite_group(self):
-        pids = self.selected_pids()
-        if not pids:
-            QMessageBox.information(
-                self, "No PIDs selected",
-                "Select at least one sensor before saving a favorite group.",
-            )
-            return
-        name, accepted = QInputDialog.getText(
-            self, "Save PID group", "Group name:"
-        )
-        name = name.strip()
-        if not accepted or not name:
-            return
-        groups = dict(self._favorite_groups())
-        groups[name] = [f"obd_{pid:02X}" for pid in pids]
-        self.settings["obd_pid_favorites"] = groups
-        if self.settings_save_callback:
-            self.settings_save_callback(self.settings)
-        self._refresh_favorite_combo(name)
-        if self.favorites_changed_callback:
-            self.favorites_changed_callback(name)
-
-    def delete_favorite_group(self):
-        name = self.favorite_combo.currentData()
-        if not name:
-            return
-        groups = dict(self._favorite_groups())
-        groups.pop(name, None)
-        self.settings["obd_pid_favorites"] = groups
-        save_settings(self.settings)
-        self._refresh_favorite_combo()
-        if self.favorites_changed_callback:
-            self.favorites_changed_callback()
+        return sorted(pids)
