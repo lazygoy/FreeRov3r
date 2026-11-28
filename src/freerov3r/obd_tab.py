@@ -26,6 +26,7 @@ class OBDTab(QWidget):
         self._loading_group = False
         self._syncing_selection = False
         self.selection_changed_callback = None
+        self.selected_pids_provider = None
         self.favorites_changed_callback = None
         self.navigate_to_graph_callback = None
         self.last_sample_time = {}
@@ -205,6 +206,13 @@ class OBDTab(QWidget):
         readiness_layout.addWidget(self.readiness_table)
         freeze_group = QGroupBox("FREEZE-FRAME DATA (MODE 02)")
         freeze_layout = QVBoxLayout(freeze_group)
+        self.freeze_frame_source_note = QLabel(
+            "Freeze Frame uses the OBD-II PIDs selected in the Graph workspace. "
+            "Choose or change those signals in Graph before requesting Mode 02 data."
+        )
+        self.freeze_frame_source_note.setWordWrap(True)
+        self.freeze_frame_source_note.setObjectName("freezeFrameSourceNote")
+        freeze_layout.addWidget(self.freeze_frame_source_note)
         freeze_actions = QHBoxLayout()
         self.read_freeze_frame_btn = QPushButton("Read Freeze Frame")
         self.read_freeze_frame_btn.setEnabled(False)
@@ -219,7 +227,7 @@ class OBDTab(QWidget):
         self.freeze_frame_number.setPrefix("Frame ")
         freeze_actions.addWidget(self.freeze_frame_number)
         self.freeze_frame_status_label = QLabel(
-            "Select PIDs above and connect an ELM327 OBD-II adapter."
+            "Connect an ELM327 OBD-II adapter. PID selection comes from the Graph workspace."
         )
         self.freeze_frame_status_label.setWordWrap(True)
         freeze_actions.addWidget(self.freeze_frame_status_label, 1)
@@ -555,6 +563,16 @@ class OBDTab(QWidget):
                 self.table.item(row, 0).setCheckState(state)
 
     def selected_pids(self):
+        if callable(self.selected_pids_provider):
+            pids = set()
+            for sensor_id in self.selected_pids_provider():
+                parts = str(sensor_id).lower().split("_", 2)
+                if len(parts) >= 2 and parts[0] == "obd":
+                    try:
+                        pids.add(int(parts[1], 16))
+                    except ValueError:
+                        continue
+            return sorted(pids)
         return [
             int(self.table.item(row, 1).text(), 16)
             for row in range(self.table.rowCount())

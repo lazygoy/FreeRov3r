@@ -88,7 +88,7 @@ class QuickDrawer(QDockWidget):
         self.nav_group.setExclusive(True)
         self.nav_buttons = {}
         entries = [
-            ("⌂   Home", "Home"), ("⌁   CAN Capture", "Capture"), ("◉   Sensor Monitor", "Sensors"),
+            ("⌂   Home", "Home"), ("⌁   Select Interface", "Capture"),
             ("▥   Sensor Graph", "Graph"), ("◫   OBD-II", "OBD-II"),
             ("▦   Module Diagnostics", "Modules"), ("✦   Special Functions", "Special Functions"),
             ("⌘   Vehicle Topology", "Topology"),

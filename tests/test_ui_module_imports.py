@@ -100,6 +100,30 @@ def test_obd_tab_constructs_with_default_settings():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_freeze_frame_uses_graph_selected_pids_and_explains_source():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from freerov3r.obd_tab import OBDTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = OBDTab(settings={})
+    tab.selected_pids_provider = lambda: {
+        "obd_0C_rpm", "obd_0D", "obd_0C", "can_123"
+    }
+
+    assert tab.selected_pids() == [0x0C, 0x0D]
+    assert "selected in the Graph workspace" in tab.freeze_frame_source_note.text()
+    assert "Graph workspace" in tab.freeze_frame_status_label.text()
+
+    tab.activity_timer.stop()
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
+
 def test_modules_tab_remains_available_from_app_module():
     from freerov3r.app import ModulesTab as app_modules_tab
     from freerov3r.modules_tab import ModulesTab
@@ -496,6 +520,15 @@ def test_main_window_constructs_without_hardware():
     _QT_TEST_APP = QApplication.instance() or QApplication([])
     window = MainWindow()
     assert window.tabs.count() >= 8
+    assert "Sensors" not in [
+        window.tabs.tabText(index) for index in range(window.tabs.count())
+    ]
+    assert "Sensors" not in window.quick_drawer.nav_buttons
+    from PySide6.QtWidgets import QPushButton
+    assert all(
+        button.text() != "Collect sensor data"
+        for button in window.stack.widget(0).findChildren(QPushButton)
+    )
     assert window.receiver is None
     assert window.header_connection.text() == "● OFFLINE"
     assert window.research_tab.live_enabled is False
