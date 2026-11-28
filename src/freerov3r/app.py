@@ -333,6 +333,7 @@ class MainWindow(QMainWindow):
         )
         self.graph_tab.set_dashboard_widget(self.sensor_dashboard_dock)
         self.sensor_dashboard_dock.selection_changed_callback = self.obd_tab.set_selected_sensor_ids
+        self.sensor_dashboard_dock.favorites_changed_callback = self._refresh_sensor_favorites
         self.graph_tab.open_dashboard_callback = self.sensor_dashboard_dock.choose_sensors
 
     def _build_navigation_workspace(self):
