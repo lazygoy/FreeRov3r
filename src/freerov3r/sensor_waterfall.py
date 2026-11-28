@@ -243,7 +243,7 @@ class SensorWaterfallDialog(QDialog):
             generation = len(samples)
         else:
             generation = getattr(self.sensor_capture, "total_samples_added", len(samples))
-        signature = (source, vin, generation)
+        signature = (source, vin, generation, len(samples))
         if signature == self._last_choice_signature:
             return
         self._last_choice_signature = signature
