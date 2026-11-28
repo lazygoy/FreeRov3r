@@ -551,6 +551,13 @@ class SensorDashboardDock(QWidget):
         self._waterfall_widget.source_label.hide()
         self._waterfall_widget.source_combo.hide()
         self.view_stack.addWidget(self._waterfall_widget)
+        # Waterfall is the primary graph workspace on entry. Keep the
+        # traditional 2D multi-panel dashboard one click away.
+        self._waterfall_widget.set_selected_sensor_ids(
+            self._selected_dashboard_sensor_ids()
+        )
+        self.view_stack.setCurrentWidget(self._waterfall_widget)
+        self.waterfall_button.setText("Back to Graphs")
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(1000)
