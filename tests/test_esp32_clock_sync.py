@@ -28,6 +28,9 @@ class SyncSerial:
         assert request.message_type == MessageType.TIME_SYNC_REQ
         decoded = decode_clock_sync_request(request.payload)
         device_receive_us = 10_000_000
+        # The fake transport has effectively zero device processing time.
+        # A fabricated 50 us processing interval can exceed the real host
+        # elapsed time on a fast loopback and correctly produce negative RTT.
         response = ProtocolMessage(
             MessageType.TIME_SYNC_RESP,
             1,
@@ -35,7 +38,7 @@ class SyncSerial:
                 decoded.sync_id,
                 decoded.host_send_time_ns,
                 device_receive_us,
-                device_receive_us + 50,
+                device_receive_us,
             ),
         )
         self.incoming.put(encode_message(response))
@@ -70,7 +73,8 @@ def test_usb_adapter_performs_restricted_clock_sync_exchange():
 
     assert sample["sync_id"] == 1
     assert sample["device_receive_time_us"] == 10_000_000
-    assert sample["device_send_time_us"] == 10_000_050
+    assert sample["device_send_time_us"] == 10_000_000
+    assert sample["round_trip_delay_ns"] >= 0
     assert len(fake.writes) == 1
     adapter.close()
 
