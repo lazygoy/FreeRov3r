@@ -415,7 +415,6 @@ class MainWindow(QMainWindow):
             self.graph_tab.refresh_favorite_groups(selected_name)
         if hasattr(self, "obd_tab"):
             self.obd_tab._refresh_favorite_combo(selected_name)
-        if hasattr(self, "sensor_dashboard_dock"):
         # A dashboard layout belongs to its sensor favorite. Remove orphaned
         # layouts when the corresponding sensor favorite is deleted.
         groups = self.settings.get("obd_pid_favorites", {})
