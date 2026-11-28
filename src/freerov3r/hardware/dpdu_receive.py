@@ -23,6 +23,8 @@ PDU_IT_RESULT = 0x1300
 PDU_IT_STATUS = 0x1301
 PDU_IT_ERROR = 0x1302
 PDU_IT_INFO = 0x1303
+PDU_COPST_FINISHED = 0x8012
+PDU_COPST_CANCELLED = 0x8013
 PDU_ERR_EVENT_QUEUE_EMPTY = 113
 MAX_EVENT_DATA_BYTES = 65536
 MAX_RESPONSE_PATTERN_BYTES = 4096
@@ -346,6 +348,13 @@ class DPduReceiveRuntime(DPduApiRuntime):
                 start_ts, tx_done_ts, acceptance, unique_id, error_code, extra,
                 status_code, info_code,
             )
+            if (
+                item_type == PDU_IT_STATUS
+                and status_code in (PDU_COPST_FINISHED, PDU_COPST_CANCELLED)
+            ):
+                self._active_receive_primitives.pop(
+                    (module, cll, cop_handle), None
+                )
             return event
         finally:
             destroy_status = int(self._pdu_destroy_item(
