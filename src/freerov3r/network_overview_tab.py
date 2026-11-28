@@ -27,6 +27,7 @@ class NetworkOverviewTab(QWidget):
         self.vin_provider = vin_provider or (lambda: None)
         self.history_callback = history_callback or (lambda *args, **kwargs: None)
         self.selected_code = None
+        self.live_scan_enabled = False
         self.map_buttons = {}
         self._building = False
 
@@ -463,7 +464,8 @@ class NetworkOverviewTab(QWidget):
             self.select_module(code)
 
     def scan_selected(self):
-        return
+        if not self.live_scan_enabled:
+            return
         if not self.selected_code:
             return
         module = self.network.scan_module(self.selected_code)
@@ -478,7 +480,8 @@ class NetworkOverviewTab(QWidget):
         self.select_module(module.code)
 
     def scan_all(self):
-        return
+        if not self.live_scan_enabled:
+            return
         modules = self.network.scan_all()
         self.history_callback(
             "topology_full_scan",
