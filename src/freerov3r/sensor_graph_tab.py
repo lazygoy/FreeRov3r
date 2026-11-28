@@ -74,6 +74,10 @@ class SensorGraphTab(QWidget):
         layout.addLayout(self.dashboard_layout, 1)
         self.dashboard_widget = None
         self._last_stats_refresh = 0.0
+        self.activity_timer = QTimer(self)
+        self.activity_timer.setInterval(1000)
+        self.activity_timer.timeout.connect(self._update_activity_indicators)
+        self.activity_timer.start()
         self.refresh_sensor_list()
 
     def set_dashboard_widget(self, widget):
@@ -148,6 +152,15 @@ class SensorGraphTab(QWidget):
     def refresh_favorite_groups(self, selected_name=None):
         """Favorites are managed by the dashboard PID picker."""
         return
+
+    def mark_sample(self, sensor_id):
+        """Record sample arrival without forcing a widget refresh."""
+        self.last_sample_time[str(sensor_id)] = time.monotonic()
+
+    def _update_activity_indicators(self):
+        """Retain the activity timer hook; the old visible sensor list is gone."""
+        if not self.isVisible():
+            return
 
     def toggle_record(self):
         if not self.recording:
