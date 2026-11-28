@@ -6,7 +6,13 @@ from PySide6.QtWidgets import QApplication
 from freerov3r.research_tab import ResearchTab
 
 
-_APP = QApplication.instance() or QApplication([])
+_APP = None
+
+
+def _app():
+    global _APP
+    _APP = QApplication.instance() or QApplication([])
+    return _APP
 
 
 def _frame():
@@ -23,10 +29,11 @@ def _close(tab):
     tab.refresh_timer.stop()
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
-    _APP.processEvents()
+    _app().processEvents()
 
 
 def test_research_live_preview_is_disabled_until_workspace_is_selected():
+    _app()
     tab = ResearchTab()
     tab.refresh_timer.stop()
     try:
