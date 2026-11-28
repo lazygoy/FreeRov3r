@@ -22,6 +22,7 @@ class Esp32DualFramedWifiAdapter(Esp32DualFramedSerialAdapter):
             Esp32ConnectionManager.create_adapter(
                 "wifi", endpoint,
                 channel_names={0: channel, 1: channel},
+                connect_timeout=connect_timeout,
             )
             for endpoint, channel in zip(self.endpoints, channel_names)
         ]
