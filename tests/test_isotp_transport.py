@@ -104,7 +104,7 @@ def test_transmission_requires_explicit_authorization_for_every_frame():
         rx_id=0x7E8,
     )
     with pytest.raises(PermissionError, match="denied"):
-        transport.send_payload(b"\x22\xf1\x90")
+        transport.send_payload(b"\\x22\\xf1\\x90")
     assert sent == []
 
 
@@ -187,7 +187,10 @@ def test_segmented_receive_uses_one_overall_timeout_deadline():
         transport.receive_payload(timeout=0.02)
 
     assert len(requested_timeouts) == 2
-    assert 0 < requested_timeouts[1] <= requested_timeouts[0] <= 0.02
+    # Allow sub-nanosecond float rounding when deadline - monotonic() is
+    # evaluated immediately after constructing the deadline.
+    assert requested_timeouts[0] == pytest.approx(0.02, abs=1e-9)
+    assert 0 < requested_timeouts[1] <= requested_timeouts[0]
 
 
 def test_flow_control_wait_frames_share_one_deadline():
@@ -212,7 +215,8 @@ def test_flow_control_wait_frames_share_one_deadline():
 
     assert transport._wait_flow_control(timeout=0.25) == (0, 0.0)
     assert len(requested_timeouts) == 2
-    assert 0 < requested_timeouts[1] <= requested_timeouts[0] <= 0.25
+    assert requested_timeouts[0] == pytest.approx(0.25, abs=1e-9)
+    assert 0 < requested_timeouts[1] <= requested_timeouts[0]
 
 
 def test_segmented_send_does_not_violate_stmin_when_deadline_is_short():
