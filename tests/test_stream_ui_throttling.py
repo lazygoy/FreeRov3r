@@ -77,6 +77,7 @@ def test_hidden_research_preview_buffers_frames_without_rebuilding_table():
         frames=[],
         MAX_CAPTURE_FRAMES=100_000,
         MAX_DISPLAY_ROWS=500,
+        MAX_LIVE_PREVIEW_FRAMES=2000,
         dropped_recorded_frames=0,
         isVisible=lambda: False,
         refresh_table=lambda: (_ for _ in ()).throw(
