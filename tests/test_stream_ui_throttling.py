@@ -91,3 +91,42 @@ def test_hidden_research_preview_buffers_frames_without_rebuilding_table():
 
     assert tab.live_preview == preview
     assert tab._pending_preview == []
+
+
+
+def test_obd_value_update_does_not_sweep_all_activity_indicators(monkeypatch):
+    from types import SimpleNamespace
+
+    from freerov3r import obd_tab
+
+    class _ValueItem:
+        value = None
+
+        def setText(self, value):
+            self.value = value
+
+    item = _ValueItem()
+    tab = SimpleNamespace(
+        pid_rows={0x05: 2},
+        table=SimpleNamespace(item=lambda _row, _column: item),
+        last_sample_time={},
+    )
+    monkeypatch.setattr(obd_tab.time, "monotonic", lambda: 123.0)
+
+    obd_tab.OBDTab.update_value(tab, 0x05, "91.0 C")
+
+    assert item.value == "91.0 C"
+    assert tab.last_sample_time == {0x05: 123.0}
+
+
+def test_hidden_sensor_activity_refresh_skips_widget_sweeps():
+    from types import SimpleNamespace
+
+    from freerov3r.obd_tab import OBDTab
+    from freerov3r.sensor_graph_tab import SensorGraphTab
+
+    hidden_obd = SimpleNamespace(isVisible=lambda: False)
+    hidden_graph = SimpleNamespace(isVisible=lambda: False)
+
+    OBDTab._update_activity_indicators(hidden_obd)
+    SensorGraphTab._update_activity_indicators(hidden_graph)
