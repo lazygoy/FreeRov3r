@@ -105,7 +105,7 @@ def test_obd_diagnostic_tables_expand_and_action_controls_stay_above_them():
     global _QT_TEST_APP
 
     from PySide6.QtCore import QCoreApplication, QEvent
-    from PySide6.QtWidgets import QApplication, QSizePolicy, QVBoxLayout
+    from PySide6.QtWidgets import QApplication, QHBoxLayout, QSizePolicy
 
     from freerov3r.obd_tab import OBDTab
 
@@ -122,13 +122,22 @@ def test_obd_diagnostic_tables_expand_and_action_controls_stay_above_them():
     for table in tables:
         assert table.maximumHeight() > 1000
         assert table.sizePolicy().verticalPolicy() == QSizePolicy.Expanding
+        assert table.wordWrap() is False
+        assert table.verticalHeader().defaultSectionSize() == 30
+        assert table.verticalHeader().isHidden()
+
+    # Raw payload columns stay bounded instead of consuming the whole page width.
+    assert tab.dtc_table.columnWidth(4) == 180
+    assert tab.freeze_frame_table.columnWidth(5) == 180
+    assert tab.vehicle_info_table.columnWidth(5) == 180
+    assert tab.monitor_tests_table.columnWidth(8) == 95
 
     for index in range(tab.diagnostic_views.count()):
         page = tab.diagnostic_views.widget(index)
         page_layout = page.layout()
         action_index = 1 if index == 1 else 0
         action_layout = page_layout.itemAt(action_index).layout()
-        assert isinstance(action_layout, QVBoxLayout)
+        assert isinstance(action_layout, QHBoxLayout)
 
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
