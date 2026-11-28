@@ -10,6 +10,21 @@ from .models import CanFrame, DiagnosticEvent
 class CaptureSession:
     frames: list[CanFrame] = field(default_factory=list)
     diagnostic_events: list[DiagnosticEvent] = field(default_factory=list)
+    max_diagnostic_events: int = 100000
+    total_diagnostic_events_added: int = 0
+    dropped_diagnostic_events: int = 0
+
+    def __post_init__(self):
+        if self.max_diagnostic_events < 1:
+            raise ValueError("max_diagnostic_events must be at least 1")
+        if len(self.diagnostic_events) > self.max_diagnostic_events:
+            overflow = len(self.diagnostic_events) - self.max_diagnostic_events
+            del self.diagnostic_events[:overflow]
+            self.dropped_diagnostic_events += overflow
+        self.total_diagnostic_events_added = max(
+            self.total_diagnostic_events_added,
+            len(self.diagnostic_events) + self.dropped_diagnostic_events,
+        )
 
     def add(self, frame: CanFrame):
         self.frames.append(frame)
@@ -19,6 +34,20 @@ class CaptureSession:
         if not isinstance(event, DiagnosticEvent):
             raise TypeError("event must be a DiagnosticEvent")
         self.diagnostic_events.append(event)
+        self.total_diagnostic_events_added += 1
+        overflow = len(self.diagnostic_events) - self.max_diagnostic_events
+        if overflow > 0:
+            batch = min(
+                len(self.diagnostic_events),
+                max(overflow, min(1000, max(1, self.max_diagnostic_events // 20))),
+            )
+            del self.diagnostic_events[:batch]
+            self.dropped_diagnostic_events += batch
+
+    def diagnostic_events_since(self, sequence_index):
+        """Return retained protocol events from an absolute session index."""
+        start = max(0, int(sequence_index) - self.dropped_diagnostic_events)
+        return self.diagnostic_events[start:]
 
     def export_diagnostic_jsonl(self, path, events=None):
         """Export protocol events as JSONL without flattening them into CAN rows."""
