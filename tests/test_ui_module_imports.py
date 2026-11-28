@@ -498,7 +498,7 @@ def test_main_window_constructs_without_hardware():
     assert window.receiver is None
     assert window.header_connection.text() == "● OFFLINE"
     assert window.research_tab.live_enabled is False
-    assert window.backend.count() > 3  # Saved virtual backend is preserved under Advanced.
+    assert window.backend.count() == 3
 
     window.rate_timer.stop()
     window.graph_tab.activity_timer.stop()
