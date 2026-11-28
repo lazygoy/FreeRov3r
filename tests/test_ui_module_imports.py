@@ -66,8 +66,9 @@ def test_sensor_graph_tab_constructs_with_empty_capture():
     _QT_TEST_APP = QApplication.instance() or QApplication([])
     tab = SensorGraphTab(SensorCapture())
     assert tab.sensor_list.count() == 0
-    assert tab.stats_table.rowCount() == 0
-    assert tab.activity_timer.isActive()
+    assert not hasattr(tab, "stats_table")
+    assert not hasattr(tab, "activity_timer")
+    assert tab.dashboard_widget is None
 
     tab.activity_timer.stop()
     tab.deleteLater()
