@@ -29,6 +29,7 @@ MAX_RESPONSE_PATTERN_BYTES = 4096
 
 
 class _PduExpectedResponseData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("response_type", ctypes.c_uint32),
         ("acceptance_id", ctypes.c_uint32),
@@ -41,6 +42,7 @@ class _PduExpectedResponseData(ctypes.Structure):
 
 
 class _PduCopCtrlData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("time", ctypes.c_uint32),
         ("num_send_cycles", ctypes.c_int32),
@@ -53,6 +55,7 @@ class _PduCopCtrlData(ctypes.Structure):
 
 
 class _PduEventItem(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("item_type", ctypes.c_int32),
         ("cop_handle", ctypes.c_uint32),
@@ -63,6 +66,7 @@ class _PduEventItem(ctypes.Structure):
 
 
 class _PduResultData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("rx_flag", _PduFlagData),
         ("unique_resp_identifier", ctypes.c_uint32),
@@ -77,6 +81,7 @@ class _PduResultData(ctypes.Structure):
 
 
 class _PduErrorData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("error_code_id", ctypes.c_uint32),
         ("extra_error_info_id", ctypes.c_uint32),
@@ -84,6 +89,7 @@ class _PduErrorData(ctypes.Structure):
 
 
 class _PduInfoData(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("info_code", ctypes.c_uint32),
         ("extra_info_data", ctypes.c_uint32),
