@@ -130,7 +130,7 @@ def process_frame(window, frame, update_display=True, display_updates=None):
                 monotonic_timestamp=time.monotonic(),
             ))
             window.graph_tab.mark_sample(sensor_id)
-            if sensor_id not in window.graph_tab.known_sensor_ids:
+            if sensor_id not in getattr(window.graph_tab, "known_sensor_ids", set()):
                 if display_updates is None:
                     window.graph_tab.refresh_sensor_list()
                 else:
