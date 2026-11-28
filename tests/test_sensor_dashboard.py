@@ -137,7 +137,10 @@ def test_obd_selection_sync_targets_first_graph(qapp):
 
     from freerov3r.sensor_dashboard import SensorDashboardDock
 
-    dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
+    dashboard = SensorDashboardDock(
+        SimpleNamespace(samples=[]),
+        settings={"sensor_dashboard_layout": {"panel_count": 4, "panels": []}},
+    )
     dashboard.set_selected_sensor_ids({"obd_0C", "obd_05"})
 
     assert dashboard.panels[0].selected_sensor_ids() == {"obd_0C", "obd_05"}
