@@ -5,7 +5,7 @@ import time
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSpinBox,
-    QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QSizePolicy, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
 
@@ -30,7 +30,7 @@ class OBDTab(QWidget):
         self.diagnostic_views = QTabWidget()
         dtc_group = QGroupBox("DIAGNOSTIC TROUBLE CODES")
         dtc_layout = QVBoxLayout(dtc_group)
-        dtc_actions = QHBoxLayout()
+        dtc_actions = QVBoxLayout()
         self.read_dtcs_btn = QPushButton("Read Stored / Pending / Permanent Codes")
         self.read_dtcs_btn.setEnabled(False)
         self.read_dtcs_btn.setToolTip(
@@ -49,17 +49,18 @@ class OBDTab(QWidget):
         self.dtc_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.dtc_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.dtc_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.dtc_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
-        self.dtc_table.setMaximumHeight(190)
+        self.dtc_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.dtc_table.setMinimumHeight(180)
+        self.dtc_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.dtc_table.setAlternatingRowColors(True)
         self.dtc_table.setEditTriggers(QTableWidget.NoEditTriggers)
         dtc_layout.addWidget(self.dtc_table)
         self.diagnostic_views.addTab(dtc_group, "DTCs")
-        layout.addWidget(self.diagnostic_views)
+        layout.addWidget(self.diagnostic_views, 1)
 
         readiness_group = QGroupBox("READINESS MONITORS (MODE 01 PID 01)")
         readiness_layout = QVBoxLayout(readiness_group)
-        readiness_actions = QHBoxLayout()
+        readiness_actions = QVBoxLayout()
         self.read_readiness_btn = QPushButton("Read Readiness")
         self.read_readiness_btn.setEnabled(False)
         self.read_readiness_btn.setToolTip(
@@ -78,7 +79,9 @@ class OBDTab(QWidget):
         self.readiness_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.readiness_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.readiness_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.readiness_table.setMaximumHeight(220)
+        self.readiness_table.horizontalHeader().setStretchLastSection(True)
+        self.readiness_table.setMinimumHeight(180)
+        self.readiness_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.readiness_table.setAlternatingRowColors(True)
         self.readiness_table.setEditTriggers(QTableWidget.NoEditTriggers)
         readiness_layout.addWidget(self.readiness_table)
@@ -91,7 +94,7 @@ class OBDTab(QWidget):
         self.freeze_frame_source_note.setWordWrap(True)
         self.freeze_frame_source_note.setObjectName("freezeFrameSourceNote")
         freeze_layout.addWidget(self.freeze_frame_source_note)
-        freeze_actions = QHBoxLayout()
+        freeze_actions = QVBoxLayout()
         self.read_freeze_frame_btn = QPushButton("Read Freeze Frame")
         self.read_freeze_frame_btn.setEnabled(False)
         self.read_freeze_frame_btn.setToolTip(
@@ -115,7 +118,9 @@ class OBDTab(QWidget):
             ["PID", "Measurement", "Value", "Unit", "ECU", "Raw"]
         )
         self.freeze_frame_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.freeze_frame_table.setMaximumHeight(220)
+        self.freeze_frame_table.horizontalHeader().setStretchLastSection(True)
+        self.freeze_frame_table.setMinimumHeight(180)
+        self.freeze_frame_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.freeze_frame_table.setAlternatingRowColors(True)
         self.freeze_frame_table.setEditTriggers(QTableWidget.NoEditTriggers)
         freeze_layout.addWidget(self.freeze_frame_table)
@@ -124,7 +129,7 @@ class OBDTab(QWidget):
 
         vehicle_info_group = QGroupBox("VEHICLE / ECU IDENTIFICATION (MODE 09)")
         vehicle_info_layout = QVBoxLayout(vehicle_info_group)
-        vehicle_info_actions = QHBoxLayout()
+        vehicle_info_actions = QVBoxLayout()
         self.read_vehicle_info_btn = QPushButton("Read Vehicle Information")
         self.read_vehicle_info_btn.setEnabled(False)
         self.read_vehicle_info_btn.setToolTip(
@@ -143,7 +148,9 @@ class OBDTab(QWidget):
             ["PID", "Information", "Value", "Response ECU", "Channel", "Raw"]
         )
         self.vehicle_info_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.vehicle_info_table.setMaximumHeight(220)
+        self.vehicle_info_table.horizontalHeader().setStretchLastSection(True)
+        self.vehicle_info_table.setMinimumHeight(180)
+        self.vehicle_info_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.vehicle_info_table.setAlternatingRowColors(True)
         self.vehicle_info_table.setEditTriggers(QTableWidget.NoEditTriggers)
         vehicle_info_layout.addWidget(self.vehicle_info_table)
@@ -151,7 +158,7 @@ class OBDTab(QWidget):
 
         monitor_tests_group = QGroupBox("ON-BOARD MONITOR TEST RESULTS (MODE 06)")
         monitor_tests_layout = QVBoxLayout(monitor_tests_group)
-        monitor_tests_actions = QHBoxLayout()
+        monitor_tests_actions = QVBoxLayout()
         self.read_monitor_tests_btn = QPushButton("Read Monitor Tests")
         self.read_monitor_tests_btn.setEnabled(False)
         self.read_monitor_tests_btn.setToolTip(
@@ -171,7 +178,9 @@ class OBDTab(QWidget):
         )
         self.monitor_tests_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.monitor_tests_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        self.monitor_tests_table.setMaximumHeight(260)
+        self.monitor_tests_table.horizontalHeader().setStretchLastSection(True)
+        self.monitor_tests_table.setMinimumHeight(180)
+        self.monitor_tests_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.monitor_tests_table.setAlternatingRowColors(True)
         self.monitor_tests_table.setEditTriggers(QTableWidget.NoEditTriggers)
         monitor_tests_layout.addWidget(self.monitor_tests_table)
