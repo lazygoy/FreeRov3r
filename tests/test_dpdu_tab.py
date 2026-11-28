@@ -24,11 +24,11 @@ def test_parse_uint32_rejects_invalid_values(text):
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("FF", b"\\xff"),
-        ("62 F1 90", b"\\x62\\xf1\\x90"),
-        ("0x7E8", b"\\x7e\\x08"),
-        ("7E:8F", b"\\x7e\\x8f"),
-        ("7E,8F", b"\\x7e\\x8f"),
+        ("FF", b"\xff"),
+        ("62 F1 90", b"\x62\xf1\x90"),
+        ("0x7E8", b"\x7e\x08"),
+        ("7E:8F", b"\x7e\x8f"),
+        ("7E,8F", b"\x7e\x8f"),
     ],
 )
 def test_parse_hex_bytes_accepts_common_separators(text, expected):
