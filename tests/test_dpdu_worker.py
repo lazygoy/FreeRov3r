@@ -153,3 +153,69 @@ def test_worker_closes_runtime_when_selected_module_is_missing(registration):
             emit_status=lambda _status: None,
         )
     assert calls == ["close"]
+
+
+
+def test_qthread_worker_constructs_and_closes_runtime_on_worker_thread(registration):
+    from freerov3r.hardware.dpdu_receive import (
+        PDU_COPST_FINISHED,
+        PDU_IT_STATUS,
+    )
+    from freerov3r.hardware.dpdu_worker import DPduDiagnosticWorker
+
+    main_thread_id = threading.get_ident()
+    runtime_thread_ids = []
+
+    class FakeRuntime:
+        def __init__(self, _registration):
+            runtime_thread_ids.append(threading.get_ident())
+            self.events = [
+                DPduEvent(
+                    item_type=PDU_IT_STATUS,
+                    cop_handle=91,
+                    cop_tag=0,
+                    timestamp_us=123457,
+                    status_code=PDU_COPST_FINISHED,
+                )
+            ]
+
+        def open(self):
+            runtime_thread_ids.append(threading.get_ident())
+            return [DPduLiveModule(
+                registration_name="Mock MVCI",
+                library_file="mock-pdu.dll",
+                module_type_id=1,
+                module_handle=17,
+                module_status=0,
+            )]
+
+        def connect_module(self, _module_handle):
+            runtime_thread_ids.append(threading.get_ident())
+
+        def create_logical_link(self, _module_handle, _resource_id):
+            runtime_thread_ids.append(threading.get_ident())
+            return type("Link", (), {"logical_link_handle": 44})()
+
+        def connect_logical_link(self, _module_handle, _cll_handle):
+            runtime_thread_ids.append(threading.get_ident())
+
+        def start_receive_only(self, *_args, **_kwargs):
+            runtime_thread_ids.append(threading.get_ident())
+            return 91
+
+        def get_next_event(self, *_args):
+            runtime_thread_ids.append(threading.get_ident())
+            return self.events.pop(0)
+
+        def close(self):
+            runtime_thread_ids.append(threading.get_ident())
+
+    worker = DPduDiagnosticWorker(
+        make_config(registration, com_params_uint32=()),
+        runtime_factory=FakeRuntime,
+    )
+    worker.start()
+    assert worker.wait(2000)
+    assert runtime_thread_ids
+    assert all(thread_id != main_thread_id for thread_id in runtime_thread_ids)
+    assert len(set(runtime_thread_ids)) == 1
