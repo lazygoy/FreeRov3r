@@ -426,6 +426,7 @@ def format_capture_event(event):
                 f"Bitrate: {details.get('bitrate', 'Unknown')}",
                 f"Frames recorded: {details.get('frames', 'Unknown')}",
                 f"Sensor samples: {details.get('sensor_samples', 'Unknown')}",
+                f"Diagnostic protocol events: {details.get('diagnostic_events', 0)}",
                 f"Sensor samples dropped from bounded buffer: {details.get('sensor_samples_dropped_from_bounded_buffer', 'Not recorded')}",
                 f"Duration: {details.get('duration_seconds', 'Unknown')} seconds",
                 f"Archive file: {details.get('archive_file', 'Not recorded')}",
