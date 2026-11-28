@@ -753,6 +753,11 @@ class MainWindow(QMainWindow):
     def on_frames(self, frames):
         process_frames(self, frames)
 
+    def on_diagnostic_events(self, events):
+        """Accept normalized protocol events from a dedicated diagnostic worker."""
+        for event in events or ():
+            self.session.add_diagnostic_event(event)
+
     def on_frame(self, frame, update_display=True):
         return process_frame(self, frame, update_display=update_display)
 
