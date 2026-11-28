@@ -723,7 +723,8 @@ class SensorDashboardDock(QWidget):
             selected = current_ids()
             self.panels[index].refresh_sensor_choices(selected)
             needed = max(int(self.panel_count.currentData()), index + 1)
-            self.panel_count.setCurrentIndex(1 if needed == 1 else 2 if needed == 2 else 4)
+            panel_count = 1 if needed <= 1 else 2 if needed <= 2 else 4
+            self.panel_count.setCurrentIndex(PANEL_COUNTS.index(panel_count))
             self.reflow()
             self.persist_layout()
             if callable(self.selection_changed_callback):
