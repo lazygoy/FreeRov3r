@@ -158,7 +158,7 @@ class NavigationWorkspace(QScrollArea):
 
         title_column = QVBoxLayout()
         title_column.setSpacing(3)
-        self.workspace_title = QLabel("CAPTURE")
+        self.workspace_title = QLabel("Capture")
         self.workspace_title.setObjectName("experimentalWorkspaceTitle")
         self.workspace_title.setFont(QFont(heading_font_family, 19, QFont.Bold))
         self.workspace_subtitle = QLabel(
