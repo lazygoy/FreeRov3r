@@ -42,6 +42,8 @@ def toggle_capture(window):
             - len(capture_samples),
         )
         capture_frames = window.session.frames[frame_start:]
+        diagnostic_event_start = window.capture_start_diagnostic_event_index
+        capture_diagnostic_events = window.session.diagnostic_events[diagnostic_event_start:]
         archive_path = window.history_store.archive_capture(
             (context.vin if context else window.capture_vin),
             {
@@ -52,6 +54,9 @@ def toggle_capture(window):
                 "duration_seconds": round(elapsed, 2),
                 "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
                 "adapter_diagnostics": diagnostics if isinstance(diagnostics, dict) else {},
+                "diagnostic_events": [
+                    event.to_dict() for event in capture_diagnostic_events
+                ],
                 "frames": [
                     {"timestamp": frame.timestamp, "arbitration_id": frame.arbitration_id,
                      "extended": frame.is_extended_id, "data": frame.data.hex(),
@@ -83,6 +88,7 @@ def toggle_capture(window):
                     "sensor_samples_dropped_from_bounded_buffer": capture_samples_dropped,
                     "duration_seconds": round(elapsed, 2),
                 }),
+                "diagnostic_events": len(capture_diagnostic_events),
                 "archive_file": str(archive_path),
             },
             vin=(context.vin if context else window.capture_vin) or "UNASSIGNED",
@@ -205,6 +211,7 @@ def toggle_capture(window):
     window.capture_start_frames = 0
     window.capture_start_sample_index = window.capture_session_context.sample_start_index
     window.capture_start_frame_index = window.capture_session_context.frame_start_index
+    window.capture_start_diagnostic_event_index = len(window.session.diagnostic_events)
     window.record_vehicle_event(
         "capture_started", "CAN capture started",
         {"interface": interface, "channel": channel, "bitrate": bitrate},
