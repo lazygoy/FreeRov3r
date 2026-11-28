@@ -40,6 +40,7 @@ class WaterfallPlot(gl.GLViewWidget):
         self._surface_items = []
         self._ground_plane = None
         self._ground_surface = None
+        self._ground_outline = None
         self._cursor_line = None
         self._cursor_fraction = 0.0
         self.setMinimumSize(0, 0)
@@ -119,15 +120,18 @@ class WaterfallPlot(gl.GLViewWidget):
         return x, y, surface_z, rgba.reshape(-1, 4)
 
     def _add_ground_plane(self):
-        if not self.lanes:
-            return
+        # Keep a visible floor even before the first sensor is selected or
+        # any samples arrive. The empty scene is still a useful 3D workspace.
+        lane_count = max(1, len(self.lanes))
         lane_min = -0.8
-        lane_max = (len(self.lanes) - 1) * LANE_SPACING + 0.8
+        lane_max = (lane_count - 1) * LANE_SPACING + 0.8
+        lane_width = lane_max - lane_min
+        lane_center = (lane_min + lane_max) / 2.0
         floor_x = np.asarray([0.0, self.time_extent], dtype=np.float32)
         floor_y = np.asarray([lane_min, lane_max], dtype=np.float32)
         floor_z = np.full((2, 2), -0.04, dtype=np.float32)
         floor_colors = np.tile(
-            np.asarray([0.035, 0.065, 0.11, 0.72], dtype=np.float32), (4, 1)
+            np.asarray([0.055, 0.085, 0.14, 0.94], dtype=np.float32), (4, 1)
         )
         floor = gl.GLSurfacePlotItem(
             x=floor_x, y=floor_y, z=floor_z, colors=floor_colors,
@@ -137,27 +141,42 @@ class WaterfallPlot(gl.GLViewWidget):
         self.addItem(floor)
         self._ground_surface = floor
 
-        lane_width = max(1, len(self.lanes) - 1) * LANE_SPACING + 1.6
         grid = gl.GLGridItem()
         grid.setSize(x=self.time_extent, y=lane_width, z=1)
         grid.setSpacing(x=1.0, y=LANE_SPACING)
-        grid.setColor((0.24, 0.34, 0.47, 0.55))
-        grid.translate(self.time_extent / 2.0,
-                       (len(self.lanes) - 1) * LANE_SPACING / 2.0, -0.03)
+        grid.setColor((0.38, 0.50, 0.66, 0.82))
+        grid.translate(self.time_extent / 2.0, lane_center, -0.025)
         self.addItem(grid)
         self._ground_plane = grid
+
+        outline_points = np.asarray([
+            [0.0, lane_min, -0.015],
+            [self.time_extent, lane_min, -0.015],
+            [self.time_extent, lane_max, -0.015],
+            [0.0, lane_max, -0.015],
+            [0.0, lane_min, -0.015],
+        ], dtype=np.float32)
+        self._ground_outline = gl.GLLinePlotItem(
+            pos=outline_points, color=(0.42, 0.60, 0.82, 0.92),
+            width=1.2, antialias=True, mode="line_strip",
+            glOptions="translucent",
+        )
+        self.addItem(self._ground_outline)
 
     def _build_scene(self):
         self.clear()
         self._surface_items = []
         self._ground_plane = None
+        self._ground_surface = None
+        self._ground_outline = None
         self._cursor_line = None
+        self._add_ground_plane()
         if not self.lanes:
             self._scene_sensor_ids = ()
+            self._fit_camera()
             self.update()
             return
 
-        self._add_ground_plane()
         for index, lane in enumerate(self.lanes):
             x, y, surface_z, colors = self._lane_geometry(index, lane)
             surface = None
@@ -185,7 +204,7 @@ class WaterfallPlot(gl.GLViewWidget):
 
     def _update_lane_items(self):
         if not self.lanes:
-            if self._scene_sensor_ids:
+            if self._ground_surface is None:
                 self._build_scene()
             return
         if len(self._surface_items) != len(self.lanes):
