@@ -4,7 +4,7 @@ from PySide6.QtCore import QThread, Signal, Qt
 from .connection_options import populate_connection_combo, select_connection_backend
 
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPlainTextEdit, QPushButton, QStackedWidget,
     QVBoxLayout, QWidget,
 )
