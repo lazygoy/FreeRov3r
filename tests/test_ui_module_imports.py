@@ -101,6 +101,40 @@ def test_obd_tab_constructs_with_default_settings():
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
 
+def test_obd_diagnostic_tables_expand_and_action_controls_stay_above_them():
+    global _QT_TEST_APP
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication, QSizePolicy, QVBoxLayout
+
+    from freerov3r.obd_tab import OBDTab
+
+    _QT_TEST_APP = QApplication.instance() or QApplication([])
+    tab = OBDTab(settings={})
+
+    tables = (
+        tab.dtc_table,
+        tab.freeze_frame_table,
+        tab.vehicle_info_table,
+        tab.monitor_tests_table,
+        tab.readiness_table,
+    )
+    for table in tables:
+        assert table.maximumHeight() > 1000
+        assert table.sizePolicy().verticalPolicy() == QSizePolicy.Expanding
+
+    for index in range(tab.diagnostic_views.count()):
+        page = tab.diagnostic_views.widget(index)
+        page_layout = page.layout()
+        action_index = 1 if index == 1 else 0
+        action_layout = page_layout.itemAt(action_index).layout()
+        assert isinstance(action_layout, QVBoxLayout)
+
+    tab.deleteLater()
+    QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
+    _QT_TEST_APP.processEvents()
+
+
 def test_freeze_frame_uses_graph_selected_pids_and_explains_source():
     global _QT_TEST_APP
 
