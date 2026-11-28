@@ -70,7 +70,6 @@ def test_sensor_graph_tab_constructs_with_empty_capture():
     assert not hasattr(tab, "activity_timer")
     assert tab.dashboard_widget is None
 
-    tab.activity_timer.stop()
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
