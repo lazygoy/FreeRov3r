@@ -566,7 +566,8 @@ class SensorDashboardDock(QWidget):
             return
         if self._waterfall_widget is None:
             self._waterfall_widget = SensorWaterfallDialog(
-                self.sensor_capture, vin_provider=self.vin_provider, parent=self.view_stack
+                self.sensor_capture, vin_provider=self.vin_provider,
+                parent=self.view_stack, defer_initial_refresh=True
             )
             self._waterfall_widget.sensor_list.hide()
             self._waterfall_widget.selection_status.hide()
@@ -574,7 +575,6 @@ class SensorDashboardDock(QWidget):
             self._waterfall_widget.source_combo.hide()
             self.view_stack.addWidget(self._waterfall_widget)
         self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
-        self._waterfall_widget.refresh_sensor_choices()
         self.view_stack.setCurrentWidget(self._waterfall_widget)
         self.waterfall_button.setText("Back to Graphs")
 
