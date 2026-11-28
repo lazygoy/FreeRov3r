@@ -165,24 +165,25 @@ def test_waterfall_switch_stays_inside_dashboard(qapp):
     from freerov3r.sensor_dashboard import SensorDashboardDock
 
     dashboard = SensorDashboardDock(SimpleNamespace(samples=[]))
-    assert dashboard.view_stack.currentWidget() is dashboard.grid_host
 
-    # The OpenGL-backed page exists before the first click and stays owned by
-    # the same stack throughout both directions of the transition.
+    # Waterfall is the default page, and the traditional 2D dashboard remains
+    # available without destroying or recreating the OpenGL-backed widget.
     waterfall = dashboard._waterfall_widget
     assert waterfall is not None
+    assert dashboard.view_stack.currentWidget() is waterfall
+    assert dashboard.waterfall_button.text() == "Back to Graphs"
     assert waterfall.parentWidget() is dashboard.view_stack
     assert dashboard.view_stack.indexOf(waterfall) >= 0
-
-    dashboard.open_waterfall()
-    assert dashboard.view_stack.currentWidget() is waterfall
     assert isinstance(waterfall, QWidget)
     assert not isinstance(waterfall, QDialog)
-    assert dashboard.waterfall_button.text() == "Back to Graphs"
 
     dashboard.open_waterfall()
     assert dashboard.view_stack.currentWidget() is dashboard.grid_host
     assert dashboard.waterfall_button.text() == "2D / 3D View"
+
+    dashboard.open_waterfall()
+    assert dashboard.view_stack.currentWidget() is waterfall
+    assert dashboard.waterfall_button.text() == "Back to Graphs"
     assert dashboard._waterfall_widget is waterfall
     assert waterfall.parentWidget() is dashboard.view_stack
     dashboard.close()
