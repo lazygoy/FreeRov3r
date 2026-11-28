@@ -1,4 +1,4 @@
-"""Dockable multi-panel live sensor dashboard."""
+"""Embedded multi-panel live sensor dashboard."""
 
 import math
 from datetime import datetime
@@ -6,7 +6,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QMargins
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout,
+    QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
     QInputDialog, QFileDialog, QMessageBox,
 )
@@ -19,7 +19,6 @@ except ImportError:
 
 from .sensors.scaling import sample_clock, sample_time
 from .sensors.correlation import correlate_sensor_series, make_event_marker
-from .sensors.presets import PRESET_GROUPS, build_sensor_preset
 from .sensor_waterfall import SensorWaterfallDialog
 from .diagnostics.obd2 import OBD_PIDS
 
