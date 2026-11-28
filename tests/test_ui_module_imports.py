@@ -91,9 +91,11 @@ def test_obd_tab_constructs_with_default_settings():
     _QT_TEST_APP = QApplication.instance() or QApplication([])
     tab = OBDTab(settings={}, settings_save_callback=lambda _settings: None)
     assert not hasattr(tab, "table")
-    assert tab.diagnostic_views.tabText(0) == "DTCs"
-    assert tab.diagnostic_views.tabText(1) == "Freeze Frame"
+    assert [tab.diagnostic_views.tabText(i) for i in range(tab.diagnostic_views.count())] == [
+        "DTCs", "Freeze Frame", "ECU ID", "Monitor Tests", "Readiness"
+    ]
     assert tab.diagnostic_views.currentIndex() == 0
+    assert tab.layout().count() == 2
 
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
@@ -115,8 +117,9 @@ def test_freeze_frame_uses_graph_selected_pids_and_explains_source():
 
     assert tab.selected_pids() == [0x0C, 0x0D]
     assert "selected in the Graph workspace" in tab.freeze_frame_source_note.text()
-    assert tab.diagnostic_views.tabText(0) == "DTCs"
-    assert tab.diagnostic_views.tabText(1) == "Freeze Frame"
+    assert [tab.diagnostic_views.tabText(i) for i in range(tab.diagnostic_views.count())] == [
+        "DTCs", "Freeze Frame", "ECU ID", "Monitor Tests", "Readiness"
+    ]
     assert "Graph workspace" in tab.freeze_frame_status_label.text()
 
     tab.deleteLater()
