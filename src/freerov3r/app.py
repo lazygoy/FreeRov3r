@@ -471,11 +471,13 @@ class MainWindow(QMainWindow):
             self.tabs.setTabVisible(
                 index, tab_is_visible(self.tabs.tabText(index), mode)
             )
+        if hasattr(self, "navigation_workspace"):
+            self.navigation_workspace._refresh_navigation_visibility()
 
         current_index = self.tabs.currentIndex()
         current_name = self.tabs.tabText(current_index) if current_index >= 0 else ""
         if not tab_is_visible(current_name, mode):
-            fallback = "Research" if mode is WorkspaceMode.RESEARCH else "Capture"
+            fallback = "Research" if mode is WorkspaceMode.RESEARCH else "OBD-II"
             self._navigate_to_tab(fallback)
         if hasattr(self, "workspace_title"):
             self._sync_navigation_selection(self.tabs.currentIndex())
