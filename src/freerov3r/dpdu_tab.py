@@ -519,7 +519,10 @@ class DPduTab(QWidget):
         if self._resource_worker is not None:
             self._resource_worker.deleteLater()
             self._resource_worker = None
-        self._resource_selection_changed()
+        self.query_resources_button.setEnabled(
+            self.resource_combo.currentData() is not None
+            and self.cable_combo.currentData() is not None
+        )
 
     def start_reception(self):
         if self._worker and self._worker.isRunning():
