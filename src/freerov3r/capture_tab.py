@@ -1,7 +1,9 @@
 """Live and simulated CAN capture workspace."""
 
+from .connection_options import populate_connection_combo, select_connection_backend
+
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
     QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -28,33 +30,21 @@ class CaptureTab(QWidget):
 
         controls = QHBoxLayout()
         self.backend = QComboBox()
-        self.backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
-        self.backend.addItem("Dual-channel CAN simulator (offline)", ("dual_simulator", "offline"))
-        self.backend.addItem("Capture replay (JSONL, offline)", ("capture_replay", ""))
-        self.backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
-        self.backend.addItem("ESP32 framed USB (binary, receive-only)", ("esp32_framed_usb", "COM3"))
-        self.backend.addItem("Dual ESP32 framed USB (clock calibration)", ("esp32_framed_dual_usb", "COM3,COM4"))
-        self.backend.addItem("ESP32 framed Wi-Fi TCP (binary, receive-only)", ("esp32_framed_wifi", ""))
-        self.backend.addItem("ESP32 serial adapter (legacy text)", ("esp32", "COM3"))
-        self.backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
-        self.backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
-        self.backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
-        self.backend.addItem("SocketCAN", ("socketcan", "can0"))
-        self.backend.addItem("SLCAN", ("slcan", "COM3"))
-        self.backend.addItem("J2534 Pass-Thru (registered driver, CAN receive)", ("j2534", ""))
+        populate_connection_combo(self.backend)
         controls.addWidget(QLabel("Connection:"))
         controls.addWidget(self.backend)
 
         self.channel_edit = QComboBox()
         self.channel_edit.setEditable(True)
         self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
-        self.channel_edit.setPlaceholderText("COM port, Wi-Fi IP[:port], or CAN channel")
+        self.channel_edit.setPlaceholderText("Two COM ports or two Wi-Fi IP[:port] endpoints")
         self.channel_edit.setToolTip(
-            "Binary ESP32 USB: select a COM port. Binary ESP32 Wi-Fi: enter the device IP "
-            "or IP:port (default TCP port 3333). Legacy serial/SLCAN: select a COM port. "
-            "For dual ESP32 capture, enter two different COM ports separated by a comma; "
-            "first is HS-CAN, second is MS-CAN. Discovery only lists serial metadata; it "
-            "does not probe devices or transmit on CAN."
+            "Dual ESP32 USB: enter two COM ports separated by a comma. Dual ESP32 Wi-Fi: "
+            "enter two IP addresses or host:port endpoints separated by a comma (default "
+            "TCP port 3333). ELM327 OBD-II: select its USB or Bluetooth virtual COM port. "
+            "Both Wi-Fi boards must run binary firmware with Wi-Fi enabled on a trusted local network. "
+            "The TCP stream is unencrypted; do not expose it to the public internet. Port discovery "
+            "lists serial metadata only; it does not probe devices or transmit on CAN."
         )
         controls.addWidget(self.channel_edit)
 
@@ -71,10 +61,19 @@ class CaptureTab(QWidget):
         controls.addWidget(self.bitrate)
         layout.addLayout(controls)
 
+        advanced_row = QHBoxLayout()
+        self.show_advanced_interfaces = QCheckBox("Show advanced interfaces")
+        self.show_advanced_interfaces.toggled.connect(self._refresh_backend_options)
+        advanced_row.addWidget(self.show_advanced_interfaces)
+        advanced_row.addStretch(1)
+        layout.addLayout(advanced_row)
+        self._refresh_backend_options()
+        self.backend.currentIndexChanged.connect(self._update_connection_fields)
+        self._update_connection_fields()
+
         hardware_notice = QLabel(
-            "ⓘ  Full diagnostic functionality requires the recommended ESP32 CAN interface. "
-            "ELM327 Bluetooth/Wi-Fi and other adapters may provide limited access and may not "
-            "support complete CAN monitoring, all vehicle modules, or advanced diagnostic functions."
+            "Primary hardware: ELM327 for standard OBD-II data, or two ESP32 CAN adapters "
+            "for raw HS-CAN / MS-CAN capture. ELM327 does not provide general raw CAN access."
         )
         hardware_notice.setObjectName("hardwareCompatibilityNotice")
         hardware_notice.setWordWrap(True)
@@ -135,3 +134,30 @@ class CaptureTab(QWidget):
         export_row.addStretch()
         export_row.addWidget(back_btn)
         layout.addLayout(export_row)
+
+    def _refresh_backend_options(self, enabled=False):
+        populate_connection_combo(
+            self.backend, include_advanced=bool(enabled)
+        )
+        self._update_connection_fields()
+
+    def select_backend(self, interface):
+        return select_connection_backend(
+            self.backend, self.show_advanced_interfaces, interface
+        )
+
+    def _update_connection_fields(self, *_args):
+        data = self.backend.currentData()
+        interface = data[0] if data else ""
+        if interface == "elm327_obd":
+            self.channel_edit.setPlaceholderText("ELM327 USB / Bluetooth serial COM port")
+            self.bitrate.setEnabled(False)
+        elif interface == "esp32_framed_dual_wifi":
+            self.channel_edit.setPlaceholderText("ESP32 #1 IP[:port], ESP32 #2 IP[:port]")
+            self.bitrate.setEnabled(True)
+        elif interface == "esp32_framed_dual_usb":
+            self.channel_edit.setPlaceholderText("ESP32 #1 COM port, ESP32 #2 COM port")
+            self.bitrate.setEnabled(True)
+        else:
+            self.channel_edit.setPlaceholderText("COM port, Wi-Fi IP[:port], or CAN channel")
+            self.bitrate.setEnabled(True)

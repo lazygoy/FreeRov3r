@@ -1,8 +1,10 @@
 """Vehicle setup dialog and background VIN lookup workers."""
 
 from PySide6.QtCore import QThread, Signal, Qt
+from .connection_options import populate_connection_combo, select_connection_backend
+
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPlainTextEdit, QPushButton, QStackedWidget,
     QVBoxLayout, QWidget,
 )
@@ -83,27 +85,16 @@ class VehicleSetupWizard(QDialog):
         connection_layout = QVBoxLayout(connection_page)
         connection_form = QFormLayout()
         self.interface_combo = QComboBox()
-        self._interfaces = [
-            ("virtual", "Virtual CAN (no hardware)", "freerov3r"),
-            ("dual_simulator", "Dual-channel CAN simulator (offline)", "offline"),
-            ("capture_replay", "Capture replay (JSONL, offline)", ""),
-            ("simulator", "Simulated vehicle (demo)", "L319-DEMO"),
-            ("esp32", "ESP32 single CAN channel", "COM3"),
-            ("esp32_dual", "ESP32 dual CAN channels (two boards)", "COM3,COM4"),
-            ("elm327", "ELM327 raw CAN monitor", ""),
-            ("elm327_obd", "ELM327 active OBD-II polling", ""),
-            ("socketcan", "SocketCAN", "can0"),
-            ("slcan", "SLCAN", "COM3"),
-            ("j2534", "J2534 Pass-Thru (registered driver)", ""),
-        ]
-        for kind, label, channel in self._interfaces:
-            self.interface_combo.addItem(label, (kind, channel))
+        populate_connection_combo(self.interface_combo)
         self.channel_edit = QComboBox()
         self.channel_edit.setEditable(True)
         self.channel_edit.setInsertPolicy(QComboBox.NoInsert)
         self.channel_edit.setPlaceholderText("Select detected port or enter channel")
         connection_form.addRow("Interface:", self.interface_combo)
         connection_form.addRow("Port / channel:", self.channel_edit)
+        self.show_advanced_interfaces = QCheckBox("Show advanced interfaces")
+        self.show_advanced_interfaces.toggled.connect(self._refresh_interface_options)
+        connection_form.addRow(self.show_advanced_interfaces)
         connection_layout.addLayout(connection_form)
         detect_row = QHBoxLayout()
         detect_button = QPushButton("Detect interfaces")
@@ -112,9 +103,10 @@ class VehicleSetupWizard(QDialog):
         detect_row.addStretch()
         connection_layout.addLayout(detect_row)
         self.interface_status = QLabel(
-            "ESP32 interfaces are receive-only. Dual mode requires two different COM ports, entered as COMx,COMy (HS-CAN first, MS-CAN second). "
-            "Bluetooth/serial ELM327 supports either passive CAN monitoring or read-only Mode 01 polling. "
-            "Wi-Fi adapter support is not implemented yet. J2534 Pass-Thru supports receive-only CAN capture in this build."
+            "ESP32 interfaces are receive-only. Dual USB mode requires two different COM ports (HS-CAN first, MS-CAN second). "
+            "ELM327 provides standard read-only OBD-II data, not general raw CAN capture. "
+            "Dual ESP32 USB uses two COM ports; dual Wi-Fi uses two IP[:port] endpoints separated by a comma. "
+            "Wi-Fi discovery is manual. J2534 Pass-Thru supports receive-only CAN capture in this build."
         )
         self.interface_status.setWordWrap(True)
         self.interface_status.setObjectName("mutedText")
@@ -194,11 +186,10 @@ class VehicleSetupWizard(QDialog):
         settings = current_settings or {}
         saved_interface = settings.get("interface")
         saved_channel = settings.get("channel", "")
-        for index in range(self.interface_combo.count()):
-            data = self.interface_combo.itemData(index)
-            if data and data[0] == saved_interface:
-                self.interface_combo.setCurrentIndex(index)
-                break
+        if saved_interface:
+            select_connection_backend(
+                self.interface_combo, self.show_advanced_interfaces, saved_interface
+            )
         self.channel_edit.setEditText(str(saved_channel or ""))
         self.detect_interfaces()
         self._show_page(0)
@@ -227,12 +218,14 @@ class VehicleSetupWizard(QDialog):
         recognized = [p for p in ports if p["kind"] in ("esp32", "elm327", "slcan", "j2534")]
         if len(recognized) == 1:
             candidate = recognized[0]
-            for index in range(self.interface_combo.count()):
-                data = self.interface_combo.itemData(index)
-                if data and data[0] == candidate["kind"]:
-                    self.interface_combo.setCurrentIndex(index)
-                    self.channel_edit.setEditText(candidate["device"])
-                    break
+            preferred = {
+                "elm327": "elm327_obd",
+                "esp32": "esp32_framed_usb",
+            }.get(candidate["kind"], candidate["kind"])
+            select_connection_backend(
+                self.interface_combo, self.show_advanced_interfaces, preferred
+            )
+            self.channel_edit.setEditText(candidate["device"])
         self.interface_status.setText(
             ("Detected: " + "; ".join(f'{p["device"]} — {p["label"]}' for p in ports))
             if ports else
@@ -471,3 +464,8 @@ class VehicleSetupWizard(QDialog):
             if worker and worker.isRunning():
                 worker.wait(8000)
         super().reject()
+
+    def _refresh_interface_options(self, enabled=False):
+        populate_connection_combo(
+            self.interface_combo, include_advanced=bool(enabled)
+        )

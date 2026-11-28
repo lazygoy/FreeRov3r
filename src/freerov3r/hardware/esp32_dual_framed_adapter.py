@@ -9,7 +9,7 @@ class Esp32DualFramedSerialAdapter:
     """Multiplex two framed USB receivers while preserving per-device clocks."""
 
     def __init__(self, ports, *, channel_names=("HS-CAN", "MS-CAN"),
-                 baudrate=921600, timeout=0.1, queue_capacity=10000):
+                 baudrate=921600, timeout=0.1, queue_capacity=10000, adapters=None):
         if isinstance(ports, str):
             ports = [part.strip() for part in ports.split(",") if part.strip()]
         if len(ports or []) != 2 or str(ports[0]).casefold() == str(ports[1]).casefold():
@@ -18,10 +18,12 @@ class Esp32DualFramedSerialAdapter:
             raise ValueError("Exactly two channel names are required")
         self.ports = [str(port) for port in ports]
         self.channel_names = tuple(channel_names)
-        self.adapters = [
+        self.adapters = list(adapters) if adapters is not None else [
             Esp32FramedSerialAdapter(port, baudrate, timeout)
             for port in self.ports
         ]
+        if len(self.adapters) != 2:
+            raise ValueError("Exactly two framed ESP32 adapters are required")
         self._frames = queue.Queue(maxsize=max(1, int(queue_capacity)))
         self._stop = threading.Event()
         self._threads = []
@@ -41,7 +43,7 @@ class Esp32DualFramedSerialAdapter:
             item = dict(adapter.diagnostics)
             item["channel"] = name
             with self._lock:
-                error = self._errors.get(adapter.port)
+                error = self._errors.get(self._adapter_key(adapter))
             if error:
                 item["connected"] = False
                 item["receiver_state"] = "disconnected/error"
@@ -56,6 +58,16 @@ class Esp32DualFramedSerialAdapter:
             "queue_capacity": self._frames.maxsize,
             "queue_dropped_frames": self.queue_dropped_frames,
         }
+
+    @staticmethod
+    def _adapter_key(adapter):
+        host = getattr(adapter, "host", None)
+        port = getattr(adapter, "port", None)
+        if host:
+            return f"{host}:{port or 3333}"
+        if port is not None:
+            return str(port)
+        return str(getattr(adapter, "description", "ESP32 receiver"))
 
     def open(self):
         if self._opened:
@@ -77,7 +89,7 @@ class Esp32DualFramedSerialAdapter:
         for adapter in self.adapters:
             thread = threading.Thread(
                 target=self._read_loop, args=(adapter,),
-                name=f"FreeRov3r-framed-{adapter.port}", daemon=True,
+                name=f"FreeRov3r-framed-{self._adapter_key(adapter)}", daemon=True,
             )
             self._threads.append(thread)
             thread.start()
@@ -90,7 +102,7 @@ class Esp32DualFramedSerialAdapter:
             except Exception as exc:
                 if not self._stop.is_set():
                     with self._lock:
-                        self._errors[adapter.port] = str(exc)
+                        self._errors[self._adapter_key(adapter)] = str(exc)
                 return
             if frame is not None:
                 try:
@@ -114,7 +126,7 @@ class Esp32DualFramedSerialAdapter:
                 adapter.close()
             except Exception as exc:
                 with self._lock:
-                    self._errors[adapter.port] = str(exc)
+                    self._errors[self._adapter_key(adapter)] = str(exc)
         for thread in self._threads:
             thread.join(timeout=0.5)
         self._threads.clear()

@@ -81,8 +81,8 @@ SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
-    "interface": "virtual",
-    "channel": "freerov3r",
+    "interface": "elm327_obd",
+    "channel": "",
     "bitrate": 500000,
     "max_log_lines": 5000,
     "dark_mode": True,
@@ -302,6 +302,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.history_tab, "Vehicle History")
         self.research_tab = ResearchTab()
         self.tabs.addTab(self.research_tab, "Research")
+        self.tabs.currentChanged.connect(
+            lambda index: self.research_tab._set_live_enabled(
+                self.tabs.widget(index) is self.research_tab
+            )
+        )
         self.tuning_tab = TuningTab(
             vin_provider=lambda: self.settings.get("current_vin")
         )
@@ -669,16 +674,10 @@ class MainWindow(QMainWindow):
 
     def _apply_settings(self):
         iface = self.settings.get("interface", "virtual")
-        for i in range(self.backend.count()):
-            if self.backend.itemData(i)[0] == iface:
-                self.backend.setCurrentIndex(i)
-                break
+        self.capture_tab.select_backend(iface)
         self.channel_edit.setCurrentText(self.settings.get("channel", "freerov3r"))
         self.bitrate.setCurrentText(str(self.settings.get("bitrate", 500000)))
-        for i in range(self.settings_backend.count()):
-            if self.settings_backend.itemData(i)[0] == iface:
-                self.settings_backend.setCurrentIndex(i)
-                break
+        self.settings_tab.select_backend(iface)
         self.settings_channel.setText(self.settings.get("channel", "freerov3r"))
         self.settings_bitrate.setCurrentText(str(self.settings.get("bitrate", 500000)))
         self.max_log_spin.setValue(self.settings.get("max_log_lines", 5000))
@@ -877,10 +876,7 @@ class MainWindow(QMainWindow):
             self.settings["interface"] = backend_data[0]
             self.settings["channel"] = self.settings_channel.text().strip() or backend_data[1]
             self.settings["bitrate"] = int(self.settings_bitrate.currentText())
-            for i in range(self.backend.count()):
-                if self.backend.itemData(i)[0] == backend_data[0]:
-                    self.backend.setCurrentIndex(i)
-                    break
+            self.capture_tab.select_backend(backend_data[0])
             self.channel_edit.setCurrentText(self.settings["channel"])
             self.bitrate.setCurrentText(str(self.settings["bitrate"]))
         self.settings["max_log_lines"] = self.max_log_spin.value()

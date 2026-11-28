@@ -35,18 +35,24 @@ def refresh_serial_ports(window, discover=discover_all_interfaces):
         candidate = recognized[0]
         for index in range(window.backend.count()):
             data = window.backend.itemData(index)
-            target_kind = (
-                "esp32_framed_usb" if candidate["kind"] == "esp32"
-                else candidate["kind"]
-            )
+            target_kind = {
+                "esp32": "esp32_framed_usb",
+                "elm327": "elm327_obd",
+            }.get(candidate["kind"], candidate["kind"])
             # Keep compatibility with callers that expose only the legacy
             # ESP32 backend; the full Capture UI prefers the binary transport.
-            if candidate["kind"] == "esp32" and not any(
+            if not any(
                 window.backend.itemData(i)
                 and window.backend.itemData(i)[0] == target_kind
                 for i in range(window.backend.count())
             ):
-                target_kind = "esp32"
+                capture_tab = getattr(window, "capture_tab", None)
+                select_backend = getattr(capture_tab, "select_backend", None)
+                if callable(select_backend) and select_backend(target_kind):
+                    window.channel_edit.setCurrentText(candidate["device"])
+                    break
+                if candidate["kind"] == "esp32":
+                    target_kind = "esp32"
             if data and data[0] == target_kind:
                 window.backend.setCurrentIndex(index)
                 window.channel_edit.setCurrentText(candidate["device"])

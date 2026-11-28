@@ -1,5 +1,7 @@
 """Application settings workspace."""
 
+from .connection_options import populate_connection_combo, select_connection_backend
+
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
@@ -20,17 +22,7 @@ class SettingsTab(QWidget):
         connection_group = QGroupBox("Default connection")
         connection_form = QFormLayout(connection_group)
         self.settings_backend = QComboBox()
-        self.settings_backend.addItem("Virtual CAN (no hardware)", ("virtual", "freerov3r"))
-        self.settings_backend.addItem("Dual-channel CAN simulator (offline)", ("dual_simulator", "offline"))
-        self.settings_backend.addItem("Capture replay (JSONL, offline)", ("capture_replay", ""))
-        self.settings_backend.addItem("Simulated vehicle (synthetic OBD-II)", ("simulator", "L319-DEMO"))
-        self.settings_backend.addItem("ESP32 serial adapter (single CAN)", ("esp32", "COM3"))
-        self.settings_backend.addItem("ESP32 dual serial (two CAN buses)", ("esp32_dual", "COM3,COM4"))
-        self.settings_backend.addItem("ELM327 raw CAN monitor", ("elm327", ""))
-        self.settings_backend.addItem("ELM327 active OBD-II polling", ("elm327_obd", ""))
-        self.settings_backend.addItem("SocketCAN", ("socketcan", "can0"))
-        self.settings_backend.addItem("SLCAN", ("slcan", "COM3"))
-        self.settings_backend.addItem("J2534 Pass-Thru (CAN receive)", ("j2534", ""))
+        populate_connection_combo(self.settings_backend)
         self.settings_channel = QLineEdit()
         self.settings_channel.setPlaceholderText("COM port or CAN channel")
         self.settings_bitrate = QComboBox()
@@ -38,15 +30,20 @@ class SettingsTab(QWidget):
         connection_form.addRow("Interface:", self.settings_backend)
         connection_form.addRow("Channel / port:", self.settings_channel)
         connection_form.addRow("CAN bitrate:", self.settings_bitrate)
+        self.show_advanced_interfaces = QCheckBox("Show advanced interfaces")
+        self.show_advanced_interfaces.toggled.connect(self._refresh_backend_options)
+        connection_form.addRow(self.show_advanced_interfaces)
+        self._refresh_backend_options()
+        self.settings_backend.currentIndexChanged.connect(self._update_connection_fields)
+        self._update_connection_fields()
         layout.addWidget(connection_group)
 
         compatibility_group = QGroupBox("Hardware compatibility")
         compatibility_layout = QVBoxLayout(compatibility_group)
         compatibility_notice = QLabel(
-            "Full diagnostic functionality is available only with the recommended ESP32 CAN interface. "
-            "Bluetooth ELM327, Wi-Fi, and other third-party adapters are supported on a limited basis "
-            "where their hardware and protocols allow. They may not provide complete CAN traffic, "
-            "full module coverage, or advanced diagnostic functions."
+            "ELM327 provides standard OBD-II polling and trouble codes, not general raw CAN capture. "
+            "Two ESP32 CAN receivers provide simultaneous HS-CAN / MS-CAN capture over USB or configured Wi-Fi. "
+            "Full module coverage and advanced functions still depend on verified vehicle protocols and hardware."
         )
         compatibility_notice.setObjectName("hardwareCompatibilityNotice")
         compatibility_notice.setWordWrap(True)
@@ -92,3 +89,30 @@ class SettingsTab(QWidget):
         save_btn = QPushButton("Save settings")
         save_btn.clicked.connect(save_settings)
         layout.addWidget(save_btn)
+
+    def _refresh_backend_options(self, enabled=False):
+        populate_connection_combo(
+            self.settings_backend, include_advanced=bool(enabled)
+        )
+        self._update_connection_fields()
+
+    def select_backend(self, interface):
+        return select_connection_backend(
+            self.settings_backend, self.show_advanced_interfaces, interface
+        )
+
+    def _update_connection_fields(self, *_args):
+        data = self.settings_backend.currentData()
+        interface = data[0] if data else ""
+        if interface == "elm327_obd":
+            self.settings_channel.setPlaceholderText("ELM327 USB / Bluetooth serial COM port")
+            self.settings_bitrate.setEnabled(False)
+        elif interface == "esp32_framed_dual_wifi":
+            self.settings_channel.setPlaceholderText("ESP32 #1 IP[:port], ESP32 #2 IP[:port]")
+            self.settings_bitrate.setEnabled(True)
+        elif interface == "esp32_framed_dual_usb":
+            self.settings_channel.setPlaceholderText("ESP32 #1 COM port, ESP32 #2 COM port")
+            self.settings_bitrate.setEnabled(True)
+        else:
+            self.settings_channel.setPlaceholderText("COM port or CAN channel")
+            self.settings_bitrate.setEnabled(True)
