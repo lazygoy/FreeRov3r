@@ -412,3 +412,27 @@ would otherwise hide an ABI mismatch.
 Result timestamps are exposed only when the corresponding ISO timestamp-valid
 bits are set in `TimestampFlags`. Status and information event codes are kept
 in their own fields rather than being mislabeled as errors.
+
+
+
+## Normalized diagnostic event capture model
+
+Protocol-level D-PDU events now have a separate `DiagnosticEvent` model.
+The conversion helper preserves the D-PDU item type, API timestamp and clock
+domain, module/CLL/ComPrimitive handles, response identifiers, status/error/
+information codes, timestamp-validity results, and payload bytes.
+
+Diagnostic events are deliberately not converted into `CanFrame` objects.
+A D-PDU result payload may be a decoded diagnostic PDU rather than a raw CAN
+frame; non-raw protocol modes may omit CAN identifiers and transport headers.
+The shared `CaptureSession` stores these events in a separate bounded buffer,
+tracks absolute sequence indices and dropped-event counts, and exports them
+as JSONL with exact payload bytes represented as hexadecimal.
+
+Capture archives now keep `frames`, `sensor_samples`, and
+`diagnostic_events` as separate collections. This is the storage boundary
+for a future D-PDU event worker. The current J2534 receiver still supplies raw
+CAN frames, and the D-PDU runtime does not yet start a UI-managed worker or
+automatically feed the shared capture session. That connection remains a
+separate step requiring an explicit D-PDU device/protocol configuration and
+hardware validation.
