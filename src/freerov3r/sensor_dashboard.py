@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
-    QInputDialog, QFileDialog, QMessageBox,
+    QInputDialog, QFileDialog, QMessageBox, QStackedWidget,
 )
 
 try:
@@ -494,7 +494,7 @@ class SensorDashboardDock(QWidget):
         self.settings = settings if isinstance(settings, dict) else {}
         self.save_settings_callback = save_settings_callback
         self._loading_config = False
-        self._waterfall_dialog = None
+        self._waterfall_widget = None
         self._correlation_dialog = None
         self.selection_changed_callback = None
         self.favorites_changed_callback = None
@@ -514,23 +514,33 @@ class SensorDashboardDock(QWidget):
         self.choose_sensors_button = QPushButton("Choose Sensors (PID)")
         self.choose_sensors_button.clicked.connect(self.choose_sensors)
         controls.addWidget(self.choose_sensors_button)
-        self.waterfall_button = QPushButton("2D / 3D Waterfall")
+        self.waterfall_button = QPushButton("2D / 3D View")
         self.waterfall_button.clicked.connect(self.open_waterfall)
         controls.addWidget(self.waterfall_button)
         controls.addStretch(1)
         outer.addLayout(controls)
 
-        self.grid_host = QWidget(self)
+        self.view_stack = QStackedWidget(self)
+        self.grid_host = QWidget(self.view_stack)
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setSpacing(6)
-        outer.addWidget(self.grid_host, 1)
+        self.view_stack.addWidget(self.grid_host)
 
         self.panels = [
             SensorGraphPanel(sensor_capture, index, self)
             for index in range(max(PANEL_COUNTS))
         ]
         self._visible_count = 4
+        self._waterfall_widget = SensorWaterfallDialog(
+            self.sensor_capture, vin_provider=self.vin_provider, parent=self.view_stack
+        )
+        self._waterfall_widget.sensor_list.hide()
+        self._waterfall_widget.selection_status.hide()
+        self._waterfall_widget.source_label.hide()
+        self._waterfall_widget.source_combo.hide()
+        self.view_stack.addWidget(self._waterfall_widget)
+        outer.addWidget(self.view_stack, 1)
         self._restore_saved_layout()
         self.refresh()
         if self.initial_sensor_ids and not self.panels[0].selected_sensor_ids():
@@ -553,13 +563,16 @@ class SensorDashboardDock(QWidget):
         self._correlation_dialog.activateWindow()
 
     def open_waterfall(self):
-        if self._waterfall_dialog is None:
-            self._waterfall_dialog = SensorWaterfallDialog(
-                self.sensor_capture, vin_provider=self.vin_provider, parent=self
-            )
-        self._waterfall_dialog.showMaximized()
-        self._waterfall_dialog.raise_()
-        self._waterfall_dialog.activateWindow()
+        """Switch the Graph tab's central workspace without creating a window."""
+        showing_waterfall = self.view_stack.currentWidget() is self._waterfall_widget
+        self.view_stack.setCurrentWidget(self.grid_host if showing_waterfall else self._waterfall_widget)
+        self.waterfall_button.setText("2D / 3D View" if showing_waterfall else "Back to Graphs")
+        if not showing_waterfall:
+            self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
+            self._waterfall_widget.refresh_sensor_choices()
+
+    def _selected_dashboard_sensor_ids(self):
+        return set().union(*(panel.selected_sensor_ids() for panel in self.panels))
 
     def _layout_payload(self):
         return normalize_dashboard_layout({
@@ -727,6 +740,7 @@ class SensorDashboardDock(QWidget):
             self.panel_count.setCurrentIndex(PANEL_COUNTS.index(panel_count))
             self.reflow()
             self.persist_layout()
+            self._waterfall_widget.set_selected_sensor_ids(self._selected_dashboard_sensor_ids())
             if callable(self.selection_changed_callback):
                 self.selection_changed_callback(self.panels[0].selected_sensor_ids())
 
@@ -741,6 +755,8 @@ class SensorDashboardDock(QWidget):
         vin = self.vin_provider()
         for panel in self.panels:
             panel.set_vehicle_vin(vin)
+        if self.view_stack.currentWidget() is self._waterfall_widget:
+            self._waterfall_widget.refresh_sensor_choices()
 
     def reflow(self, *_):
         count = int(self.panel_count.currentData())
