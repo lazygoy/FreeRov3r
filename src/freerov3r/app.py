@@ -81,8 +81,8 @@ SETTINGS_DIR = Path.home() / ".freerov3r"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {
-    "interface": "virtual",
-    "channel": "freerov3r",
+    "interface": "elm327_obd",
+    "channel": "",
     "bitrate": 500000,
     "max_log_lines": 5000,
     "dark_mode": True,
