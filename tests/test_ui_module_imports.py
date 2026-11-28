@@ -177,9 +177,14 @@ def test_settings_tab_constructs_and_exposes_controls():
         show_about_dialog=lambda: None,
         save_settings=lambda: None,
     )
-    assert tab.settings_backend.count() == 11
+    assert tab.settings_backend.count() == 3
+    assert {tab.settings_backend.itemData(index)[0] for index in range(tab.settings_backend.count())} == {
+        "elm327_obd", "esp32_framed_dual_usb", "esp32_framed_dual_wifi"
+    }
+    tab.show_advanced_interfaces.setChecked(True)
     assert any(
-        tab.settings_backend.itemData(index)[0] == "j2534"
+        tab.settings_backend.itemData(index)
+        and tab.settings_backend.itemData(index)[0] == "j2534"
         for index in range(tab.settings_backend.count())
     )
     assert tab.graph_refresh_spin.minimum() == 250
@@ -215,9 +220,14 @@ def test_capture_tab_constructs_with_callbacks():
         clear_capture_display=lambda: None,
         back_to_tasks=lambda: None,
     )
-    assert tab.backend.count() == 14
+    assert tab.backend.count() == 3
+    assert {tab.backend.itemData(index)[0] for index in range(tab.backend.count())} == {
+        "elm327_obd", "esp32_framed_dual_usb", "esp32_framed_dual_wifi"
+    }
+    tab.show_advanced_interfaces.setChecked(True)
     assert any(
-        tab.backend.itemData(index)[0] == "j2534"
+        tab.backend.itemData(index)
+        and tab.backend.itemData(index)[0] == "j2534"
         for index in range(tab.backend.count())
     )
     assert tab.log.maximumBlockCount() == 1200
@@ -487,6 +497,8 @@ def test_main_window_constructs_without_hardware():
     assert window.tabs.count() >= 8
     assert window.receiver is None
     assert window.header_connection.text() == "● OFFLINE"
+    assert window.research_tab.live_enabled is False
+    assert window.backend.count() > 3  # Saved virtual backend is preserved under Advanced.
 
     window.rate_timer.stop()
     window.graph_tab.activity_timer.stop()
