@@ -163,3 +163,33 @@ def test_hidden_sensor_activity_refresh_skips_widget_sweeps():
 
     OBDTab._update_activity_indicators(hidden_obd)
     SensorGraphTab._update_activity_indicators(hidden_graph)
+
+
+
+def test_hidden_sensor_dashboard_skips_all_panel_refresh_work():
+    from freerov3r.sensor_dashboard import SensorDashboardDock
+
+    dock = SimpleNamespace(isVisible=lambda: False)
+    SensorDashboardDock.refresh(dock)
+
+
+def test_dashboard_panel_refreshes_only_when_vin_or_capture_changes():
+    from freerov3r.sensor_dashboard import SensorGraphPanel
+
+    capture = SimpleNamespace(total_samples_added=20, samples=[object()])
+    panel = SimpleNamespace(
+        sensor_capture=capture,
+        vehicle_vin="VIN-TEST",
+        _last_sample_generation=20,
+        refresh_calls=0,
+    )
+    panel.refresh_sensor_choices = lambda: setattr(
+        panel, "refresh_calls", panel.refresh_calls + 1
+    )
+
+    SensorGraphPanel.set_vehicle_vin(panel, "VIN-TEST")
+    assert panel.refresh_calls == 0
+
+    capture.total_samples_added = 21
+    SensorGraphPanel.set_vehicle_vin(panel, "VIN-TEST")
+    assert panel.refresh_calls == 1
