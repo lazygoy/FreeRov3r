@@ -180,3 +180,16 @@ def test_sensor_scope_defaults_to_3d_waterfall_and_fits_embedded_layout():
     source = inspect.getsource(SensorWaterfallDialog.__init__)
     assert "setCurrentWidget(waterfall_page)" in source
     assert "self.setMinimumSize(0, 0)" in source
+
+
+
+def test_waterfall_camera_fits_wide_viewport_instead_of_fixed_cube_scale():
+    from freerov3r.sensor_waterfall_gl import camera_fit_distance
+
+    wide = camera_fit_distance(1200, 600, 12.0, 2.0)
+    square = camera_fit_distance(600, 600, 12.0, 2.0)
+    many_lanes = camera_fit_distance(1200, 600, 12.0, 13.0)
+
+    assert wide < square
+    assert many_lanes > wide
+    assert wide >= 4.0
