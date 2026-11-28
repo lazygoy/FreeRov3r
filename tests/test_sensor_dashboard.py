@@ -153,4 +153,5 @@ def test_graph_tab_has_no_sensor_health_panel(qapp):
     tab = SensorGraphTab(SimpleNamespace(samples=[]))
     assert not hasattr(tab, "stats_table")
     assert not hasattr(tab, "chart")
+    tab.activity_timer.stop()
     tab.close()
