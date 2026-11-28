@@ -130,6 +130,7 @@ class SensorWaterfallDialog(QDialog):
         self.sensor_capture = sensor_capture
         self._sensor_choices_initialized = False
         self._sensor_colors = {}
+        self._last_choice_signature = None
         self.demo_samples = generate_lr4_demo_samples()
         self.vin_provider = vin_provider or (lambda: None)
         self.setWindowTitle("FreeRov3r | Sensor Signal Scope")
@@ -227,10 +228,9 @@ class SensorWaterfallDialog(QDialog):
         self.source_combo.currentIndexChanged.connect(self.refresh_sensor_choices)
         self.refresh_sensor_choices()
         self.refresh_timer = QTimer(self)
-        self.refresh_timer.setInterval(750)
+        self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self.refresh_sensor_choices)
         self.refresh_timer.start()
-        self.refresh_plot()
 
     def refresh_sensor_choices(self):
         vin = self.vin_provider()
@@ -240,6 +240,13 @@ class SensorWaterfallDialog(QDialog):
                    else self.sensor_capture.samples)
         if source == "demo":
             vin = None
+            generation = len(samples)
+        else:
+            generation = getattr(self.sensor_capture, "total_samples_added", len(samples))
+        signature = (source, vin, generation)
+        if signature == self._last_choice_signature:
+            return
+        self._last_choice_signature = signature
         for sample in samples:
             if vin and (sample.metadata or {}).get("vin", "UNASSIGNED") != vin:
                 continue
