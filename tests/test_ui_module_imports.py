@@ -286,16 +286,21 @@ def test_navigation_workspace_constructs_with_tabs():
     _QT_TEST_APP = QApplication.instance() or QApplication([])
     tabs = QTabWidget()
     tabs.addTab(QWidget(), "Capture")
+    home_calls = []
     workspace = NavigationWorkspace(
         tabs=tabs,
         heading_font_family="Arial",
         body_font_family="Arial",
         toggle_quick_drawer=lambda: None,
         on_tab_changed=lambda _index: None,
+        on_home=lambda: home_calls.append(True),
     )
     assert workspace.widget() is not None
     assert workspace.workspace_title.text() == "Capture"
     assert tabs.tabBar().isHidden()
+    assert workspace.home_button.text() == "WORKSPACE HOME"
+    workspace.home_button.click()
+    assert home_calls == [True]
 
     workspace.deleteLater()
     tabs.deleteLater()
