@@ -27,6 +27,7 @@ class WaterfallPlot(gl.GLViewWidget):
         self._scene_sensor_ids = ()
         self._surface_items = []
         self._ground_plane = None
+        self._ground_surface = None
         self._cursor_line = None
         self._cursor_fraction = 0.0
         self.setMinimumSize(0, 0)
@@ -88,6 +89,22 @@ class WaterfallPlot(gl.GLViewWidget):
     def _add_ground_plane(self):
         if not self.lanes:
             return
+        lane_min = -0.8
+        lane_max = (len(self.lanes) - 1) * LANE_SPACING + 0.8
+        floor_x = np.asarray([0.0, self.time_extent], dtype=np.float32)
+        floor_y = np.asarray([lane_min, lane_max], dtype=np.float32)
+        floor_z = np.full((2, 2), -0.04, dtype=np.float32)
+        floor_colors = np.tile(
+            np.asarray([0.035, 0.065, 0.11, 0.72], dtype=np.float32), (4, 1)
+        )
+        floor = gl.GLSurfacePlotItem(
+            x=floor_x, y=floor_y, z=floor_z, colors=floor_colors,
+            glOptions="translucent", smooth=False,
+            computeNormals=False, drawEdges=False,
+        )
+        self.addItem(floor)
+        self._ground_surface = floor
+
         lane_width = max(1, len(self.lanes) - 1) * LANE_SPACING + 1.6
         grid = gl.GLGridItem()
         grid.setSize(x=self.time_extent, y=lane_width, z=1)
