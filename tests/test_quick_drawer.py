@@ -9,6 +9,10 @@ def test_quick_drawer_filters_workspace_buttons_and_recovers():
     destinations = []
     drawer = QuickDrawer(window, destinations.append)
 
+    assert drawer.nav_buttons["Capture"].text() == "⌁   Select Interface"
+    assert "Sensors" not in drawer.nav_buttons
+    assert "Sensor Monitor" not in drawer.nav_buttons
+
     drawer.nav_search.setText("obd")
     assert drawer.nav_buttons["OBD-II"].isHidden() is False
     assert drawer.nav_buttons["Home"].isHidden() is True
