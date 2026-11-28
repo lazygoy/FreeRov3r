@@ -1,5 +1,7 @@
 """Read-only OBD-II diagnostic codes and freeze-frame workspace."""
 
+import time
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QSpinBox,
@@ -183,7 +185,6 @@ class OBDTab(QWidget):
         self.read_readiness_callback = None
         self.read_vehicle_info_callback = None
         self.read_monitor_tests_callback = None
-        self._refresh_favorite_combo()
 
     def request_dtc_scan(self):
         if self.read_dtcs_callback is None:
@@ -441,3 +442,18 @@ class OBDTab(QWidget):
                 except ValueError:
                     continue
         return sorted(pids)
+
+    def update_value(self, pid, value):
+        """Compatibility hook for the shared frame pipeline; no PID panel is rendered here."""
+        self.last_sample_time = getattr(self, "last_sample_time", {})
+        self.last_sample_time[pid] = time.monotonic()
+        row = getattr(self, "pid_rows", {}).get(pid)
+        table = getattr(self, "table", None)
+        if row is not None and table is not None:
+            item = table.item(row, 3)
+            if item is not None:
+                item.setText(str(value))
+
+    def _update_activity_indicators(self):
+        """No OBD sensor list exists; retain the hook for older refresh callers."""
+        return
