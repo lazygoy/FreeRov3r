@@ -888,7 +888,7 @@ class _ClockCalibrationWorker(QThread):
 class ResearchTab(QWidget):
     """Local-only protocol capture, annotation, comparison and REA handoff."""
 
-    MAX_DISPLAY_ROWS = 1500
+    MAX_DISPLAY_ROWS = 500
     MAX_CAPTURE_FRAMES = 100000
     MAX_PENDING_RECORDS = 100000
 
@@ -915,7 +915,7 @@ class ResearchTab(QWidget):
         self.dbc_library = DBCLibrary()
 
         self.refresh_timer = QTimer(self)
-        self.refresh_timer.setInterval(250)
+        self.refresh_timer.setInterval(1000)
         self.refresh_timer.timeout.connect(self._flush_pending_frames)
         self.refresh_timer.start()
 
@@ -1513,7 +1513,9 @@ class ResearchTab(QWidget):
             if len(self.live_preview) > 5000:
                 self.live_preview = self.live_preview[-5000:]
             changed = True
-        if changed:
+        # Keep collecting preview frames while hidden, but do not rebuild a large
+        # table the operator cannot see. The next visible refresh catches it up.
+        if changed and self.isVisible():
             self.refresh_table()
 
     def _visible_records(self):
@@ -1524,7 +1526,9 @@ class ResearchTab(QWidget):
         payload_text = self.payload_filter.text().strip().lower().replace(" ", "").replace("0x", "")
         protocol = self.protocol_filter.currentText()
         output = []
-        for record in self._visible_records():
+        # The table is a recent-traffic view. Filter only rows that can actually
+        # be displayed instead of decoding thousands of off-screen records.
+        for record in self._visible_records()[-self.MAX_DISPLAY_ROWS: ]:
             can_id = int(record["arbitration_id"])
             payload = bytes.fromhex(record["data"])
             iso, uds = classify_can_payload(payload)
@@ -1591,7 +1595,7 @@ class ResearchTab(QWidget):
     def _update_timestamp_health(self):
         if not hasattr(self, "timestamp_health_label"):
             return
-        records = (self.frames if self.frames else self.live_preview)[-10000:]
+        records = (self.frames if self.frames else self.live_preview)[-1000:]
         if not records:
             self.timestamp_health_label.setText(
                 "No device timestamps observed yet. Host monotonic time remains the shared timeline."
