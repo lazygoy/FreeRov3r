@@ -67,10 +67,8 @@ def test_sensor_graph_tab_constructs_with_empty_capture():
     tab = SensorGraphTab(SensorCapture())
     assert tab.sensor_list.count() == 0
     assert not hasattr(tab, "stats_table")
-    assert tab.activity_timer.isActive()
     assert tab.dashboard_widget is None
 
-    tab.activity_timer.stop()
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
@@ -121,7 +119,6 @@ def test_freeze_frame_uses_graph_selected_pids_and_explains_source():
     assert tab.diagnostic_views.tabText(1) == "Freeze Frame"
     assert "Graph workspace" in tab.freeze_frame_status_label.text()
 
-    tab.activity_timer.stop()
     tab.deleteLater()
     QCoreApplication.sendPostedEvents(tab, QEvent.DeferredDelete)
     _QT_TEST_APP.processEvents()
