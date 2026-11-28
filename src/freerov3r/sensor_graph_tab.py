@@ -50,170 +50,50 @@ class SensorGraphTab(QWidget):
         self.settings_save_callback = settings_save_callback
 
         layout = QVBoxLayout(self)
-        if not HAS_CHARTS:
-            msg = QLabel(
-                "<b>Graphing unavailable</b><br><br>"
-                "PySide6.QtCharts is not installed.<br>"
-                "Run: <code>python -m pip install --upgrade PySide6</code> then restart.<br><br>"
-                "CSV load/export still works."
-            )
-            msg.setWordWrap(True)
-            msg.setAlignment(Qt.AlignCenter)
-            layout.addWidget(msg)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        controls = QHBoxLayout()
-        self.sensor_list = QListWidget()
-        self.sensor_list.setMaximumHeight(150)
-        self.sensor_list.setToolTip("Check multiple sensors to plot them together. Uncheck a sensor to hide it.")
-        self.sensor_list.itemChanged.connect(self._on_sensor_item_changed)
-        controls.addWidget(self.sensor_list, 2)
-
-        right = QVBoxLayout()
+        toolbar = QHBoxLayout()
         self.record_btn = QPushButton("Start Recording")
-        self.record_btn.setToolTip(\
-            "Marks a recording window in the retained sensor stream. Samples continue to be buffered; "
-            "stopping exports only the samples collected since Start Recording."
+        self.record_btn.setToolTip(
+            "Start or stop a recording window and export the retained samples from that window."
         )
         self.record_btn.clicked.connect(self.toggle_record)
-        right.addWidget(self.record_btn)
+        toolbar.addWidget(self.record_btn)
 
-        if HAS_CHARTS:
-            color_btn = QPushButton("Set Color for Selected")
-            color_btn.clicked.connect(self.set_color)
-            right.addWidget(color_btn)
-
-            self.independent_scale = QCheckBox("Scale each sensor independently")
-            self.independent_scale.setChecked(True)
-            self.independent_scale.setToolTip(
-                "Maps each sensor's own min/max to 0–100% so signals with different units "
-                "and magnitudes remain visible together. The legend retains each raw range."
-            )
-            self.independent_scale.toggled.connect(self.update_chart)
-            right.addWidget(self.independent_scale)
-
-            self.auto_scale = QCheckBox("Auto shared Y-scale")
-            self.auto_scale.setChecked(True)
-            self.auto_scale.toggled.connect(self.update_chart)
-            right.addWidget(self.auto_scale)
-
-            point_row = QHBoxLayout()
-            point_row.addWidget(QLabel("Points per signal:"))
-            self.plot_point_limit = QSpinBox()
-            self.plot_point_limit.setRange(100, 10000)
-            self.plot_point_limit.setSingleStep(100)
-            self.plot_point_limit.setValue(2000)
-            self.plot_point_limit.setToolTip(
-                "Maximum recent samples drawn for each signal. The underlying capture is retained separately."
-            )
-            self.plot_point_limit.valueChanged.connect(self.update_chart)
-            point_row.addWidget(self.plot_point_limit)
-            right.addLayout(point_row)
-
-            scale_row = QHBoxLayout()
-            scale_row.addWidget(QLabel("Y min:"))
-            self.ymin = QLineEdit("-10")
-            scale_row.addWidget(self.ymin)
-            scale_row.addWidget(QLabel("Y max:"))
-            self.ymax = QLineEdit("100")
-            scale_row.addWidget(self.ymax)
-            apply_btn = QPushButton("Apply")
-            apply_btn.clicked.connect(self.update_chart)
-            scale_row.addWidget(apply_btn)
-            right.addLayout(scale_row)
-
-        load_btn = QPushButton("Import CSV / JSONL")
-        load_btn.clicked.connect(self.load_csv)
-        right.addWidget(load_btn)
-        refresh_btn = QPushButton("Refresh List")
-        refresh_btn.clicked.connect(self.refresh_sensor_list)
-        right.addWidget(refresh_btn)
-        dashboard_btn = QPushButton("Open Multi-Graph Dashboard")
-        dashboard_btn.setToolTip("Open up to eight independently configured live graphs. The dock remains available across workspaces.")
-        dashboard_btn.clicked.connect(lambda: self.open_dashboard_callback() if self.open_dashboard_callback else None)
-        right.addWidget(dashboard_btn)
-        controls.addLayout(right, 1)
-        layout.addLayout(controls)
-
-        stats_group = QGroupBox("LIVE SENSOR HEALTH")
-        stats_layout = QVBoxLayout(stats_group)
-        self.stats_table = QTableWidget(0, 10)
-        self.stats_table.setHorizontalHeaderLabels([
-            "Sensor", "Current", "Min", "Average", "Max", "Rate", "Age", "Samples", "Status", "Alert"
-        ])
-        self.stats_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for column in range(1, 10):
-            self.stats_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeToContents)
-        self.stats_table.verticalHeader().setVisible(False)
-        self.stats_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.stats_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.stats_table.setAlternatingRowColors(True)
-        self.stats_table.setMaximumHeight(170)
-        self.stats_table.setToolTip(
-            "Valid finite samples only. Signals become stale after five seconds. "
-            "Alerts use only thresholds you explicitly configure; no OEM limits are assumed."
+        choose_btn = QPushButton("Choose Sensors (PID)")
+        choose_btn.clicked.connect(
+            lambda: self.open_dashboard_callback() if self.open_dashboard_callback else None
         )
-        stats_layout.addWidget(self.stats_table)
-        threshold_row = QHBoxLayout()
-        self.threshold_button = QPushButton("Configure Alert for Selected Sensor")
-        self.threshold_button.clicked.connect(self.configure_sensor_threshold)
-        threshold_row.addWidget(self.threshold_button)
-        threshold_note = QLabel("User-defined only. Alerts are OFF until enabled.")
-        threshold_note.setWordWrap(True)
-        threshold_row.addWidget(threshold_note, 1)
-        stats_layout.addLayout(threshold_row)
-        layout.addWidget(stats_group)
+        toolbar.addWidget(choose_btn)
+
+        import_btn = QPushButton("Import CSV / JSONL")
+        import_btn.clicked.connect(self.load_csv)
+        toolbar.addWidget(import_btn)
+        toolbar.addStretch(1)
+        layout.addLayout(toolbar)
+
+        # Kept as a hidden compatibility model for OBD-II selection sync.
+        # The visible sensor selection lives in the dashboard's picker.
+        self.sensor_list = QListWidget(self)
+        self.sensor_list.hide()
+        self.dashboard_layout = QVBoxLayout()
+        self.dashboard_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(self.dashboard_layout, 1)
+        self.dashboard_widget = None
         self._last_stats_refresh = 0.0
-
-        favorite_row = QHBoxLayout()
-        favorite_row.addWidget(QLabel("Shared sensor group:"))
-        self.favorite_combo = QComboBox()
-        favorite_row.addWidget(self.favorite_combo, 1)
-        self.load_group_btn = QPushButton("Load")
-        self.load_group_btn.clicked.connect(self.load_favorite_group)
-        favorite_row.addWidget(self.load_group_btn)
-        save_group_btn = QPushButton("Save graph selection as…")
-        save_group_btn.clicked.connect(self.save_favorite_group)
-        favorite_row.addWidget(save_group_btn)
-        self.delete_group_btn = QPushButton("Delete")
-        self.delete_group_btn.clicked.connect(self.delete_favorite_group)
-        favorite_row.addWidget(self.delete_group_btn)
-        self.open_obd_btn = QPushButton("Open OBD-II")
-        self.open_obd_btn.clicked.connect(lambda: self.navigate_to_obd_callback() if self.navigate_to_obd_callback else None)
-        favorite_row.addWidget(self.open_obd_btn)
-        self.favorite_combo.currentIndexChanged.connect(self._favorite_selection_changed)
-        layout.addLayout(favorite_row)
-        self.activity_timer = QTimer(self)
-        self.activity_timer.setInterval(1000)
-        self.activity_timer.timeout.connect(self._update_activity_indicators)
-        self.activity_timer.start()
-        self.refresh_favorite_groups()
-
-        if HAS_CHARTS:
-            info = QLabel(
-                "Independent scaling is a trend-comparison view, not a shared physical scale. "
-                "Raw units and min/max remain visible in each legend entry."
-            )
-            info.setWordWrap(True)
-            layout.addWidget(info)
-            self.chart = QChart()
-            self.chart.setTitle("Multi-sensor / PID Graph")
-            self.chart.legend().setVisible(True)
-            self.chart.setAnimationOptions(QChart.NoAnimation)
-            self.chart_view = QChartView(self.chart)
-            self.chart_view.setRenderHint(QPainter.Antialiasing)
-            self.chart_view.setRubberBand(QChartView.RectangleRubberBand)
-            layout.addWidget(self.chart_view)
-            self.axis_x = QValueAxis()
-            self.axis_x.setTitleText("Time (s from start)")
-            self.axis_y = QValueAxis()
-            self.chart.addAxis(self.axis_x, Qt.AlignBottom)
-            self.chart.addAxis(self.axis_y, Qt.AlignLeft)
-        else:
-            self.placeholder = QPlainTextEdit()
-            self.placeholder.setReadOnly(True)
-            layout.addWidget(self.placeholder)
-
         self.refresh_sensor_list()
+
+    def set_dashboard_widget(self, widget):
+        """Place the live multigraph workspace directly inside this tab."""
+        if self.dashboard_widget is not None:
+            self.dashboard_layout.removeWidget(self.dashboard_widget)
+            self.dashboard_widget.setParent(None)
+        self.dashboard_widget = widget
+        widget.setParent(self)
+        self.dashboard_layout.addWidget(widget, 1)
+        if hasattr(widget, "set_selected_sensor_ids"):
+            widget.set_selected_sensor_ids(self.selected_sensor_ids())
 
     def refresh_sensor_list(self):
         self.sensor_list.blockSignals(True)
@@ -267,51 +147,12 @@ class SensorGraphTab(QWidget):
         self.update_chart()
 
     def update_statistics(self, force=False):
-        """Refresh read-only sensor health summaries from the retained capture."""
-        if not hasattr(self, "stats_table"):
-            return
-        now = time.monotonic()
-        if not force and now - self._last_stats_refresh < 1.5:
-            return
-        self._last_stats_refresh = now
-        samples = []
-        for sample in self.sensor_capture.samples:
-            sample_vin = (sample.metadata or {}).get("vin", "UNASSIGNED")
-            if self.vehicle_vin and sample_vin != self.vehicle_vin:
-                continue
-            samples.append(sample)
-        summaries = summarize_sensor_samples(samples, stale_after=5.0)
-        self.stats_table.setRowCount(len(summaries))
-        for row, summary in enumerate(summaries):
-            values = (
-                summary.name, f"{summary.current:.4g} {summary.unit}".strip(),
-                f"{summary.minimum:.4g}", f"{summary.average:.4g}", f"{summary.maximum:.4g}",
-                f"{summary.rate_hz:.2f} Hz" if summary.rate_hz is not None else "—",
-                f"{summary.age_seconds:.1f} s", str(summary.sample_count),
-                "STALE" if summary.stale else "LIVE",
-                "N/A" if summary.stale else evaluate_sensor_threshold(
-                    summary.current,
-                    (self.parent_settings.get("sensor_thresholds", {}) or {}).get(summary.sensor_id, {}),
-                ),
-            )
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                if column == 0:
-                    item.setData(Qt.UserRole, summary.sensor_id)
-                elif column == 8:
-                    item.setForeground(QColor("#d9a441") if summary.stale else QColor("#39d98a"))
-                    item.setTextAlignment(Qt.AlignCenter)
-                elif column == 9:
-                    item.setTextAlignment(Qt.AlignCenter)
-                    if value in ("LOW", "HIGH"):
-                        item.setForeground(QColor("#e05a5a"))
-                    elif value == "OK":
-                        item.setForeground(QColor("#39d98a"))
-                    else:
-                        item.setForeground(QColor("#77818c"))
-                elif column in (1, 2, 3, 4, 5, 6, 7):
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.stats_table.setItem(row, column, item)
+        """Sensor health is intentionally not part of the graph workspace."""
+        return
+
+    def refresh_favorite_groups(self, selected_name=None):
+        """Favorites are managed in the Choose Sensors (PID) dialog."""
+        return
 
     def configure_sensor_threshold(self):
         row = self.stats_table.currentRow()
@@ -555,7 +396,7 @@ class SensorGraphTab(QWidget):
         self.update_chart()
 
     def update_chart(self):
-        if not HAS_CHARTS:
+        if not HAS_CHARTS or not hasattr(self, "chart"):
             return
         self.chart.removeAllSeries()
         self.series_map.clear()
