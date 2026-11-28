@@ -430,9 +430,9 @@ tracks absolute sequence indices and dropped-event counts, and exports them
 as JSONL with exact payload bytes represented as hexadecimal.
 
 Capture archives now keep `frames`, `sensor_samples`, and
-`diagnostic_events` as separate collections. This is the storage boundary
-for a future D-PDU event worker. The current J2534 receiver still supplies raw
-CAN frames, and the D-PDU runtime does not yet start a UI-managed worker or
-automatically feed the shared capture session. That connection remains a
-separate step requiring an explicit D-PDU device/protocol configuration and
-hardware validation.
+`diagnostic_events` as separate collections. The main window exposes
+`on_diagnostic_events()` as the batch-ingestion endpoint for a dedicated
+diagnostic worker. The current J2534 receiver still supplies raw CAN frames,
+and the D-PDU runtime does not yet start a UI-managed worker or automatically
+feed that endpoint. That connection remains a separate step requiring an
+explicit D-PDU device/protocol configuration and hardware validation.
